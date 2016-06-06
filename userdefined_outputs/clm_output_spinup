@@ -1,0 +1,14 @@
+ hist_empty_htapes = .true.
+ hist_fincl1 = 'H2OCAN','H2OSNO','H2OSOI','SOILPSI','TSOI',
+               'TOTLITC','TOTSOMC','TOTLITN','TOTSOMN','TLAI','TOTVEGC',
+               'LITR1C_vr','LITR2C_vr','LITR3C_vr','SOIL1C_vr','SOIL2C_vr','SOIL3C_vr','SOIL4C_vr',
+               'ACTUAL_IMMOB','DENIT','GROSS_NMIN','SMIN_NH4_vr','SMIN_NO3_vr','SMIN_NO3_LEACHED','SMIN_NO3_RUNOFF','SMINN_TO_PLANT' 
+ hist_fincl2 = 'CPOOL','STORVEGC','STORVEGN','LEAFC','LEAFN','FROOTC','FROOTN',
+               'LIVECROOTC','LIVECROOTN','LIVESTEMC','LIVESTEMN',
+               'DEADCROOTC','DEADCROOTN','DEADSTEMC','DEADSTEMN',
+               'CWDC','CWDN','TOTVEGC','TOTVEGN'
+ hist_fincl3 = 'GPP','NPP','NEE','AR','HR',
+               'FCEV','FCTR','FGEV','FGR','FSH'
+ hist_dov2xy = .true.,.false.,.false.
+ hist_nhtfrq = -24 -24 -24
+ hist_mfilt  = 365 365 365

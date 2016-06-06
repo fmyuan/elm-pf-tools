@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<config_compilers>
+   <!-- customize these fields as appropriate for your
+        system. Examples are prodived for Mac OS X systems with
+        user-defined compilers and others, which with supported env_mach_specific.mymac -->
+   <compiler COMPILER="gnu" MACH="mymac">
+      <ADD_CPPDEFS> -DFORTRANUNDERSCORE -DNO_R16</ADD_CPPDEFS>
+      <ADD_CFLAGS compile_threaded="true"> -fopenmp </ADD_CFLAGS>
+      <ADD_FFLAGS compile_threaded="true"> -fopenmp </ADD_FFLAGS>
+      <ADD_LDFLAGS compile_threaded="true"> -L /usr/local/gcc-5.3.0/lib/gcc/x86_64-apple-darwin15.4.0/5.3.0 -fopenmp </ADD_LDFLAGS>
+      <ADD_CMAKE_OPTS MODEL="cism"> -D CISM_GNU=ON </ADD_CMAKE_OPTS>
+      <FIXEDFLAGS>  -ffixed-form </FIXEDFLAGS>
+      <FREEFLAGS> -ffree-form </FREEFLAGS>
+      <ADD_FFLAGS DEBUG="TRUE"> -g -Wall </ADD_FFLAGS>
+      <!-- -ffree-line-length-none and -ffixed-line-length-none need to be in FFLAGS rather than in FIXEDFLAGS/FREEFLAGS 
+           so that these are passed to cmake builds (cmake builds don't use FIXEDFLAGS and FREEFLAGS). -->
+      <FFLAGS> -O -fconvert=big-endian -ffree-line-length-none -ffixed-line-length-none -fno-range-check</FFLAGS>
+      <FFLAGS_NOOPT> -O0 </FFLAGS_NOOPT>
+      <FC_AUTO_R8> -fdefault-real-8 </FC_AUTO_R8>
+      <!-- user install gcc -->
+      <SFC> $(gfortran) </SFC>
+      <SCC> $(gcc) </SCC>
+      <SCXX> $(gxx) </SCXX>
+      <MPIFC> $(mpif90) </MPIFC>
+      <MPICC> $(mpicc)  </MPICC>
+      <MPICXX> $(mpicxx) </MPICXX>
+      <CXX_LINKER>FORTRAN</CXX_LINKER>
+      <SUPPORTS_CXX>TRUE</SUPPORTS_CXX>
+      <NETCDF_PATH>$(NETCDF_PATH)</NETCDF_PATH>
+      <ADD_SLIBS>$(shell $(NETCDF_PATH)/bin/nf-config --flibs) -framework Accelerate</ADD_SLIBS>
+      <PFUNIT_PATH></PFUNIT_PATH>
+      <!-- the following is a hacking of mach/compiler generated 'Macros' for using PETSC with pflotran -->
+      <!-- ideally it should go with CLM configuration, but it's very general if machine settings are properly done -->
+      <ADD_FFLAGS PFLOTRAN="TRUE" MODEL="clm"> -I$(PETSC_DIR)/include -I$(PETSC_DIR)/$(PETSC_ARCH)/include -I$(PFLOTRAN_COUPLED_MODEL)/src/clm-pflotran </ADD_FFLAGS>
+      <ADD_CPPDEFS PFLOTRAN="TRUE" MODEL="clm"> -DCLM_PFLOTRAN </ADD_CPPDEFS>
+      <ADD_CPPDEFS PFLOTRAN="TRUE" MODEL="clm" COLUMN_MODE="TRUE"> -DCOLUMN_MODE </ADD_CPPDEFS>
+      <ADD_LDFLAGS PFLOTRAN="TRUE" MODEL="driver"> -L$(PFLOTRAN_COUPLED_MODEL)/src/clm-pflotran -lpflotran $(PETSC_LIB)</ADD_LDFLAGS>
+      <!-- end of hacking 'Macros' for using PETSC with pflotran -->
+   </compiler>
+   
+</config_compilers>
