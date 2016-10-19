@@ -85,7 +85,7 @@
       <!-- <directive> -j oe {{ output_error_path }} </directive> -->
       <directive> -j oe </directive>
       <directive default="ae"  > -m {{ mail_options }} </directive>
-      <directive default="/bin/bash" > -S {{ shell }} </directive>
+      <directive default="/bin/csh" > -S {{ shell }} </directive>
     </directives>
   </batch_system>
 
@@ -225,6 +225,13 @@
        <directive>--partition=lr3</directive>
        <directive>--account={{ project }}</directive>
        <directive>--exclusive</directive>
+     </directives>
+   </batch_system>
+
+   <batch_system MACH="cades" version="x.y">
+     <directives>
+       <directive> -A ccsi</directive>
+       <directive> -W group_list=cades-ccsi</directive>
      </directives>
    </batch_system>
 

@@ -928,40 +928,41 @@ if (options.finidat_case != ''):
               'rpointer.* '+rundir)
 
 # -------- make necessary modificaitons to run script for user-defined submit options ------------------------------
-os.chdir(casedir)
-myinput  = open("./"+casename+".run")
-myoutput = open("./"+casename+".temprun",'w')
-for s in myinput:  
-    if (s[0:8]  == '#PBS -N '):
-        if(options.jobname != ''):
-            myoutput.write("#PBS -N "+options.jobname+"\n")
-        else:
-            myoutput.write(s)
+# NOTE: @May-25-2016 not yet checked
+#os.chdir(casedir)
+#myinput  = open("./"+casename+".run")
+#myoutput = open("./"+casename+".temprun",'w')
+#for s in myinput:  
+#    if (s[0:8]  == '#PBS -N '):
+#        if(options.jobname != ''):
+#            myoutput.write("#PBS -N "+options.jobname+"\n")
+#        else:
+#            myoutput.write(s)
 
-    elif s[0:8] == '#PBS -q ':
-        if(options.queue != ''):
-            myoutput.write("#PBS -q "+options.queue+"\n")
-        else:
-            myoutput.write(s)
-            
-    elif s[0:14] =="#PBS -l nodes=":   
-        if( (options.np !=1 or options.ppn != 1) 
-            and (s.find(":ppn="))!=-1 ):   # general linux (?) there is a 'ppn' in PBS -l nodes= option
-            myoutput.write("#PBS -l nodes="+str( (int(options.np)-1)/int(options.ppn)+1) + \
-                                 ":ppn="+str(min(int(options.np),int(options.ppn)))+"\n")
-        elif(options.mppnodes != 1):  # titan CNL - np and ppn not an option, rather using 'mppnodes'
-            myoutput.write("#PBS -l nodes="+str(int(options.mppnodes))+"\n")
-        else:
-            myoutput.write(s)  
-
-    elif s[0:17] == "#PBS -l mppwidth=": # for CNL with default 'ppn' on hopper
-        myoutput.write("#PBS -l mppwidth="+str(int(options.mppwidth))+"\n")  
-    
-    elif s[0:17] == '#PBS -l walltime=':
-        if(options.walltime != ''):
-            myoutput.write("#PBS -l walltime="+options.walltime+"\n")
-        else:
-            myoutput.write(s)
+#    elif s[0:8] == '#PBS -q ':
+#        if(options.queue != ''):
+#            myoutput.write("#PBS -q "+options.queue+"\n")
+#        else:
+#            myoutput.write(s)
+#            
+#    elif s[0:14] =="#PBS -l nodes=":   
+#        if( (options.np !=1 or options.ppn != 1) 
+#            and (s.find(":ppn="))!=-1 ):   # general linux (?) there is a 'ppn' in PBS -l nodes= option
+#            myoutput.write("#PBS -l nodes="+str( (int(options.np)-1)/int(options.ppn)+1) + \
+#                                 ":ppn="+str(min(int(options.np),int(options.ppn)))+"\n")
+#        elif(options.mppnodes != 1):  # titan CNL - np and ppn not an option, rather using 'mppnodes'
+#            myoutput.write("#PBS -l nodes="+str(int(options.mppnodes))+"\n")
+#        else:
+#            myoutput.write(s)  
+#
+#    elif s[0:17] == "#PBS -l mppwidth=": # for CNL with default 'ppn' on hopper
+#        myoutput.write("#PBS -l mppwidth="+str(int(options.mppwidth))+"\n")  
+#    
+#    elif s[0:17] == '#PBS -l walltime=':
+#        if(options.walltime != ''):
+#            myoutput.write("#PBS -l walltime="+options.walltime+"\n")
+#        else:
+#            myoutput.write(s)
     
     #elif s[0:16] == '#mpirun -np ':    # for linux
     #    myoutput.write("mpirun -np "+str(options.np)+" --hostfile $PBS_NODEFILE ./ccsm.exe >&! ccsm.log.$LID\n")
@@ -969,12 +970,12 @@ for s in myinput:
     #elif s[0:11] == '#aprun -n ':    # for CNL (TODO)
     #    myoutput.write(s)  
     
-    else:
-        myoutput.write(s)
-    
-myoutput.close()
-myinput.close()
-os.system("mv "+casename+".temprun "+casename+".run")  
+#    else:
+#        myoutput.write(s)
+#    
+#myoutput.close()
+#myinput.close()
+#os.system("mv "+casename+".temprun "+casename+".run")  
 
 # ----- submit job if requested ---
 if (options.no_submit == False):    
@@ -983,7 +984,7 @@ if (options.no_submit == False):
     stdout  = os.popen("which qsub")
     stdout_val = stdout.read().rstrip( )   
     if (stdout_val == ""):
-        os.system("./"+casename+".run")
+        os.system("./"+casename+".submit")
     else:   
-        os.system("qsub ./"+casename+".run")
+        os.system(stdout_val+" ./"+casename+".run")
 

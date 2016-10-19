@@ -1,0 +1,78 @@
+#! /bin/csh -f
+
+# FOR using on CADES-OR-CONDO (Oak Ridge CADES clusters) 
+# specifically with HDF5/NETCDF4 built under /software/user_tools/current/cades-ccsi/
+# contact: Fengming Yuan, CCSI/ESD-ORNL, yuanf@ornl.gov 
+
+# -------------------------------------------------------------------------
+# USERDEFINED
+# Edit this file to add module load or other paths needed for the build
+# and run on the system.  Can also include general env settings for machine.
+# Some samples are below
+# -------------------------------------------------------------------------
+
+# Source global definitions
+if (-e /etc/csh.cshrc) then
+    source /etc/csh.cshrc
+    module unload all
+else
+    echo "ERROR: Failed to initialize modules"
+    exit -1
+endif
+
+# user-built libraries for using in CESM (specifically CLM-PFLOTRAN)
+setenv USER_SOFTWARES /software/user_tools/current/cades-ccsi
+
+# gcc-5.3.0/openmpi-1.10.3 for CLM/PFLOTRAN on OR-CONDO 
+module load PE-gnu/1.0
+
+setenv GCC_ROOT /software/dev_tools/swtree/cs400_centos7.2_pe2016-08/gcc/5.3.0/centos7.2_gcc4.8.5
+setenv PATH ${GCC_ROOT}/bin:${PATH}
+setenv LD_LIBRARY_PATH ${GCC_ROOT}/lib64:${LD_LIBRARY_PATH}
+setenv gcc ${GCC_ROOT}/bin/gcc
+setenv gxx ${GCC_ROOT}/bin/g++
+setenv gfortran ${GCC_ROOT}/bin/gfortran
+
+setenv MPI_ROOT /software/dev_tools/swtree/cs400_centos7.2_pe2016-08/openmpi/1.10.3/centos7.2_gnu5.3.0
+setenv MPILIBNAME openmpi
+setenv PATH ${MPI_ROOT}/bin:${PATH}
+setenv LD_LIBRARY_PATH ${MPI_ROOT}/lib:${LD_LIBRARY_PATH}
+setenv mpicc ${MPI_ROOT}/bin/mpicc
+setenv mpif90 ${MPI_ROOT}/bin/mpif90
+setenv mpicxx ${MPI_ROOT}/bin/mpicxx
+
+#   paths and libraries for hdf5/netcdf-4.4 built with gcc-5.3.0/mpi (netcdf4 supported)
+module load hdf5-parallel/1.8.17
+setenv HDF5_ROOT /software/dev_tools/swtree/cs400_centos7.2_pe2016-08/hdf5-parallel/1.8.17/centos7.2_gnu5.3.0
+setenv PATH ${HDF5_ROOT}/bin:${PATH}
+
+module load netcdf-hdf5parallel/4.3.3.1
+setenv HDF5_ROOT /software/dev_tools/swtree/cs400_centos7.2_pe2016-08/netcdf-hdf5parallel/4.3.3.1/centos7.2_gnu5.3.0
+#setenv NETCDF_PATH $USER_SOFTWARES/netcdf4/4.4.0/openmpi-1.10-gcc-5.3
+setenv LIB_NETCDF ${NETCDF_PATH}/lib
+setenv INC_NETCDF ${NETCDF_PATH}/include
+setenv PATH ${NETCDF_PATH}/bin:${PATH}
+setenv LD_LIBRARY_PATH ${NETCDF_PATH}/lib:${LD_LIBRARY_PATH}
+
+# the LAPACK-BLAS libraries are needed in CLM4.5 for solver in thermal-hydrological iteration 
+setenv LAPACK_LIBDIR $USER_SOFTWARES/petsc4pf/openmpi-1.10-gcc-5.3/lib 
+
+setenv BLAS_LIBDIR $USER_SOFTWARES/petsc4pf/openmpi-1.10-gcc-5.3/lib
+
+# CMake is required for building PIO
+module load cmake/3.6.1
+
+# for PFLOTRAN
+setenv PETSC_DIR $USER_SOFTWARES/petsc4pf/openmpi-1.10-gcc-5.3
+setenv PETSC_ARCH arch-orcondo-openmpi-gcc53-debug
+
+setenv PETSC_LIB ${PETSC_DIR}/lib
+setenv LD_LIBRARY_PATH ${PETSC_LIB}:${LD_LIBRARY_PATH}
+
+#-------------------------------------------------------------------------------
+# Runtime environment variables
+#-------------------------------------------------------------------------------
+
+limit coredumpsize unlimited
+limit stacksize unlimited
+
