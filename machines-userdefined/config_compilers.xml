@@ -17,7 +17,7 @@
       <ADD_CPPDEFS> -DFORTRANUNDERSCORE -DNO_R16</ADD_CPPDEFS>
       <ADD_CFLAGS compile_threaded="true"> -fopenmp </ADD_CFLAGS>
       <ADD_FFLAGS compile_threaded="true"> -fopenmp </ADD_FFLAGS>
-      <ADD_LDFLAGS compile_threaded="true"> -L /usr/local/gcc-5.3.0/lib/gcc/x86_64-apple-darwin15.4.0/5.3.0 -fopenmp </ADD_LDFLAGS>
+      <ADD_LDFLAGS compile_threaded="true"> -L /usr/local/gcc-5.4.0/lib/gcc/x86_64-apple-darwin15.4.0/5.4.0 -fopenmp </ADD_LDFLAGS>
       <ADD_CMAKE_OPTS MODEL="cism"> -D CISM_GNU=ON </ADD_CMAKE_OPTS>
       <FIXEDFLAGS>  -ffixed-form </FIXEDFLAGS>
       <FREEFLAGS> -ffree-form </FREEFLAGS>

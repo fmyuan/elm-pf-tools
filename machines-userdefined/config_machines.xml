@@ -8,14 +8,14 @@
       <OS>Darwin</OS>
       <COMPILERS>gnu</COMPILERS>
       <MPILIBS>mpich,mpi-serial</MPILIBS>
-      <RUNDIR>/lustre/pfs1/cades-ccsi/scratch/acme_simulations/$CASE/run</RUNDIR>
-      <EXEROOT>/lustre/pfs1/cades-ccsi/scratch/acme_simulations/$CASE/bld</EXEROOT>
-      <DIN_LOC_ROOT>/lustre/pfs1/cades-ccsi/proj-shared/project_acme/cesm-inputdata</DIN_LOC_ROOT>
-      <DIN_LOC_ROOT_CLMFORC>/lustre/pfs1/cades-ccsi/proj-shared/project_acme/cesm-inputdata/atm/datm7</DIN_LOC_ROOT_CLMFORC>
-      <DOUT_S_ROOT>/lustre/pfs1/cades-ccsi/proj-shared/project_acme/archives/$CASE</DOUT_S_ROOT>
-      <DOUT_L_MSROOT>csm/$CASE</DOUT_L_MSROOT>
-      <CESMSCRATCHROOT>/lustre/pfs1/cades-ccsi/scratch</CESMSCRATCHROOT>
-      <CCSM_BASELINE>/lustre/pfs1/cades-ccsi/proj-shared/project_acme/baselines</CCSM_BASELINE>
+      <RUNDIR>/Users/f9y/$CESM/PROJ_ACME/acme_simulations/$CASE/run</RUNDIR>
+      <EXEROOT>/Users/f9y/PROJ_ACME/acme_simulations/$CASE/bld</EXEROOT>
+      <DIN_LOC_ROOT>/Users/f9y/PROJ_ACME/cesm_inputdata</DIN_LOC_ROOT>
+      <DIN_LOC_ROOT_CLMFORC>/Users/f9y/PROJ_ACME/cesm_inputdata/atm/datm7</DIN_LOC_ROOT_CLMFORC>
+      <DOUT_S_ROOT>/Users/f9y/PROJ_ACME/archives/$CASE</DOUT_S_ROOT>
+      <DOUT_L_MSROOT></DOUT_L_MSROOT>
+      <CESMSCRATCHROOT>/Users/f9y/PROJ_ACME/acme_simulations</CESMSCRATCHROOT>
+      <CCSM_BASELINE>/Users/f9y/PROJ_ACME/acme_simulations/baselines</CCSM_BASELINE>
       <CCSM_CPRNC>$CIMEROOT/tools/cprnc/build/cprnc</CCSM_CPRNC>
       <BATCHQUERY></BATCHQUERY>
       <BATCHSUBMIT></BATCHSUBMIT>

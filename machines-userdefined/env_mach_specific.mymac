@@ -9,30 +9,33 @@
 
 setenv PATH /usr/local/bin:/opt/local/bin:/usr/bin:/bin
 
-setenv GCC_PATH /usr/local/gcc-5.3.0
-setenv PATH ${GCC_PATH}/bin:${PATH}
+# gmake directory
+setenv PATH /usr/local/autotools/bin:$PATH
 
-setenv gcc ${GCC_PATH}/bin/gcc
-setenv gxx ${GCC_PATH}/bin/g++
-setenv gfortran ${GCC_PATH}/bin/gfortran
+setenv GCC_PATH /usr/local/gcc-5.4.0
+setenv PATH $GCC_PATH/bin:$PATH
+
+setenv gcc $GCC_PATH/bin/gcc
+setenv gxx $GCC_PATH/bin/g++
+setenv gfortran $GCC_PATH/bin/gfortran
 
 #--- set env variables for Macros if needed
-setenv MPI_PATH /usr/local/mpich-3.2-gcc53
+setenv MPI_PATH /usr/local/mpich-3.2-gcc54
 setenv MPILIBNAME mpich
-setenv PATH ${MPI_PATH}/bin:${PATH}
+setenv PATH $MPI_PATH/bin:$PATH
 
-setenv mpicc ${MPI_PATH}/bin/mpicc
-setenv mpicxx ${MPI_PATH}/bin/mpic++
-setenv mpif90 ${MPI_PATH}/bin/mpif90
+setenv mpicc $MPI_PATH/bin/mpicc
+setenv mpicxx $MPI_PATH/bin/mpic++
+setenv mpif90 $MPI_PATH/bin/mpif90
 
-setenv NETCDF_PATH /usr/local/netcdf-4.4-mpich32-gcc53
-setenv HDF5_PATH /usr/local/hdf5-1.8.16-mpich32-gcc53
+setenv NETCDF_PATH /usr/local/netcdf-4.4-mpich32-gcc54
+setenv HDF5_PATH /usr/local/hdf5-1.8.17-mpich32-gcc54
 
-setenv LAPACK_DIR /usr/local
+setenv LAPACK_DIR /usr/local/blas-lapack-dir
 
-setenv PETSC_DIR /usr/local/petsc-mpich32-gcc53
-setenv PETSC_LIB ${PETSC_DIR}/lib
-setenv PETSC_ARCH arch-darwin-gnu53-debug
+setenv PETSC_DIR /usr/local/petsc-mpich32-gcc54
+setenv PETSC_LIB $PETSC_DIR/lib
+setenv PETSC_ARCH arch-darwin-gnu54-debug
 
 # cmake installed in following directory, need by PIO
-setenv PATH ${PETSC_DIR}/bin:${PATH}
+setenv PATH /usr/local/CMake.App/Contents/bin:$PATH
