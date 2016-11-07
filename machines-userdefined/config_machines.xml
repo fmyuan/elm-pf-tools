@@ -29,7 +29,7 @@
         <walltimes></walltimes>
       </batch_system>
       <mpirun mpilib="mpich">
-        <executable>/usr/local/mpich-3.2-gcc53/bin/mpirun</executable>
+        <executable>/usr/local/mpich-3.2-gcc54/bin/mpirun</executable>
         <arguments><arg name="num_tasks"> -np {{ num_tasks }}</arg></arguments>
       </mpirun>
    </machine>

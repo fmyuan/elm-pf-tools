@@ -701,8 +701,12 @@ ifeq ($(ULIBDEP),$(null))
      endif
      ifeq ($(findstring libclm.a,$(LNDLIB)),libclm.a)
         ULIBDEP += $(SHAREDPATH)/$(COMP_INTERFACE)/$(ESMFDIR)/lib/$(LNDLIB)
+        LNDLIBROOT = $(SHAREDPATH)/$(COMP_INTERFACE)/$(ESMFDIR)/lib
+        LNDOBJROOT = $(SHAREDPATH)/$(COMP_INTERFACE)/$(ESMFDIR)/clm/obj
      else
         ULIBDEP += $(LIBROOT)/$(LNDLIB)
+        LNDLIBROOT = $(LIBROOT)
+        LNDOBJROOT = $(EXEROOT)/lnd/obj
      endif
      ifeq ($(MODEL),driver)
          ifeq ($(findstring libclm.a,$(LNDLIB)),libclm.a)
@@ -823,8 +827,8 @@ cleanrof:
 	cd $(EXEROOT)/rof/obj ; $(RM) -f *.o *.mod
 
 cleanlnd:
-	$(RM) -f $(LIBROOT)/liblnd.a
-	cd $(EXEROOT)/lnd/obj ; $(RM) -f *.o *.mod
+	$(RM) -f $(LNDLIBROOT)/$(LNDLIB)
+	cd $(LNDOBJROOT) ; $(RM) -f *.o *.mod
 
 cleancsmshare:
 	$(RM) -f $(CSMSHARELIB)
