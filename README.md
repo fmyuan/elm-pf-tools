@@ -6,7 +6,14 @@
 
 ### I-1. Directory Tree
 ```
-(TODO)
+|
+| --machine-userdefined   (a few sets of user-defined machine files for CLM4.5.35)
+  --userdefined_output    (a  few examples of user-defined outputs from CLM: it's copied to 'lnd_in' under CLM run directory)
+  --link-tree             (a script to soft-link CLM inputdata to user's inputdata directory)
+  --runPTCLM.py           (a python script to run PoinT-mode CLM)
+  --runGRDCLM.py          (a python script to run Global-mode CLM)
+
+
 ```
 
 ### I-2.  
