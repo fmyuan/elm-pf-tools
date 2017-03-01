@@ -21,6 +21,12 @@
 
 ### II-2. for ALM users
 
+[MAC OSX users](https://code.ornl.gov/alm-pflotran/clm-pf-tools/wikis/Alm%20on%20mac:%20environments,%20building,%20and%20running)
+
+
+[CCSI-CADES users](https://code.ornl.gov/alm-pflotran/clm-pf-tools/wikis/Alm%20on%20CADES:%20environments,%20building,%20and%20running)
+
+
 ### II-3. for PFLOTRAN users
 
 
