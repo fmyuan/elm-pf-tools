@@ -12,11 +12,13 @@ import glob
 #  2. configure case
 #  3. build (compile) CESM with clean_build first if requested
 #  4. apply patch for transient CO2 if transient run
-#  6. apply user-specified PBS and submit information
+#  6. apply user-specified PBS and submit information - removed
 #  7. submit job to PBS queue if requested.
 #
 # FMY 5/23/2016
 # revised to work for ALM used by NGEE-Arctic Phase II
+
+# FMY 3/2/2017: updated with ACME v.1
 
 #-------------------Parse options-----------------------------------------------
 
@@ -26,8 +28,6 @@ parser.add_option("--caseidprefix", dest="mycaseid", default="", \
                   help="Unique identifier to include as a prefix to the case name")
 parser.add_option("--caseroot", dest="caseroot", default='./', \
                   help = "case root directory (default = ./, i.e., under scripts/)")
-parser.add_option("--jobname", dest="jobname", default="", \
-                  help="userdefined job name, default is the casename")
 parser.add_option("--runroot", dest="runroot", default="../runs", \
                   help="Directory where the run would be created")
 parser.add_option("--ccsm_input", dest="ccsm_input", \
@@ -42,22 +42,13 @@ parser.add_option("--site", dest="site", default='', \
                   help = '6-character FLUXNET code to run (required)')
 parser.add_option("--sitegroup", dest="sitegroup", default="AmeriFlux", \
                   help = "site group to use (default AmeriFlux)")
-parser.add_option("--align_year", dest="align_year", default="1850", \
+parser.add_option("--align_year", dest="align_year", default="1851", \
                   help = 'Alignment year for datm data')
 #
 parser.add_option("--machine", dest="machine", default = '', \
                   help = "machine to use ---- \n"  
                          "default = '' \n"
                          "options = checking by ./create_newcase -list machines \n "
-                         "NOTE: make sure the option you chose well-defined in config_machines.xml")
-parser.add_option("--mach_dir", dest="mach_dir", default = '', \
-                  help = "user-defined machine directory \n"  
-                         "default = '' \n"
-                         "user-defined machine directory to replace model default ")
-parser.add_option("--osname", dest="osname", default = '', \
-                  help = "name of machine OS ---- \n"
-                         "   default = '', the default OS for the chosen machine) \n "
-                         "   options = ... \n "
                          "NOTE: make sure the option you chose well-defined in config_machines.xml")
 parser.add_option("--compiler", dest="compiler", default = '', \
                   help = "compiler to use on machine ---- \n"
@@ -72,16 +63,14 @@ parser.add_option("--no_fire", dest="nofire", action="store_true", \
                   default=False, help="Turn off fire algorightms")
 parser.add_option("--centbgc", dest="centbgc", default=False, \
                   help = 'To turn on CN with multiple soil layers, CENTURY C module', action="store_true")
-parser.add_option("--vertsoilc", dest="vsoilc", default=False, \
-                  help = 'To turn on CN with multiple soil layers (not necessary to bundle with centbgc)', action="store_true")
 parser.add_option("--nitrif_denitrif", dest="kovenN", default=False, \
                   help = 'To turn on CN with Koven nitrif-denitrif (not necessary to bundle with centbgc)', action="store_true")
 parser.add_option("--CH4", dest="CH4", default=False, \
                   help = 'To turn on CN with CLM4me (not necessary to bundle with centbgc)', action="store_true")
-parser.add_option("--extended_pft", dest="extended_pft", default=False, \
-                  help = 'To turn on Expanded (Arctic) PFTs flag (-DEXTENDED_PFT) in CLM. Must provide --parm_file', action="store_true")
-parser.add_option("--parm_file", dest="parm_file", default="clm_params.c160128.nc", \
-                  help = 'CLM user-defined physiological parameter file, with default: clm_params.c160128.nc')
+#parser.add_option("--extended_pft", dest="extended_pft", default=False, \
+#                  help = 'To turn on Expanded (Arctic) PFTs flag (-DEXTENDED_PFT) in CLM. Must provide --parm_file', action="store_true")
+parser.add_option("--parm_file", dest="parm_file", default="clm_params_c160822.nc", \
+                  help = 'CLM user-defined physiological parameter file, with default: clm_params.c160822.nc')
 parser.add_option("--co2_file", dest="co2_file", default="fco2_datm_1765-2007_c100614.nc", \
                   help = 'CLM transient CO2 file for diagnostic option')
 parser.add_option("--ad_spinup", action="store_true", \
@@ -152,8 +141,8 @@ parser.add_option("--cleanlogs",dest="cleanlogs", help=\
 #submit/run options
 parser.add_option("--no_submit", dest="no_submit", default=False, \
                   help = 'do NOT submit CESM to queue', action="store_true")
-parser.add_option("--queue", dest="queue", default='', \
-                  help = 'PBS submission queue')
+parser.add_option("--jobname", dest="jobname", default="", \
+                  help="userdefined job name, default is the casename")
 parser.add_option("--np", dest="np", default=1, \
                   help = 'number of processors requested')
 parser.add_option("--ppn", dest="ppn", default=1, \
@@ -198,13 +187,7 @@ else:
     scriptsdir = csmdir+'/cime/scripts'
 
 # machine/compiler options
-machineoptions = ''
-if(options.mach_dir !=''):
-    if (options.mach_dir.startswith('/')):  # full path of user-defined machines
-        machineoptions += ' -mach_dir '+options.mach_dir
-    else: # otherwise under this script's directory
-        machineoptions += ' -mach_dir '+runCLMdir+'/'+options.mach_dir   
-     
+machineoptions = ''     
 
 if (options.machine==''):
     print('machine option is required !')
@@ -216,9 +199,14 @@ else:
 
 if (options.compiler != ''):
     machineoptions += ' -compiler '+options.compiler
+else:
+    print('compiler is required !')
+    sys.exit()
 
 if (options.mpilib != ''):
     machineoptions += ' -mpilib '+options.mpilib
+else:
+    machineoptions += ' -mpilib mpi-serial'
 
 
 #check for valid input data directory
@@ -232,9 +220,11 @@ else:
 #check for valid compset, i.e. only with 'CLM45CN' NCEP datm settings
 compset = options.compset
 if (compset.startswith('I1850CLM45') == False \
-    and compset.startswith('I20TRCLM45') == False ):
+    and compset.startswith('I1850CRUCLM45') == False \
+    and compset.startswith('I20TRCLM45') == False \
+    and compset.startswith('I20TRCRUCLM45') == False):
     print('Error:  please enter one of following valid options for compset:')
-    print('        I1850CLM45CN, I1850CLM45BGC, I20TRCLM45CN, I20TRCLM45BGC')
+    print('        I1850(CRU)CLM45CN, I1850(CRU)CLM45BGC, I20TR(CRU)CLM45CN, I20TR(CRU)CLM45BGC')
     sys.exit()
 
 if (compset.startswith('I20TR') == True):
@@ -342,7 +332,7 @@ if (options.compset.startswith('I20TR') == True):
 
 #pft parameter file
 # new or user-defined pft-phys file if desired
-if (options.extended_pft and options.parm_file == ''):  # must provide user-defined 'pft-physiology.???.nc'
+if (options.extended_pft and options.parm_file == ''):
     print('MUST provide user-defined parameter file! Exit \n')
     sys.exit()
 
@@ -374,11 +364,8 @@ for row in AFdatareader:
             numypts=1
 clm_usrdat_name = str(numxpts)+"x"+str(numypts)+"pt_"+options.site    
 
-# set 'debug' mode
-debugoption = ''
-if (options.debug_build):
-    debugoption = ' -confopts _D'
-    print ("case build will be configured for debugging \n")
+if (options.compset.startswith('I20TR') == False):
+    alignyear = 1 # otherwise, for 'I1850*' compset, there will be issue of reading in datm data. (ONLY read ONCE)
 
 #set number of run years, if user-defined
 run_n = options.run_n
@@ -398,16 +385,11 @@ os.chdir(scriptsdir)
 #--- (1) create a new case
 #create new case
 comps = options.compset
-if(compset == 'I20TRCLM45CN'):
-    comps = 'I20TRCLM45BGC'
-    # this is a hack, since 'I20TRCLM45CN' is not default anymore;
-    # then, will modify namelist to force the codes running with classic CN/vertical_soilc
     
 print ('./create_newcase -case '+casedir +' '+machineoptions + \
-    ' -compset '+ comps +' -res CLM_USRDAT ' + debugoption)
+    ' -compset '+ comps +' -res CLM_USRDAT ')
 os.system('./create_newcase -case '+casedir+' '+machineoptions + \
                  ' -compset '+ comps +' -res CLM_USRDAT ' + \
-                 debugoption + \
                   ' > create_newcase.log')
 if (os.path.isdir(casedir)):
     print(casename+' created.  See create_newcase.log for details')
@@ -643,7 +625,7 @@ else:
 # (5) cesm setup -------------------------------------------
 #clean configure if requested prior to configure
 if (options.clean_config):
-    os.system('./cesm_setup -clean')
+    os.system('./case.setup -clean')
     os.system('rm -f user-nl-*')
 
 
@@ -707,7 +689,7 @@ if (options.extended_pft):
         myfile.close()
 
 # (5e) setup ---------
-os.system('./cesm_setup > configure.log')
+os.system('./case.setup > configure.log')
         
 #  (5f) datm domain path -----------
 
@@ -761,7 +743,7 @@ if (pftfile != ''):
         
 #(6e) clm output hist user-defined file ----
 if (options.hist_file != ''):
-    histfile = runCLMdir+"/userdefined_outputs/"+options.hist_file
+    histfile = runCLMdir+"/outputs-userdefined/"+options.hist_file
     hvars_file = open(histfile)
     output.write("\n")
     for s2 in hvars_file:
@@ -782,6 +764,7 @@ if (options.extended_pft):
 
 #(6h) namelist options for PFLOTRAN coupling ----
 if (options.pflotran):
+    output.write(" use_bgc_interface = .true.\n")
     output.write(" use_pflotran = .true.\n")
     output.write("/\n")
 
@@ -869,12 +852,12 @@ myoutput.close()
 # (9) ------- build clm45 within cesm ---------------------------------------------- 
 #clean build if requested prior to build
 if (options.clean_build):
-    os.system('./'+casename+'.clean_build')
+    os.system('./case.build --clean-all')
     os.system('rm -rf '+rundir+'/*')
     os.system('rm -rf '+blddir+'/*')
             
 #compile cesm     
-os.system('./'+casename+'.build')        
+os.system('./case.build')        
         
 # note: *.build will sweep everything under ./Buildconf, but we need 'co2_streams.txt' in transient run ---
 if (compset.startswith('I20TR') == True):
@@ -904,10 +887,10 @@ if (compset.startswith('I20TR') == True):
             print('Error: must provide a set of "*.meshmap" for CLM-PFLOTRAN in '+pfindir+'! Exit \n')
             sys.exit()
 
-        if(os.path.isfile(pfindir+'/hanford-clm.dat')):
-            os.system('cp '+pfindir+'/hanford-clm.dat '+rundir+'/')         
         if(os.path.isfile(pfindir+'/CLM-CN_database.dat')):
             os.system('cp '+pfindir+'/CLM-CN_database.dat '+rundir+'/')
+        elif(os.path.isfile(pfindir+'/hanford-clm.dat')):
+            os.system('cp '+pfindir+'/hanford-clm.dat '+rundir+'/')         
         else:
             if(os.path.isfile(pfindir+'/hanford-clm.dat') == False):
                 print('Waring: NO PFLOTRAN-bgc database file "handford-clm.dat" or "CLM-CN_database.dat" exists! \n')
@@ -915,7 +898,7 @@ if (compset.startswith('I20TR') == True):
         if(glob.glob(pfindir+'/*.h5')):      
             os.system('cp '+pfindir+'/*.h5 '+rundir+'/')
         else:
-            print('Waring: NO PFLOTRAN *.h5 input file exists! -- be sure it is the case! \n')
+            print('Warning: NO PFLOTRAN *.h5 input file exists! -- be sure it is the case! \n')
             
                  
     
@@ -927,64 +910,14 @@ if (options.finidat_case != ''):
     os.system('cp -f '+runroot+'/'+options.finidat_case+'/run/'+ \
               'rpointer.* '+rundir)
 
-# -------- make necessary modificaitons to run script for user-defined submit options ------------------------------
-# NOTE: @May-25-2016 not yet checked
-#os.chdir(casedir)
-#myinput  = open("./"+casename+".run")
-#myoutput = open("./"+casename+".temprun",'w')
-#for s in myinput:  
-#    if (s[0:8]  == '#PBS -N '):
-#        if(options.jobname != ''):
-#            myoutput.write("#PBS -N "+options.jobname+"\n")
-#        else:
-#            myoutput.write(s)
 
-#    elif s[0:8] == '#PBS -q ':
-#        if(options.queue != ''):
-#            myoutput.write("#PBS -q "+options.queue+"\n")
-#        else:
-#            myoutput.write(s)
-#            
-#    elif s[0:14] =="#PBS -l nodes=":   
-#        if( (options.np !=1 or options.ppn != 1) 
-#            and (s.find(":ppn="))!=-1 ):   # general linux (?) there is a 'ppn' in PBS -l nodes= option
-#            myoutput.write("#PBS -l nodes="+str( (int(options.np)-1)/int(options.ppn)+1) + \
-#                                 ":ppn="+str(min(int(options.np),int(options.ppn)))+"\n")
-#        elif(options.mppnodes != 1):  # titan CNL - np and ppn not an option, rather using 'mppnodes'
-#            myoutput.write("#PBS -l nodes="+str(int(options.mppnodes))+"\n")
-#        else:
-#            myoutput.write(s)  
-#
-#    elif s[0:17] == "#PBS -l mppwidth=": # for CNL with default 'ppn' on hopper
-#        myoutput.write("#PBS -l mppwidth="+str(int(options.mppwidth))+"\n")  
-#    
-#    elif s[0:17] == '#PBS -l walltime=':
-#        if(options.walltime != ''):
-#            myoutput.write("#PBS -l walltime="+options.walltime+"\n")
-#        else:
-#            myoutput.write(s)
-    
-    #elif s[0:16] == '#mpirun -np ':    # for linux
-    #    myoutput.write("mpirun -np "+str(options.np)+" --hostfile $PBS_NODEFILE ./ccsm.exe >&! ccsm.log.$LID\n")
-    
-    #elif s[0:11] == '#aprun -n ':    # for CNL (TODO)
-    #    myoutput.write(s)  
-    
-#    else:
-#        myoutput.write(s)
-#    
-#myoutput.close()
-#myinput.close()
-#os.system("mv "+casename+".temprun "+casename+".run")  
 
 # ----- submit job if requested ---
-if (options.no_submit == False):    
-    
+if (options.no_submit == False):        
     os.chdir(casedir)
-    stdout  = os.popen("which qsub")
-    stdout_val = stdout.read().rstrip( )   
-    if (stdout_val == ""):
-        os.system("./"+casename+".submit")
-    else:   
-        os.system(stdout_val+" ./"+casename+".run")
+    os.system('./case.submit')
+else:
+    
+    
+
 

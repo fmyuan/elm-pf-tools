@@ -8,9 +8,10 @@
 
 #0.1 case setup directory: this script where hold, and could be directory to hold 'cases'
 CASESETUP_DIR=${PWD}
-CCSI_DIR=/lustre/pfs1/cades-ccsi
+CCSI_DIR=/lustre/or-hydra/cades-ccsi
 
-CLM_PF_TOOLS=$CCSI_DIR/proj-shared/models/alm-pf-tools
+#CLM_PF_TOOLS=$CCSI_DIR/proj-shared/models/alm-pf-tools
+CLM_PF_TOOLS=./
 
 #1.1 codes and default input data direcotries
 CLM_COUPLED_MODEL=$CCSI_DIR/proj-shared/models/ACME-fmyuan
@@ -70,5 +71,5 @@ cd ${CASESETUP_DIR}
 ## (865)57408486(O)
 ## yuanf@ornl.gov
 ## 
-## 2016-05-25
+## 2017-02-25
 ##----------------------------#
