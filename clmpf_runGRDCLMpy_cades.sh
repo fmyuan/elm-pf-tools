@@ -29,11 +29,11 @@ ${CLM_COUPLED_MODEL}/scripts/link_dirtree ${CESMINPUT0} ${MYINPUTDATA}
 cd ${MYINPUTDATA}/atm/datm7
 
 # the following is for compset 'I1850CRUCLM45CN', using back-filled CRU/QIAN dataset (1901-1920)
-rm -rf atm_forcing.datm7.cruncep_qianFill.0.5d.V4.c130305
+unlink atm_forcing.datm7.cruncep_qianFill.0.5d.V4.c130305
 ln -sf ${USERINPUT}/atm/datm7/atm_forcing.datm7.cruncep_qianFill.0.5d.V4.c130305 atm_forcing.datm7.cruncep_qianFill.0.5d.V4.c130305
 
 # the following is for compset 'I1850CLM45CN', using DATM%QIAN (1948 - 1972)
-#rm -rf atm_forcing.datm7.Qian.T62.c080727
+#unlink -rf atm_forcing.datm7.Qian.T62.c080727
 #ln -sf ${USERINPUT}/atm/datm7/atm_forcing.datm7.Qian.T62.c080727 atm_forcing.datm7.Qian.T62.c080727
 
 #2.2 Need to use CLM surfdata, maps and its domain
@@ -42,7 +42,7 @@ ln -sf ${USERINPUT}/lnd/clm2/surfdata_map/surfdata_1.9x2.5_simyr1850_c130927.nc 
 ln -sf ${USERINPUT}/lnd/clm2/surfdata_map/surfdata_1.9x2.5_simyr2000_c130927.nc surfdata_1.9x2.5_simyr2000.nc
 
 cd ${MYINPUTDATA}/lnd/clm2/mappingdata/maps
-rm -rf 1.9x2.5
+unlink 1.9x2.5
 ln -sf ${USERINPUT}/lnd/clm2/mappingdata/maps/1.9x2.5 1.9x2.5
 
 cd ${MYINPUTDATA}/share/domains
@@ -51,15 +51,15 @@ ln -sf ${USERINPUT}/share/domains/domain.ocn.fv1.9x2.5_gx1v6_090403_vji.nc domai
 
 # 2.3 CPL (maps)
 cd ${MYINPUTDATA}/cpl/cpl6
-rm -rf map_r05_TO_g16_aave.120920.nc
-rm -rf map_r05_to_gx1v6_e1000r300_090226.nc
+unlink map_r05_TO_g16_aave.120920.nc
+unlink map_r05_to_gx1v6_e1000r300_090226.nc
 ln -sf ${USERINPUT}/cpl/cpl6/map_r05_TO_g16_aave.120920.nc map_r05_TO_g16_aave.120920.nc
 ln -sf ${USERINPUT}/cpl/cpl6/map_r05_to_gx1v6_e1000r300_090226.nc map_r05_to_gx1v6_e1000r300_090226.nc
 
 cd ${MYINPUTDATA}/cpl/gridmaps
-rm -rf fv1.9x2.5
+unlink fv1.9x2.5
 ln -sf ${USERINPUT}/cpl/gridmaps/fv1.9x2.5 fv1.9x2.5
-rm -rf gx1v6
+unlink gx1v6
 ln -sf ${USERINPUT}/cpl/gridmaps/gx1v6 gx1v6
 
 
@@ -72,7 +72,7 @@ unlink pflotran_clm.in
 ln -sf pflotran_clm_th-f19g16x15_v20160608.in pflotran_clm.in
 
 cd ${MYINPUTDATA}/pflotran
-rm -rf global
+unlink global
 ln -sf ${USERINPUT}/pflotran/global global
 
 
