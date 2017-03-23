@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-from conda_build._link import SITE_PACKAGES
 import numpy as np
 from netCDF4 import Dataset
 import matplotlib.pyplot as plt
@@ -62,7 +61,7 @@ def CLM_NcRead(ncfile, varnames_print, keep_vars, chunk_keys):
     nldcmp = 0
     nlgrnd = 0
     npft   = 0
-    chunk  = {}
+    odata  = {}
 
     try:
         f = Dataset(ncfile,'r')
@@ -70,7 +69,7 @@ def CLM_NcRead(ncfile, varnames_print, keep_vars, chunk_keys):
             print('FILE: '+ncfile+' ------- ')
 
     except:
-        return nx,ny,nldcmp,nlgrnd,npft,chunk
+        return nx,ny,nldcmp,nlgrnd,npft,odata,odata_dims
         
         
     # If key is on the keep list and in nc file, uniquely add to a dictionary
@@ -84,26 +83,26 @@ def CLM_NcRead(ncfile, varnames_print, keep_vars, chunk_keys):
         if key not in keep_vars: continue  #cycle the loop
             
         if (len(chunk_keys)<=0) or (key not in chunk_keys): # only needs to read data once, if more than one available
-            chunk[key] = np.asarray(f.variables[key])                
+            odata[key] = np.asarray(f.variables[key])                
 
             if key == 'topo':
-                [nx, ny] = chunk[key].shape
+                [nx, ny] = odata[key].shape
             if key == 'levgrnd':
-                nlgrnd = len(chunk[key])
+                nlgrnd = len(odata[key])
             if key == 'levdcmp':
-                nldcmp = len(chunk[key])                
+                nldcmp = len(odata[key])                
             if key == 'pft':
-                npft = len(chunk[key])
+                npft = len(odata[key])
 
         #ad-spinup run, recal. each component of totsomc_vr, if needed
         if options.adspinup:
             if key in totsomc_vr:
                 sub_indx = totsomc_vr.index(key)
-                chunk[key] = chunk[key]*ad_factor[sub_indx]
+                odata[key] = chunk[key]*ad_factor[sub_indx]
 
             if key in totsomn_vr:
                 sub_indx = totsomn_vr.index(key)
-                chunk[key] = chunk[key]*ad_factor[sub_indx]
+                odata[key] = odata[key]*ad_factor[sub_indx]
             
     
     # summing up of total liter/som C/N, if needed and available
@@ -111,11 +110,11 @@ def CLM_NcRead(ncfile, varnames_print, keep_vars, chunk_keys):
         indx = keep_vars.index('TOTLITC_vr')
         subs = totlitc_vr
         for isub in subs:
-            if isub in chunk.keys():
+            if isub in odata.keys():
                 if isub==subs[0]:
-                    chunk[keep_vars[indx]] = chunk[isub]
+                    odata[keep_vars[indx]] = odata[isub]
                 else:
-                    chunk[keep_vars[indx]] = chunk[keep[indx]] + chunk[isub]
+                    odata[keep_vars[indx]] = odata[keep[indx]] + odata[isub]
             else:
                 continue
 
@@ -123,11 +122,11 @@ def CLM_NcRead(ncfile, varnames_print, keep_vars, chunk_keys):
         indx = keep_vars.index('TOTLITN_vr')
         subs = totlitn_vr
         for isub in subs:
-            if isub in chunk.keys():
+            if isub in odata.keys():
                 if isub==subs[0]:
-                    chunk[keep_vars[indx]] = chunk[isub]
+                    odata[keep_vars[indx]] = odata[isub]
                 else:
-                    chunk[keep_vars[indx]] = chunk[keep[indx]] + chunk[isub]
+                    odata[keep_vars[indx]] = odata[keep[indx]] + odata[isub]
             else:
                 continue
         
@@ -135,11 +134,11 @@ def CLM_NcRead(ncfile, varnames_print, keep_vars, chunk_keys):
         indx = keep_vars.index('TOTSOMC_vr')
         subs = totsomc_vr
         for isub in subs:
-            if isub in chunk.keys():
+            if isub in odata.keys():
                 if isub==subs[0]:
-                    chunk[keep_vars[indx]] = chunk[isub]
+                    odata[keep_vars[indx]] = odata[isub]
                 else:
-                    chunk[keep_vars[indx]] = chunk[keep[indx]] + chunk[isub]
+                    odata[keep_vars[indx]] = odata[keep[indx]] + odata[isub]
             else:
                 continue
 
@@ -147,16 +146,16 @@ def CLM_NcRead(ncfile, varnames_print, keep_vars, chunk_keys):
         indx = keep_vars.index('TOTSOMN_vr')
         subs = totsomn_vr
         for isub in subs:
-            if isub in chunk.keys():
+            if isub in odata.keys():
                 if isub==subs[0]:
-                    chunk[keep_vars[indx]] = chunk[isub]
+                    odata[keep_vars[indx]] = odata[isub]
                 else:
-                    chunk[keep_vars[indx]] = chunk[keep[indx]] + chunk[isub]
+                    odata[keep_vars[indx]] = odata[keep[indx]] + odata[isub]
             else:
                 continue
 
     # out datasets
-    return nx, ny, nldcmp, nlgrnd, npft, chunk
+    return nx, ny, nldcmp, nlgrnd, npft, odata, odata_dims
 
 
 # Plot soil data with layers
