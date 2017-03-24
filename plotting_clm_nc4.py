@@ -98,7 +98,7 @@ if (options.vars == ''):
 else:
     varnames = options.vars.split(':')  
     nvars = len(varnames)
-    if(nvars>4):
+    if(nvars>4 or options.vars=="ALL"):
         print('Currently ONLY support at most 4 variables to be plotted')
         sys.exit()
 
@@ -114,7 +114,9 @@ tt, nx, ny, nlgrnd, nldcmp, npft, varsdata, varsdims = \
     CLM_NcRead_1simulation(options.clm_odir, \
                            options.ncfileheader, \
                            options.varnames_print, \
-                           varnames, options.adspinup)
+                           varnames, \
+                           starttime, endtime, \
+                           options.adspinup)
 
 
 #--------------------------------------------------------------------------------------

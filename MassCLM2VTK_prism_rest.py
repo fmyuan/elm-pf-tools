@@ -73,7 +73,7 @@ def GetPflotranMeshData(filename, zscale):
     return xyz,cells,txyz,tcells # temporary hack
 
 def WriteVTK(outfile,xyz,cells,shift,cell_variables={}):
-    print "Writing %s..." % outfile
+    print ("Writing %s..." % outfile)
     f = open(outfile,'w')
     f.write('# vtk DataFile Version 2.0\n')
     f.write('converted\n')

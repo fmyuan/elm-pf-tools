@@ -4,11 +4,12 @@
 ## Author: Fengming YUAN, CCSI/ESD-ORNL, Oak Ridge, TN
 ## Date: 2017-March 
 
+import sys
+import glob
+import math
+from optparse import OptionParser
 import numpy as np
 from netCDF4 import Dataset
-import glob
-import sys
-from optparse import OptionParser
 
 # ---------------------------------------------------------------
 # commonly used for all
@@ -59,7 +60,8 @@ ad_factor =[1,1,10,100]
 #
 # Read variable(s) from 1 CLM nc file into chunk
 #
-def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, adspinup):
+def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
+                     startyr, endyr, adspinup):
     nx = 0
     ny = 0
     nldcmp = 0
@@ -77,8 +79,7 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, adspinup):
         return nx,ny,nldcmp,nlgrnd,npft,odata,odata_dims
         
         
-    # If key is on the keep list and in nc file, uniquely add to a dictionary
-    
+    # If key is on the keep list and in nc file, uniquely add to a dictionary    
     for key in f.variables.keys():
             
         # print out all variables contained in nc files
@@ -91,20 +92,32 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, adspinup):
             odata[key]      = np.asarray(f.variables[key])                
             odata_dims[key] = f.variables[key].dimensions
 
-            if key == 'topo':
+            if key == 'topo' and key not in odata:
                 nx = odata[key].shape[0]
                 if (len(odata[key].shape)==1):
                     ny = 1
                 elif(len(odata[key].shape)==2):
                     ny = odata[key].shape[1]
                 
-            if key == 'levgrnd':
+            if key == 'levgrnd' and key not in odata:
                 nlgrnd = len(odata[key])
-            if key == 'levdcmp':
+            if key == 'levdcmp' and key not in odata:
                 nldcmp = len(odata[key])                
-            if key == 'pft':
-                npft = len(odata[key])
+            if key == 'pft' and key not in odata:
+                npft = len(odata[key])    
+            
 
+        # timing option - we do checking here,
+        # because we want to have those CONSTANTs read-out, some of which ONLY available in the first CLM nc file.
+        tt   = np.asarray(f.variables['time'])# days since model simulation starting time
+        tyr1 = math.floor(min(tt)/365)
+        tyr2 = math.ceil(max(tt)/365)
+        if(startyr !=''):
+            if(startyr>tyr2): return nx,ny,nldcmp,nlgrnd,npft,odata,odata_dims 
+        if(endyr !=''):
+            if(endyr<tyr1): return nx,ny,nldcmp,nlgrnd,npft,odata,odata_dims 
+        
+        
         #ad-spinup run, recal. each component of totsomc_vr, if needed
         if adspinup:
             if key in totsomc_vr:
@@ -178,7 +191,10 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, adspinup):
 #
 # Read variable(s) from multiple CLM nc files in 1 simulation
 #
-def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, vars, adspinup):
+def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
+                           vars, \
+                           startyr, endyr, \
+                           adspinup):
 
 #--------------------------------------------------------------------------------------
 # INPUTS
@@ -186,6 +202,8 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, vars, adspinu
     clmhead = clm_odir+'/'+ ncfileheader +'.clm2'
     print('nc file set : '+ clmhead + '*.nc')
 
+    VARS_ALL = False
+    nvars   = 0    
     if (vars == ''):
         print('No variable name by " --varname=??? "; So print out ALL variable names ONLY')
         varnames = []
@@ -193,27 +211,32 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, vars, adspinu
     elif(varnames_print):
         print('Print out ALL variable names ONLY')
         varnames = []
+    elif(vars == 'ALL'):
+        VARS_ALL = True
+        print ('Extract ALL variables from simulation')
     else:
         varnames = vars
-        
-    
-    nvars = len(varnames)
+        nvars = len(varnames)
 
 #--------------------------------------------------------------------------------------
     # variables name dictionary
     keep = []
 
-    # a few variables common to all for plotting
-    keep.append("nstep")   # need this for time step numbers
-    keep.append("time")    # need this for clm timing
-    keep.append("lat")     # grid center latitude
-    keep.append("lon")     # grid center longitude
-    keep.append("topo")    # need this for shape of surface cells, and elevation (if data available)
-    keep.append("levgrnd") # need this for the number of layers  for PHY
-    keep.append("levdcmp") # need this for the number of layers for BGC
-    keep.append("pft")
-    keep.append("pfts1d_wtgcell")
+    # a few constants common to all for plotting
+    keep_const = []
+    keep_const.append("lat")     # grid center latitude
+    keep_const.append("lon")     # grid center longitude
+    keep_const.append("topo")    # need this for shape of surface cells, and elevation (if data available)
+    keep_const.append("levgrnd") # need this for the number of layers  for PHY
+    keep_const.append("levdcmp") # need this for the number of layers for BGC
+    keep_const.append("ZSOI")
+    keep_const.append("DZSOI")
+    keep_const.append("pft")
+    keep_const.append("pfts1d_wtgcell")
 
+    keep.append(keep_const)
+    keep.append("nstep")         # need this for time step numbers
+    keep.append("time")          # need this for clm timing
     keep.extend(varnames)
 
     # for some variables, they are requiring a group of variables in CLM output to sum up
@@ -245,7 +268,8 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, vars, adspinu
 #--------------------------------------------------------------------------------------
 #
     # final datasets initialization
-    tt = []
+    nstep = []
+    tt    = []
     varsdata = {}
     varsdims = {}
 
@@ -266,7 +290,8 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, vars, adspinu
             filename = "%s.%s.%s.nc" % (clmhead,finc,chunk)
         
             nxi,nyi,nldcmpi,nlgrndi,npfti,chunkdatai,chunkdatai_dims = \
-                CLM_NcRead_1file(filename, varnames_print, keep, chunkdata.keys(), adspinup)
+                CLM_NcRead_1file(filename, varnames_print, keep, chunkdata.keys(), \
+                                 startyr, endyr, adspinup)
             
             # the following are constant and shall be same for all files (i.e. only need once)
             if nxi>0 and nx<=0: nx = nxi
@@ -293,28 +318,25 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, vars, adspinu
             sys.exit("printing out variable names is DONE")
         else:
             # constants
-            if ('lat' not in varsdata) and ('lat' in chunkdata):
-                varsdata['lat'] = chunkdata['lat']
-                varsdims['lat'] = chunkdata_dims['lat']
+            for iconst in keep_const:
+                if (iconst not in varsdata) and (iconst in chunkdata):
+                    varsdata[iconst] = chunkdata[iconst]
+                    varsdims[iconst] = chunkdata_dims[iconst]
             
-            if ('lon' not in varsdata) and ('lon' in chunkdata):
-                varsdata['lon'] = chunkdata['lon']
-                varsdims['lon'] = chunkdata_dims['lon']
-
-            if ('topo' not in varsdata) and ('topo' in chunkdata):
-                varsdata['topo'] = chunkdata['topo']
-                varsdims['topo'] = chunkdata_dims['topo']
             
             #time-series
-            tt.extend(chunkdata['time'])
+            if('nstep' in chunkdata): nstep.extend(chunkdata['nstep'])
+            if('time' in chunkdata): tt.extend(chunkdata['time'])
                     
-            for ivar in varnames:
-                if ivar in varsdata: 
-                    tmpt = np.vstack((varsdata[ivar],chunkdata[ivar]))
-                    varsdata[ivar] = tmpt
-                else:
-                    varsdims[ivar] = chunkdata_dims[ivar]
-                    varsdata[ivar] = chunkdata[ivar]
+            for ivar in chunkdata: 
+                if ((ivar in varnames) or VARS_ALL) and "time" in chunkdata_dims[ivar]:
+                    
+                    if(ivar in varsdata):
+                        tmpt = np.vstack((varsdata[ivar],chunkdata[ivar]))
+                        varsdata[ivar] = tmpt
+                    else:
+                        varsdims[ivar] = chunkdata_dims[ivar]
+                        varsdata[ivar] = chunkdata[ivar]
         
             
     
