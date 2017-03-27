@@ -1,42 +1,13 @@
+#!/usr/bin/env python
+
 import sys
-from optparse import OptionParser
-from netCDF4 import Dataset
-import numpy as np
-import h5py as h5
 import glob
 import math
-from numpy.f2py.crackfortran import endifpattern
+import numpy as np
+import h5py as h5
+from Modules_CLM_nc4 import CLM_NcRead_1simulation
+from optparse import OptionParser
 
-pfts=["not_vegetated",
-      "arctic_lichen",
-      "arctic_bryophyte",
-      "needleleaf_evergreen_temperate_tree",
-      "needleleaf_evergreen_boreal_tree",
-      "needleleaf_deciduous_boreal_tree",
-      "broadleaf_evergreen_tropical_tree",
-      "broadleaf_evergreen_temperate_tree",
-      "broadleaf_deciduous_tropical_tree",
-      "broadleaf_deciduous_temperate_tree",
-      "broadleaf_deciduous_boreal_tree",
-      "broadleaf_evergreen_shrub",
-      "broadleaf_deciduous_temperate_shrub",
-      "broadleaf_deciduous_boreal_shrub",
-      "evergreen_arctic_shrub",
-      "deciduous_arctic_shrub",
-      "c3_arctic_sedge",
-      "c3_arctic_forb",
-      "c3_arctic_grass",
-      "c3_non-arctic_grass",
-      "c4_grass","c3_crop",
-      "c3_irrigated",
-      "corn",
-      "irrigated_corn",
-      "spring_temperate_cereal",
-      "irrigated_spring_temperate_cereal",
-      "winter_temperate_cereal",
-      "irrigated_winter_temperate_cereal",
-      "soybean",
-      "irrigated_soybean"]
 
 #----------------------------------------------------------------------------------------------------------
 # local functions
@@ -109,7 +80,8 @@ def WriteVTK(outfile,xyz,cells,shift,cell_variables={}):
         else:
             cell_variables[key].tofile(f,sep=' ',format="%s")
 
-def WriteCLMDataToVTK(filehead,xyz,cells,clmdata, clmdata_dims, updown, nztrunc):
+#
+def WriteCLMDataToVTK(filehead, xyz, cells, clmdata, clmdata_dims, updown, nztrunc):
     steps  = np.asarray(clmdata["nstep"],dtype=int)
     nstep  = steps.shape[0]
     nx     = clmdata["topo"].shape[0]
@@ -191,6 +163,7 @@ def WriteCLMDataToVTK(filehead,xyz,cells,clmdata, clmdata_dims, updown, nztrunc)
                     var["%s_%s" % (key,pfts[j])] = sub[:,j]
                 var["%s_total" % key] = np.apply_along_axis(np.sum,1,pfts1d_wtgcell*sub)
         if len(var.keys())==0: return # if no variables, no need to plot
+        
         WriteVTK("%s-yyyydoy-%s%s.vtk" % (filehead,str.zfill(str(int(tyr)),4),str.zfill(str(int(tdoy)),3)),
                  xyz,cells,False,cell_variables=var)
 
@@ -210,8 +183,13 @@ parser.add_option("--zscale", dest="zscale", default="1", \
                   help="z-axis scaling (default = 1)")
 parser.add_option("--adspinup", dest="adspinup", action="store_true", default=False, \
                   help="whether results of an ad_spinup run (default = False)")
-parser.add_option("--starting_time",dest="starttime", default="1", \
-                  help="clm run starting time (default=1 for spinup; for transient it should be 1850")
+parser.add_option("--startyr", dest="startyr", default="1", \
+                  help="clm run starting year (default = 1, this is for spinup; for transient it should be 1850; " \
+                   " and can be user-defined)")
+parser.add_option("--endyr", dest="endyr", default="", \
+                  help="clm run ending year (default = none, i.e. end of simulation)")
+parser.add_option("--varname", dest="vars", default="ALL", \
+                  help = "variable name(s) (default: ALL) to be reading, separated by comma ")
 (options, args) = parser.parse_args()
 
 # parse the PFLOTRAN mesh file and extract surface mesh
@@ -228,10 +206,16 @@ if (options.clm_odir=="./"):
 if (options.clm_filehead==""):
     print('MUST provide CLM output data file Header, which usually is the portion usually the portion before "*.clm2.[h0-h2].*.nc"! ')
     sys.exit()
-else:
-    clmhead = options.clm_odir+'/'+options.clm_filehead+'.clm2'
 
-starttime = int(options.starttime)
+if (options.vars == ''):
+    varnames = 'ALL'
+else:
+    varnames = options.vars.split(':')  
+
+starttime = 1
+if(options.startyr != 1): starttime = int(options.startyr)
+endtime   = 9999
+if(options.endyr !=""): endtime = int(options.endyr)
 
 if (options.nztrunc==""):
     nzmax = 10
@@ -239,96 +223,28 @@ else:
     nzmax = int(options.nztrunc)
 
 #--------------------------------------------------------------------------------------
+# read-in datasets from 1 simulation year by year
+tmax = 0
+for iyr in range(starttime,endtime+1):
+    startdays = (int(iyr)-1)*365.0
+    enddays   = int(iyr)*365.0
 
-include = ['h0','h1','h2','h3','h4','h5']
-allfile = glob.glob("%s*.nc" % clmhead)
-chunks  = []
-for filename in allfile:
-    filename = filename.split(".")
-    if chunks.count(filename[-2]) == 0: chunks.append(filename[-2])
+    nx, ny, nlgrnd, nldcmp, npft, varsdata, varsdims = \
+        CLM_NcRead_1simulation(options.clm_odir, \
+                           options.clm_filehead, \
+                           False, \
+                           varnames, \
+                           startdays, enddays, \
+                           options.adspinup)
 
-# which variables would you like to keep?
-keep    = ['TOTSOMC','TOTLITC','TOTVEGC','TLAI','H2OSOI','SOILLIQ','SOILICE','TSOI']   # 8
-
-keep.append('litr1c_vr')
-keep.append('litr2c_vr')
-keep.append('litr3c_vr')
-keep.append('soil1c_vr')
-keep.append('soil2c_vr')
-keep.append('soil3c_vr')
-keep.append('soil4c_vr')
-keep.append('litr1n_vr')
-keep.append('litr2n_vr')
-keep.append('litr3n_vr')
-keep.append('soil1n_vr')
-keep.append('soil2n_vr')
-keep.append('soil3n_vr')
-keep.append('soil4n_vr')
-keep.append('smin_no3_vr')
-keep.append('smin_nh4_vr')   # 24
-keep.append('totsomc_vr')    # 25
-keep.append('totlitc_vr')
-keep.append('totsomn_vr')
-keep.append('totlitn_vr')
-
-ind_totsomc = 25  # the index in 'keep' array
-ind_totlitc = 26
-totsomc = ['soil1c_vr', 'soil2c_vr', 'soil3c_vr', 'soil4c_vr']
-ad_factor =[1,1,10,100]
-totlitc = ['litr1c_vr', 'litr2c_vr', 'litr3c_vr']
-
-# I need to add a few to get some info for plotting
-keep.append("nstep")   # need this for time step numbers
-keep.append("time")    # need this for clm timing
-keep.append("topo")    # need this for number of surface cells
-keep.append("levgrnd") # need this for the number of layers 
-keep.append("levdcmp") # need this for the number of layers 
-keep.append("pfts1d_wtgcell")
-
-# process CLM files
-for chunk in chunks:
-
-    # for each chunk of time slices, append variables to a single dictionary
-    variables = {}
-    variables_dims = {}
-    for inc in include:
+    tt = varsdata['time']
+    
+    if(tmax>=max(tt)): 
+        sys.exit('DONE ! ')# if NOT input 'end time', let exit after reading all files.
+    else:
+        tmax = max(tt)
         
-        # try reading all files
-        filename = "%s.%s.%s.nc" % (clmhead,inc,chunk)
-        try:
-            f = Dataset(filename,'r')
-        except:
-            continue
-
-        # If key is on the keep list, uniquely add to a dictionary
-        for key in f.variables.keys():
-            if key not in keep: continue
-            if key not in variables.keys(): 
-                variables[key] = np.asarray(f.variables[key])
-                variables_dims[key] = f.variables[key].dimensions
-
-            #ad-spinup run
-            if (options.adspinup and key in totsomc):
-                key_index = totsomc.index(key)
-                variables[key] = variables[key]*ad_factor[key_index]
-            
-            # summing up of total liter C
-            if key in totlitc:
-                if key==totlitc[0]:
-                    variables[keep[ind_totlitc]] = variables[key]
-                    variables_dims[keep[ind_totlitc]] = variables_dims[key]                    
-                else:
-                    variables[keep[ind_totlitc]] = variables[keep[ind_totlitc]] + variables[key]
         
-            # summing up of total som C
-            if key in totsomc:
-                if key==totsomc[0]:
-                    variables[keep[ind_totsomc]] = variables[key]
-                    variables_dims[keep[ind_totsomc]] = variables_dims[key]                    
-                else:
-                    variables[keep[ind_totsomc]] = variables[keep[ind_totsomc]] + variables[key]
-
-
-    WriteCLMDataToVTK("VAR_surf2d_"+options.clm_filehead,sxyz,scells, variables, variables_dims, True, nzmax)
-    WriteCLMDataToVTK("VAR_soil3d_"+options.clm_filehead , xyz, cells, variables, variables_dims, True, nzmax)
+    WriteCLMDataToVTK("VAR_surf2d_"+options.clm_filehead,sxyz,scells, varsdata, varsdims, True, nzmax)
+    WriteCLMDataToVTK("VAR_soil3d_"+options.clm_filehead, xyz, cells, varsdata, varsdims, True, nzmax)
 

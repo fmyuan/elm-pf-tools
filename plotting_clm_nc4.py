@@ -6,11 +6,11 @@ from optparse import OptionParser
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
-from Modules_CLM_nc4 import *
+from Modules_CLM_nc4 import CLM_NcRead_1simulation
 
 # ---------------------------------------------------------------
 # Plot soil data with layers
-def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, sdata, varname, plotlabel):
+def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plotlabel):
 
     ax=plt.subplot(nrow, ncol, isubplot)
     if(varname == 'SOILPSI'):
@@ -30,7 +30,7 @@ def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, sdata, varname, plotlab
             'Layer 10','Layer 9','Layer 8','Layer 7','Layer 6', \
             'Layer 5','Layer 4','Layer 3','Layer 2','Layer 1'), \
             loc=0, fontsize=12)
-    plt.xlabel('Years')
+    plt.xlabel(t_unit)
     plt.ylabel(varname)
 
     lx = 0.40
@@ -38,14 +38,14 @@ def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, sdata, varname, plotlab
     plt.text(lx, ly, plotlabel, transform=ax.transAxes)
 
 # Plot Grided data
-def GridedVarPlotting(plt, nrow, ncol, isubplot, t, sdata, varname, plotlabel):
+def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plotlabel):
 
     ax=plt.subplot(nrow, ncol, isubplot)
     
     plt.plot(t, sdata)
     
     #plt.legend(loc=0, fontsize=12)
-    plt.xlabel('Years')
+    plt.xlabel(t_unit)
     plt.ylabel(varname)
 
     lx = 0.40
@@ -71,6 +71,8 @@ parser.add_option("--startyr", dest="startyr", default="1", \
                    " and can be user-defined)")
 parser.add_option("--endyr", dest="endyr", default="", \
                   help="clm run ending year (default = none, i.e. end of simulation)")
+parser.add_option("--plot_tunit", dest="t_unit", default="Days", \
+                  help="X-axis time unit (default = Days, i.e. Days since start-time of simulation)")
 parser.add_option("--Xindex", dest="xindex", default=0, \
                   help = " X direction grid index to be reading/plotting, default 0 ")
 parser.add_option("--Yindex", dest="yindex", default=0, \
@@ -103,19 +105,29 @@ else:
         sys.exit()
 
 
-starttime = int(options.startyr)
-if(options.endyr !=""): endtime = int(options.endyr)
+startdays = (int(options.startyr)-1)*365.0
+if(options.endyr !=""): enddays = int(options.endyr)*365.0
+
+tunit = str.capitalize(options.t_unit)
+if tunit.startswith("H"): 
+    day_scaling = 24.0
+elif tunit.startswith("Y"): 
+    day_scaling = 1.0/365.0
+else:
+    day_scaling = 1.0
+
+
 
 ix=int(options.xindex);
 iy=int(options.yindex);
 
 # read-in datasets from 1 simulation
-tt, nx, ny, nlgrnd, nldcmp, npft, varsdata, varsdims = \
+nx, ny, nlgrnd, nldcmp, npft, varsdata, varsdims = \
     CLM_NcRead_1simulation(options.clm_odir, \
                            options.ncfileheader, \
                            options.varnames_print, \
                            varnames, \
-                           starttime, endtime, \
+                           startdays, enddays, \
                            options.adspinup)
 
 
@@ -124,6 +136,7 @@ tt, nx, ny, nlgrnd, nldcmp, npft, varsdata, varsdims = \
     
 
 # data-sets will be sorted by time-series
+tt = varsdata['time']
 t  = sorted(tt)
 it = sorted(range(len(tt)), key=lambda k: tt[k])
 nt = len(tt)
@@ -194,10 +207,13 @@ for var in varnames:
         
     #plotting
     vname = varnames[varnames.index(var)]
+    if(float(day_scaling)!=1.0): t = np.asarray(t)*day_scaling
     if(zdim_indx<0):
-        GridedVarPlotting(plt, nrow, ncol, ivar, t, gdata, vname, '(a) All Grids')
+        GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, \
+                        vname, '(a) All Grids')
     else:
-        SoilLayeredVarPlotting(plt, nrow, ncol, ivar, t, sdata, vname, '(a) Grid ( '+str(ix)+', '+str(iy)+')')
+        SoilLayeredVarPlotting(plt, nrow, ncol, ivar, t, tunit, sdata, \
+                        vname, '(a) Grid ( '+str(ix)+', '+str(iy)+')')
     
 
 
