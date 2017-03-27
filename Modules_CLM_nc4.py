@@ -192,18 +192,18 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
 # INPUTS
     #
     clmhead = clm_odir+'/'+ ncfileheader +'.clm2'
-    print('nc file set : '+ clmhead + '*.nc')
+    print('nc file set : '+ clmhead + '.*.nc')
 
     VARS_ALL = False
     nvars   = 0    
-    if (vars == ''):
+    if (len(vars) <= 0):
         print('No variable name by " --varname=??? "; So print out ALL variable names ONLY')
         varnames = []
         varnames_print = True
     elif(varnames_print):
         print('Print out ALL variable names ONLY')
         varnames = []
-    elif(vars == 'ALL'):
+    elif(vars[0] == 'ALL'):
         VARS_ALL = True
         varnames = []
         print ('Extract ALL variables from simulation')
