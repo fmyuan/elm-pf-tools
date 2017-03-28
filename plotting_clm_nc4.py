@@ -105,7 +105,9 @@ else:
         sys.exit()
 
 
+startdays = -9999
 startdays = (int(options.startyr)-1)*365.0
+enddays = -9999
 if(options.endyr !=""): enddays = int(options.endyr)*365.0
 
 tunit = str.capitalize(options.t_unit)
@@ -132,8 +134,7 @@ nx, ny, nlgrnd, nldcmp, npft, varsdata, varsdims = \
 
 
 #--------------------------------------------------------------------------------------
- 
-    
+
 
 # data-sets will be sorted by time-series
 tt = varsdata['time']

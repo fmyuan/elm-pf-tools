@@ -68,6 +68,16 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
     odata_dims = {}
 
     try:
+        startdays = float(startdays)
+    except ValueError:
+        startdays = -9999
+
+    try:
+        enddays = float(enddays)
+    except ValueError:
+        enddays = -9999
+
+    try:
         f = Dataset(ncfile,'r')
         if varnames_print: 
             print('FILE: '+ncfile+' ------- ')
@@ -98,7 +108,7 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
         tt   = np.asarray(f.variables['time'])# days since model simulation starting time
         tdays1 = min(tt)
         tdays2 = max(tt)
-        if(startdays !=''):
+        if(startdays>=0):
             if(startdays>tdays2): 
                 odata = {}
                 odata_dims = {}
@@ -107,7 +117,7 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
                 s_index = int(bisect_left(tt, startdays))
                 odata[key] = odata[key][s_index:,]
              
-        if(enddays !=''):
+        if(enddays>0):
             if(enddays<tdays1): 
                 odata = {}
                 odata_dims = {}
@@ -210,6 +220,16 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
     else:
         varnames = vars
         nvars = len(varnames)
+
+    try:
+        startdays = float(startdays)
+    except ValueError:
+        startdays = -9999
+
+    try:
+        enddays = float(enddays)
+    except ValueError:
+        enddays = -9999
 
 #--------------------------------------------------------------------------------------
 
