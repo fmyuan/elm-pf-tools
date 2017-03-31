@@ -4,7 +4,7 @@
 ## Author: Fengming YUAN, CCSI/ESD-ORNL, Oak Ridge, TN
 ## Date: 2017-March 
 
-import sys
+import os, sys
 import glob
 import math
 from optparse import OptionParser
@@ -199,6 +199,8 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
                            adspinup):
 
 #--------------------------------------------------------------------------------------
+    cwdir = os.getcwd()
+    
 # INPUTS
     #
     clmhead = clm_odir+'/'+ ncfileheader +'.clm2'
@@ -275,6 +277,10 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
     # build all nc files into one or two arrays
     fincludes = ['h0','h1','h2','h3','h4','h5']
     allfile = glob.glob("%s.h*.*.nc" % clmhead)
+    if(len(allfile)<=0):
+        sys.exit("No nc file exists - %s.h*.*.nc in: %s" %(clmhead, cwdir))
+    
+    
     fchunks  = []
     styr = -999
     endyr= -999
@@ -302,19 +308,38 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
     nlgrnd = 0
     npft   = 0          
 
+    hinc_done_print = []
+    
     # process CLM files
     for chunk in fchunks:  # actually one time-series in a file
 
-        # for each chunk of time slices, append variables to a single dictionary
         chunkdata      = {}
         chunkdata_dims = {}
 
-        # START LOOP: try reading all files (h0-h5) in ONE time-chunk
+        # START LOOP: try reading files (h0-h5) in ONE time-chunk for each of *.h0 - h5 files
+        #   (note: the time frequency may NOT be same for h0~h5)
         for finc in fincludes:        
+
+            # file name in full
             filename = "%s.%s.%s.nc" % (clmhead,finc,chunk)
+            if (not os.path.isfile(filename)): continue
+
+            # need only to print ONCE for each of h0-h5
+            if (varnames_print):
+                if finc in hinc_done_print:
+                    continue
+                else:
+                    hinc_done_print.append(finc)
+                    print("-----------------------------------------------------")
+
+
+            # for each chunk of time slices, append variables to a single dictionary
+            if(finc not in chunkdata):
+                chunkdata[finc]  = {}
+                chunkdata_dims[finc] = {}
         
             chunkdatai,chunkdatai_dims = \
-                CLM_NcRead_1file(filename, varnames_print, keep, chunkdata.keys(), \
+                CLM_NcRead_1file(filename, varnames_print, keep, chunkdata[finc].keys(), \
                                  startdays, enddays, adspinup, VARS_ALL)
             
             # the following are constant and shall be same for all files (i.e. only need once)
@@ -333,37 +358,51 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
                 npft = len(chunkdatai['pft'])    
                 
             if len(chunkdatai)>0: 
-                if (len(chunkdata)<=0):
-                    chunkdata = chunkdatai
-                    chunkdata_dims = chunkdatai_dims
-                else:
-                    for ikey in chunkdatai:
-                        if (ikey in chunkdata) and ("time" in chunkdata_dims):
-                            chunkdata[ikey].extend(chunkdatai[ikey])
+                for ikey in chunkdatai:
+                    if ("time" in chunkdatai_dims[ikey]):
+                        if (ikey in chunkdata[finc]):
+                            chunkdata[finc][ikey].extend(chunkdatai[ikey])
                         else:
-                            chunkdata[ikey] = chunkdatai[ikey]
-                            chunkdata_dims[ikey] = chunkdatai_dims[ikey]
+                            chunkdata[finc][ikey] = chunkdatai[ikey]
+                            chunkdata_dims[finc][ikey] = chunkdatai_dims[ikey]
+                                
+                    else:
+                        chunkdata[ikey] = chunkdatai[ikey]         # for CONSTANTS, only needs once for all h0-h5
+                        chunkdata_dims[ikey] = chunkdatai_dims[ikey]
         # END LOOP: reading all files (h0-h5) in ONE time-chunk
 
         #append chunks of TIMES
-        if varnames_print: 
-            sys.exit("printing out variable names is DONE")
-        else:
+        if not varnames_print: 
 
-            for ivar in chunkdata: 
+            for fvar in chunkdata: 
                
-                # 
-                if (ivar not in varsdata):
-                    varsdata[ivar] = chunkdata[ivar]
-                    varsdims[ivar] = chunkdata_dims[ivar]
-                else:                
-                    #only need to append time-series data
-                    if("time" in chunkdata_dims[ivar]):
-                        if(len(chunkdata_dims)>1):
-                            tmpt = np.vstack((varsdata[ivar],chunkdata[ivar]))
-                            varsdata[ivar] = tmpt
-                        else:
-                            varsdata[ivar].append(chunkdata[ivar])
+                #
+                if len(chunkdata[fvar])>0:  
+                    if (fvar not in varsdata) and (fvar not in fincludes):   # constants, excluding str of 'h0~h5'
+                        varsdata[fvar] = chunkdata[fvar]
+                        varsdims[fvar] = chunkdata_dims[fvar]
+                    
+                    elif fvar in fincludes:                              # time-series in 'h0~h5'               
+                        
+                        for ivar in chunkdata[fvar]:
+                            
+                            # chunkdata is a nested dictionary, flatten it
+                            finc_var = "%s_%s"%(fvar, ivar)
+                            
+                            if "time" in list(chunkdata_dims[fvar][ivar]):
+                                
+                                if finc_var not in varsdata:
+                                    varsdata[finc_var] = chunkdata[fvar][ivar]
+                                    varsdims[finc_var] = chunkdata_dims[fvar][ivar]
+                                
+                                else:
+                                                                                                        
+                                    if(len(chunkdata_dims[fvar][ivar])>1):
+                                        tmpt = np.vstack((varsdata[finc_var],chunkdata[fvar][ivar]))
+                                    else:
+                                        tmpt = np.concatenate((varsdata[finc_var],chunkdata[fvar][ivar]))
+                        
+                                    varsdata[finc_var] = tmpt
             
 
 #--------------------------------------------------------------------------------------

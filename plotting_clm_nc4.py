@@ -2,6 +2,7 @@
 
 import sys
 import glob
+import re
 from optparse import OptionParser
 import numpy as np
 import matplotlib.pyplot as plt
@@ -61,7 +62,7 @@ parser.add_option("--clmout_dir", dest="clm_odir", default="./", \
 parser.add_option("--clmfile_head", dest="ncfileheader", default="", \
                   help = "clm output file name header, usually the portion before *.clm2.h[0-5].*.nc")
 parser.add_option("--varname_help", dest="varnames_print", default=False, \
-                  help = "print out VARIABLES available ")
+                  help = "print out VARIABLES available ", action="store_true")
 parser.add_option("--varname", dest="vars", default="", \
                   help = "variable name(s) (max. 4) to be reading/plotting, separated by comma ")
 parser.add_option("--adspinup", dest="adspinup", action="store_true", default=False, \
@@ -104,6 +105,9 @@ else:
         print('Currently ONLY support at most 4 variables to be plotted')
         sys.exit()
 
+if (options.varnames_print):
+    print('checking Varname lists')
+    varnames = []
 
 startdays = -9999
 startdays = (int(options.startyr)-1)*365.0
@@ -132,15 +136,10 @@ nx, ny, nlgrnd, nldcmp, npft, varsdata, varsdims = \
                            startdays, enddays, \
                            options.adspinup)
 
-
+if (options.varnames_print): sys.exit('Variable Names Printing DONE!')
 #--------------------------------------------------------------------------------------
-
-
-# data-sets will be sorted by time-series
-tt = varsdata['time']
-t  = sorted(tt)
-it = sorted(range(len(tt)), key=lambda k: tt[k])
-nt = len(tt)
+# 
+vars_list = list(varsdata.keys())    # var_list is in format of 'h*_varname', in which 'varname' is the real variable names
 
 # dimension max.
 if2dgrid = True
@@ -149,7 +148,6 @@ nxy = nx*ny
 nl = max(nlgrnd, nldcmp)
 
 # plotting
-
 nrow = 1   # sub-plot vertically arranged number (row no.)
 ncol = 1   # sub-plot horizontally arranged number (column no.)
 if(nvars>=2):
@@ -157,14 +155,25 @@ if(nvars>=2):
 if(nvars>=3):
     ncol = 2
 
-sdata = np.zeros((nt,nl*nx*ny)) #temporary data holder in 2-D (tt, layers*grids)
-gdata = np.zeros((nt,nx*ny))    #temporary data holder in 2-D (tt, grids)
-
 ivar = 0
 for var in varnames:
-    # plot 1
-    vdata = varsdata[var]
-    vdims = varsdims[var]
+
+    # names for variable and its time-axis
+    for hv in vars_list:
+        if re.search(var, hv): 
+            var_h = hv
+            hinc  = hv.replace(var,'')
+            var_t = '%stime' %hinc
+            break
+        
+    vdata = varsdata[var_h]
+    vdims = varsdims[var_h]
+    
+    tt = varsdata[var_t]
+    t  = sorted(tt)
+    it = sorted(range(len(tt)), key=lambda k: tt[k])
+    nt = len(tt)
+
     
     #time dimension
     dim_tt = -999
@@ -178,16 +187,21 @@ for var in varnames:
     zdim_indx = -999
     if('levgrnd' in vdims): 
         zdim_indx = vdims.index('levgrnd')
-        nl = vdims[zdim_indx]
+        nl = vdata.shape[zdim_indx]
     elif('levdcmp' in vdims): 
         zdim_indx = vdims.index('levdcmp')
-        nl = vdims[zdim_indx]
+        nl = vdata.shape[zdim_indx]
 
     # pft ? (need further work here)
     if(npft>0):
         pdim_indx = vdims.index('pft')  
     
     # data series
+    if(zdim_indx<0):# 2-D grid data
+        gdata = np.zeros((nt,nx*ny))    #temporary data holder in 2-D (tt, grids)
+    else:
+        sdata = np.zeros((nt,nl*nx*ny)) #temporary data holder in 2-D (tt, layers*grids)
+    
     for i in range(len(tt)):
                 
         if(zdim_indx<0):# 2-D grid data
