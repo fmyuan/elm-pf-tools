@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-from conda_build._link import SITE_PACKAGES
 import numpy as np
 import h5py as h5
 import matplotlib.pyplot as plt
@@ -15,6 +14,8 @@ parser.add_option("--workdir", dest="workdir", default="./", \
                   help = "data work directory (default = ./, i.e., under current dir)")
 parser.add_option("--pfh5file", dest="pfh5file", default="", \
                   help = "pflotran output h5 file name without .h5 ")
+parser.add_option("--time_unit", dest="tunit", default="", \
+                  help = "time unit, default UNKNOWN ")
 parser.add_option("--varname", dest="vars", default="", \
                   help = "variable name(s) (max. 4) to be reading/plotting, separated by comma ")
 parser.add_option("--Xindex", dest="xindex", default=0, \
@@ -56,6 +57,13 @@ else:
         print('Currently ONLY support at most 4 variables to be plotted')
         sys.exit()
 
+if (options.tunit == ''):
+    time_unit =''
+    print('You may input time unit by " --time_unit=??? "')
+else:
+    time_unit = options.tunit
+    print('Time Unit: '+time_unit)
+
 #
 
 x=int(options.xindex);
@@ -74,7 +82,7 @@ vardata3 = []
 for i in f0.keys():
     title = i.split()
     if title[0] == 'Time:':
-        tt.append(float(title[1])/365)	
+        tt.append(float(title[1]))	
         group0 = f0[i]
             
         for j in group0.keys():
@@ -109,7 +117,7 @@ for i in f0.keys():
 t  = sorted(tt)
 it = sorted(range(len(tt)), key=lambda k: tt[k])
 nt = len(tt)
-nl = 15    # 10 layers currently 
+nl = min(len(vardata0[0]),15)
 
 # plotting
 
@@ -127,7 +135,7 @@ for i in range(len(tt)):
 
 ax0=plt.subplot(nrow, ncol, 1)
 if(varname0 == 'Liquid_Pressure'):
-    sdata = -sdata
+    #sdata = -sdata
     ax0.set_yscale("log", nonposy='clip')
     
 plt.plot(t, sdata[:,0], 'b-.', t, sdata[:,1], 'g-.', \
@@ -143,7 +151,7 @@ plt.plot(t, sdata[:,0], 'b-.', t, sdata[:,1], 'g-.', \
 #            'Layer 10','Layer 9','Layer 8','Layer 7','Layer 6', \
 #            'Layer 5','Layer 4','Layer 3','Layer 2','Layer 1'), \
 #            loc=0, fontsize=12)
-plt.xlabel('Years')
+plt.xlabel('Time ('+time_unit+')')
 plt.ylabel(varname0)
 
 lx = 0.05
@@ -158,7 +166,7 @@ if (nvars >= 2):
 
     ax1=plt.subplot(nrow, ncol, 2)
     if(varname1 == 'Liquid_Pressure'):
-        sdata = -sdata
+        #sdata = -sdata
         ax1.set_yscale("log", nonposy='clip')
     
     plt.plot(t, sdata[:,0], 'b-.', t, sdata[:,1], 'g-.', \
@@ -175,7 +183,7 @@ if (nvars >= 2):
 #                'Layer 5','Layer 4','Layer 3','Layer 2','Layer 1'), \
 #                loc=0, fontsize=12)
 
-    plt.xlabel('Years')
+    plt.xlabel('Time ('+time_unit+')')
     plt.ylabel(varname1)
     lx = 0.05
     ly = 0.9
@@ -189,7 +197,7 @@ if (nvars >= 3):
 
     ax2=plt.subplot(nrow, ncol, 3)
     if(varname2 == 'Liquid_Pressure'):
-        sdata = -sdata
+        #sdata = -sdata
         ax2.set_yscale("log", nonposy='clip')
     
     plt.plot(t, sdata[:,0], 'b-.', t, sdata[:,1], 'g-.', \
@@ -205,7 +213,7 @@ if (nvars >= 3):
 #                'Layer 10','Layer 9','Layer 8','Layer 7','Layer 6', \
 #                'Layer 5','Layer 4','Layer 3','Layer 2','Layer 1'), \
 #                loc=0, fontsize=12)
-    plt.xlabel('Years')
+    plt.xlabel('Time ('+time_unit+')')
     plt.ylabel(varname2)
     lx = 0.05
     ly = 0.9
@@ -219,7 +227,7 @@ if (nvars >= 4):
 
     ax3=plt.subplot(nrow, ncol, 4)
     if(varname3 == 'Liquid_Pressure'):
-        sdata = -sdata
+        #sdata = -sdata
         ax3.set_yscale("log", nonposy='clip')
     
     plt.plot(t, sdata[:,0], 'b-.', t, sdata[:,1], 'g-.', \
@@ -235,7 +243,7 @@ if (nvars >= 4):
                 'Layer 10','Layer 9','Layer 8','Layer 7','Layer 6', \
                 'Layer 5','Layer 4','Layer 3','Layer 2','Layer 1'), \
                 loc=0, fontsize=12)
-    plt.xlabel('Years')
+    plt.xlabel('Time ('+time_unit+')')
     plt.ylabel(varname3)
     lx = 0.05
     ly = 0.9

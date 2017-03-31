@@ -14,6 +14,8 @@ parser.add_option("--workdir", dest="workdir", default="./", \
                   help = "data work directory (default = ./, i.e., under current dir)")
 parser.add_option("--pfh5file", dest="pfh5file", default="", \
                   help = "pflotran output h5 file name without .h5 ")
+parser.add_option("--time_unit", dest="tunit", default="", \
+                  help = "time unit, default UNKNOWN ")
 parser.add_option("--varname", dest="vars", default="", \
                   help = "variable name(s) (max. 4) to be reading/plotting, separated by comma ")
 parser.add_option("--Xindex", dest="xindex", default=0, \
@@ -54,6 +56,13 @@ else:
     if(nvars>4):
         print('Currently ONLY support at most 4 variables to be plotted')
         sys.exit()
+
+if (options.tunit == ''):
+    time_unit =''
+    print('You may input time unit by " --time_unit=??? "')
+else:
+    time_unit = options.tunit
+    print('Time Unit: '+time_unit)
 
 #
 
@@ -130,7 +139,7 @@ if(varname0 == 'Liquid_Pressure'):
     ax0.set_yscale("log", nonposy='clip')
     
 plt.plot(t, sdata)
-plt.xlabel('Years')
+plt.xlabel('Time ('+time_unit+')')
 plt.ylabel(varname0)
 
 lx = 0.05
@@ -150,7 +159,7 @@ if (nvars >= 2):
     
     plt.plot(t, sdata)
 
-    plt.xlabel('Time')
+    plt.xlabel('Time ('+time_unit+')')
     plt.ylabel(varname1)
     lx = 0.05
     ly = 0.9
@@ -168,7 +177,7 @@ if (nvars >= 3):
         ax2.set_yscale("log", nonposy='clip')
     
     plt.plot(t, sdata)
-    plt.xlabel('Time')
+    plt.xlabel('Time ('+time_unit+')')
     plt.ylabel(varname2)
     lx = 0.05
     ly = 0.9
@@ -186,7 +195,7 @@ if (nvars >= 4):
         ax3.set_yscale("log", nonposy='clip')
     
     plt.plot(t, sdata)
-    plt.xlabel('Time')
+    plt.xlabel('Time ('+time_unit+')')
     plt.ylabel(varname3)
     lx = 0.05
     ly = 0.9
