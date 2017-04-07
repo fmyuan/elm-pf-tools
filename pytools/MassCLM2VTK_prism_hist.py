@@ -37,6 +37,7 @@ def GetPflotranMeshData(filename, zscale):
     c2 = c24[0][0]
     
     cpl  = c1-c2 # cells per layer
+    nl   = int(cells.shape[0]/cpl)
 
     # extract the top topology and remap vertex ids
     tcells = np.copy(cells[:cpl,:(topo+1)]); tcells[:,0] = topo
@@ -82,7 +83,7 @@ def WriteVTK(outfile,xyz,cells,shift,cell_variables={}):
 
 #
 def WriteCLMDataToVTK(filehead, xyz, cells, clmdata, clmdata_dims, updown, nztrunc):
-    steps  = np.asarray(clmdata["nstep"],dtype=int)
+    steps  = np.asarray(clmdata["h0_nstep"],dtype=int)
     nstep  = steps.shape[0]
     nx     = clmdata["topo"].shape[0]
     if (len(clmdata["topo"].shape)==1):
@@ -96,14 +97,14 @@ def WriteCLMDataToVTK(filehead, xyz, cells, clmdata, clmdata_dims, updown, nztru
     nz     = min(nztrunc, min(nz1,nz2))
     ncells = cells.shape[0]
 
-    times  = np.asarray(clmdata["time"],dtype=int)   # "time" in clm output *.nc IS in days from starting time of the year
+    times  = np.asarray(clmdata["h1_time"],dtype=int)   # "time" in clm output *.nc IS in days from starting time of the year
 
     # loop over all time steps
     for i in range(nstep):
         # build another dictionary with references to this time steps variables
         var = {}
-        tyr = math.floor(times[i]/365)+starttime          # converting time unit from days to year-doy
-        tdoy= int(times[i]-(tyr-starttime)*365)           # converting time unit from days to year-doy
+        tyr = math.floor(times[i]/365.0)                    # converting time unit from days to year
+        tdoy= int(times[i]-tyr*365.0)           # converting time unit from days to doy
         for key in clmdata.keys():
             data = clmdata[key]
             shp  = clmdata[key].shape           
@@ -121,48 +122,37 @@ def WriteCLMDataToVTK(filehead, xyz, cells, clmdata, clmdata_dims, updown, nztru
                 # truncating data along Z-dimension if needed
                 if (nz<shp[ind_zdim]):
                     if(ind_zdim==0): 
-                        data = clmdata[key][abs(nz-shp[ind_zdim]):,]
+                        data = data[:nz,]
                     elif(ind_zdim==1):
-                        data = clmdata[key][:,abs(nz-shp[ind_zdim]):,]
+                        data = data[:,:nz,]
                     elif(ind_zdim==2):
-                        data = clmdata[key][:,:,abs(nz-shp[ind_zdim]):,]
+                        data = data[:,:,:nz,]
                     elif(ind_zdim==3):
-                        data = clmdata[key][:,:,:,abs(nz-shp[ind_zdim]):,]
+                        data = data[:,:,:,:nz,]
                     else:
                         print('Warning: Z-dimension beyond 4-D: please check ! ')
                         sys.exit()
-                        
-                    shp = data.shape
-       
-                     
+                    
+                    shp = data.shape           
+
                 #if VTK 3-D PF mesh is upside-down, then need to do so for CLM data from defined bottom layer
+                # (this MUST be done after truncation of bottom layers above)
                 if updown: 
                     if(ind_zdim==0): 
-                        data = data[nz-1::-1,]
+                        data = data[shp[ind_zdim]::-1,]
                     elif(ind_zdim==1): 
-                        data = data[:,nz-1::-1,]
+                        data = data[:,shp[ind_zdim]::-1,]
                     elif(ind_zdim==2):
-                        data = data[:,:,nz-1::-1,]
+                        data = data[:,:,shp[ind_zdim]::-1,]
                     elif(ind_zdim==3):
-                        data = data[:,:,:,nz-1::-1,]
+                        data = data[:,:,:,shp[ind_zdim]::-1,]
                     else:
                         print('Warning: Z-dimension beyond 4-D: please check ! ')
                         sys.exit()
-            
+                                 
             if np.prod(data[i,...].shape) == ncells:
                 # shape of data matches the number of cells in the VTK mesh
                 var[key] = data[i,...].reshape((cells.shape[0]))
-            elif np.prod(data[i,...].shape) % ncells == 0:
-                # shape of data matches a multiple of the number of cells, but not nz times
-                if np.prod(data[i,...].shape) / ncells == nz: continue
-                if(clmdata['pfts1d_wtgcell'].exists()): continue
-                pfts1d_wtgcell = clmdata['pfts1d_wtgcell'].reshape((nxy,-1))
-                sub = data[i,...].reshape((nxy,-1))
-                for j in range(sub.shape[1]):
-                    if np.allclose(sub[:,j],1e36): continue
-                    var["%s_%s" % (key,pfts[j])] = sub[:,j]
-                var["%s_total" % key] = np.apply_along_axis(np.sum,1,pfts1d_wtgcell*sub)
-        if len(var.keys())==0: return # if no variables, no need to plot
         
         WriteVTK("%s-yyyydoy-%s%s.vtk" % (filehead,str.zfill(str(int(tyr)),4),str.zfill(str(int(tdoy)),3)),
                  xyz,cells,False,cell_variables=var)
@@ -183,6 +173,8 @@ parser.add_option("--zscale", dest="zscale", default="1", \
                   help="z-axis scaling (default = 1)")
 parser.add_option("--adspinup", dest="adspinup", action="store_true", default=False, \
                   help="whether results of an ad_spinup run (default = False)")
+parser.add_option("--upsidedown", dest="updown", action="store_true", default=False, \
+                  help="whether flip-over data vertically (upside-down) (default = False)")
 parser.add_option("--startyr", dest="startyr", default="1", \
                   help="clm run starting year (default = 1, this is for spinup; for transient it should be 1850; " \
                    " and can be user-defined)")
@@ -192,6 +184,13 @@ parser.add_option("--varname", dest="vars", default="ALL", \
                   help = "variable name(s) (default: ALL) to be reading, separated by comma ")
 (options, args) = parser.parse_args()
 
+#
+if (options.nztrunc==""):
+    nzmax = 15
+else:
+    nzmax = int(options.nztrunc)
+
+#
 # parse the PFLOTRAN mesh file and extract surface mesh
 if (options.pf_meshfile==""):
     print('MUST provide PFLOTRAN mesh file name including its path! Sorry but Exit -- ')
@@ -212,22 +211,17 @@ if (options.vars == ''):
 else:
     varnames = options.vars.split(':')  
 
-starttime = 1
-if(options.startyr != 1): starttime = int(options.startyr)
-endtime   = 9999
-if(options.endyr !=""): endtime = int(options.endyr)
-
-if (options.nztrunc==""):
-    nzmax = 10
-else:
-    nzmax = int(options.nztrunc)
+startyyyy = 1
+if(options.startyr != 1): startyyyy = int(options.startyr)
+endyyyy   = 9999
+if(options.endyr !=""):   endyyyy = int(options.endyr)
 
 #--------------------------------------------------------------------------------------
 # read-in datasets from 1 simulation year by year
 tmax = 0
-for iyr in range(starttime,endtime+1):
-    startdays = (int(iyr)-1)*365.0
-    enddays   = int(iyr)*365.0
+for iyr in range(startyyyy,endyyyy):
+    startdays = int(iyr)*365.0+1.0
+    enddays   = (int(iyr)+1)*365.0
 
     nx, ny, nlgrnd, nldcmp, npft, varsdata, varsdims = \
         CLM_NcRead_1simulation(options.clm_odir, \
@@ -237,7 +231,7 @@ for iyr in range(starttime,endtime+1):
                            startdays, enddays, \
                            options.adspinup)
 
-    tt = varsdata['time']
+    tt = varsdata['h0_time']
     
     if(tmax>=max(tt)): 
         sys.exit('DONE ! ')# if NOT input 'end time', let exit after reading all files.
@@ -245,6 +239,6 @@ for iyr in range(starttime,endtime+1):
         tmax = max(tt)
         
         
-    WriteCLMDataToVTK("VAR_surf2d_"+options.clm_filehead,sxyz,scells, varsdata, varsdims, True, nzmax)
-    WriteCLMDataToVTK("VAR_soil3d_"+options.clm_filehead, xyz, cells, varsdata, varsdims, True, nzmax)
+    WriteCLMDataToVTK("VAR_surf2d_"+options.clm_filehead,sxyz,scells, varsdata, varsdims, options.updown, nzmax)
+    WriteCLMDataToVTK("VAR_soil3d_"+options.clm_filehead, xyz, cells, varsdata, varsdims, options.updown, nzmax)
 
