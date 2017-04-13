@@ -1,7 +1,7 @@
  hist_empty_htapes = .true.
- hist_fincl1 = 'TOTLITC','TOTSOMC','TOTVEGC','TOTLITN','TOTSOMN','TOTVEGN','TLAI','SMINN'
- hist_fincl2 = 'SOILLIQ','SOILICE','TSOI','SMINN_vr'
+ hist_fincl1 = 'TOTLITC','TOTSOMC','TOTVEGC','TOTLITN','TOTSOMN','TOTVEGN'
+ hist_fincl2 = 'SOILLIQ','SOILICE','TSOI','SMIN_NH4_vr','SMIN_NO3_vr','TLAI','SMINN'
  hist_dov2xy = .true.,.true.
- hist_nhtfrq = 0, 0
- hist_mfilt  = 12, 12
+ hist_nhtfrq = 0, -24
+ hist_mfilt  = 12, 365
  hist_avgflag_pertape = 'A', 'A'
