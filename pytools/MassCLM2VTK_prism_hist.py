@@ -82,8 +82,11 @@ def WriteVTK(outfile,xyz,cells,shift,cell_variables={}):
             cell_variables[key].tofile(f,sep=' ',format="%s")
 
 #
-def WriteCLMDataToVTK(filehead, xyz, cells, clmdata, clmdata_dims, updown, nztrunc):
-    steps  = np.asarray(clmdata["h0_nstep"],dtype=int)
+def WriteCLMDataToVTK(filehead, xyz, cells, timekey, clmdata, clmdata_dims, updown, nztrunc):
+    
+    vhdr = timekey.split("_")[0]
+    
+    steps  = np.asarray(clmdata[vhdr+"_nstep"],dtype=int)
     nstep  = steps.shape[0]
     nx     = clmdata["topo"].shape[0]
     if (len(clmdata["topo"].shape)==1):
@@ -97,7 +100,7 @@ def WriteCLMDataToVTK(filehead, xyz, cells, clmdata, clmdata_dims, updown, nztru
     nz     = min(nztrunc, min(nz1,nz2))
     ncells = cells.shape[0]
 
-    times  = np.asarray(clmdata["h1_time"],dtype=int)   # "time" in clm output *.nc IS in days from starting time of the year
+    times  = np.asarray(clmdata[vhdr+"_time"],dtype=int)   # "time" in clm output *.nc IS in days from starting time of the year
 
     # loop over all time steps
     for i in range(nstep):
@@ -106,6 +109,9 @@ def WriteCLMDataToVTK(filehead, xyz, cells, clmdata, clmdata_dims, updown, nztru
         tyr = math.floor(times[i]/365.0)                    # converting time unit from days to year
         tdoy= int(times[i]-tyr*365.0)           # converting time unit from days to doy
         for key in clmdata.keys():
+            
+            if vhdr not in key: continue   # skip if not same time-series data
+                        
             data = clmdata[key]
             shp  = clmdata[key].shape           
             dim_list = clmdata_dims[key]
@@ -168,7 +174,7 @@ parser.add_option("--clmfile_head", dest="clm_filehead", default="", \
 parser.add_option("--pflotran_meshfile", dest="pf_meshfile", default="", \
                   help="pflotran mesh file including its path (default = ./*.h5)")
 parser.add_option("--nzmax", dest="nztrunc", default="", \
-                  help="max. z depth numbers (default = 10)")
+                  help="max. z depth numbers (default = 15)")
 parser.add_option("--zscale", dest="zscale", default="1", \
                   help="z-axis scaling (default = 1)")
 parser.add_option("--adspinup", dest="adspinup", action="store_true", default=False, \
@@ -217,6 +223,8 @@ endyyyy   = 9999
 if(options.endyr !=""):   endyyyy = int(options.endyr)
 
 #--------------------------------------------------------------------------------------
+fincludes = ['h0','h1','h2','h3','h4','h5']
+
 # read-in datasets from 1 simulation year by year
 tmax = 0
 for iyr in range(startyyyy,endyyyy):
@@ -230,15 +238,20 @@ for iyr in range(startyyyy,endyyyy):
                            varnames, \
                            startdays, enddays, \
                            options.adspinup)
+    tt=[]
+    for finc in fincludes:
+        timekey = finc+"_time"          
+        if timekey in varsdata: 
+            tt = np.append(tt,varsdata[timekey])       
+        
+            WriteCLMDataToVTK("VAR_surf2d_"+options.clm_filehead+"_"+finc,sxyz,scells, \
+                                  timekey, varsdata, varsdims, options.updown, nzmax)
+            WriteCLMDataToVTK("VAR_soil3d_"+options.clm_filehead+"_"+finc, xyz, cells, \
+                                  timekey, varsdata, varsdims, options.updown, nzmax)
 
-    tt = varsdata['h0_time']
     
-    if(tmax>=max(tt)): 
-        sys.exit('DONE ! ')# if NOT input 'end time', let exit after reading all files.
-    else:
-        tmax = max(tt)
-        
-        
-    WriteCLMDataToVTK("VAR_surf2d_"+options.clm_filehead,sxyz,scells, varsdata, varsdims, options.updown, nzmax)
-    WriteCLMDataToVTK("VAR_soil3d_"+options.clm_filehead, xyz, cells, varsdata, varsdims, options.updown, nzmax)
+    if(len(tt)==0 or tmax>=max(tt)): 
+        exit("DONE!") # end of all times in the simulation
+    else: 
+        tmax = max(tt) #updating max. time
 

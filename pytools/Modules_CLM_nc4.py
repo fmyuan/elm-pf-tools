@@ -289,10 +289,10 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
     for filename in allfile:
         filename = filename.split(".")
         filetime = filename[-2]                 # clm nc filename format for 'timing', separated by '-'
-        fileyyyy = filetime.split("-")[0]       # the first part is yyyy
+        #fileyyyy = filetime.split("-")[0]       # the first part is yyyy
         if fchunks.count(filename[-2]) == 0:
-            if (   (int(fileyyyy)>= styr or styr <0) \
-               and (int(fileyyyy)<=endyr or endyr<0)  ) : 
+            #if (   (int(fileyyyy)>= styr or styr <0) \
+            #   and (int(fileyyyy)<=endyr or endyr<0)  ) :   # unfortunately, 'fileyyyy' IS not always same as simulation year.
                 fchunks.append(filename[-2])
     
 
