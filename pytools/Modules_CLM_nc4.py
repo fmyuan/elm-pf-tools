@@ -184,6 +184,26 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
                 else:
                     odata[keep_vars[indx]]      = odata[keep_vars[indx]] + odata[isub]
 
+    
+    # convert 'soilliq' to 'saturation_lia', if available
+    # sat = h2osoi_liq(c,j) / (watsat(c,j)*dz(c,j)*denh2o)
+    denh2o = 1000.0 #kg/m3
+    if 'SOILSAT_LIQ' in keep_vars:
+        if 'SOILLIQ' in odata.keys():
+            dary = np.array(odata['SOILLIQ'])
+            dvec = np.array(porosity*dz*denh2o)
+            odata['SOILSAT_LIQ'] = dary/dvec[None,:,:,:]
+            odata_dims['SOILSAT_LIQ'] = odata_dims['SOILLIQ'] 
+        
+    denice = 917.0 #kg/m3
+    if 'SOILSAT_ICE' in keep_vars:
+        if 'SOILICE' in odata.keys():
+            dary = np.array(odata['SOILICE'])
+            dvec = np.array(porosity*dz*denice)
+            odata['SOILSAT_ICE'] = dary/dvec[None,:,:,:]
+            odata_dims['SOILSAT_ICE'] = odata_dims['SOILICE'] 
+        
+        
     # out datasets
     return odata, odata_dims
 
@@ -246,6 +266,10 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
     keep_const.append("DZSOI")
     keep_const.append("pft")
     keep_const.append("pfts1d_wtgcell")
+    keep_const.append("WATSAT")
+    keep_const.append("SUCSAT")
+    keep_const.append("BSW")
+    keep_const.append("HKSAT")
 
     # variables name dictionary
     keep = keep_const
@@ -273,6 +297,13 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
         if VARS_ALL and 'TOTLITN_vr' not in keep: keep.append('TOTLITN_vr') 
         indx_totlitn_vr = keep.index('TOTLITN_vr')
         keep.extend(totlitn_vr)
+        
+    #
+    if 'SOILLIQ' in varnames or VARS_ALL:
+        if 'SOILSAT_LIQ' not in keep: keep.append('SOILSAT_LIQ') 
+        
+    if 'SOILICE' in varnames or VARS_ALL:
+        if 'SOILSAT_ICE' not in keep: keep.append('SOILSAT_ICE') 
 
     # build all nc files into one or two arrays
     fincludes = ['h0','h1','h2','h3','h4','h5']
@@ -295,7 +326,6 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
             #   and (int(fileyyyy)<=endyr or endyr<0)  ) :   # unfortunately, 'fileyyyy' IS not always same as simulation year.
                 fchunks.append(filename[-2])
     
-
 #--------------------------------------------------------------------------------------
 #
     # final datasets initialization
@@ -356,6 +386,14 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
                 nldcmp = len(chunkdatai['levdcmp'])                
             if (npft<=0 and 'pft' in chunkdatai):
                 npft = len(chunkdatai['pft'])    
+ 
+            if ('WATSAT' in chunkdatai): 
+                global porosity
+                porosity = chunkdatai['WATSAT']
+            if ('DZSOI' in chunkdatai):
+                global dz 
+                dz = chunkdatai['DZSOI']
+
                 
             if len(chunkdatai)>0: 
                 for ikey in chunkdatai:

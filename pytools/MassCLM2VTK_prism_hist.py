@@ -8,6 +8,8 @@ import h5py as h5
 from Modules_CLM_nc4 import CLM_NcRead_1simulation
 from optparse import OptionParser
 
+#
+inityr = 1
 
 #----------------------------------------------------------------------------------------------------------
 # local functions
@@ -160,7 +162,7 @@ def WriteCLMDataToVTK(filehead, xyz, cells, timekey, clmdata, clmdata_dims, updo
                 # shape of data matches the number of cells in the VTK mesh
                 var[key] = data[i,...].reshape((cells.shape[0]))
         
-        WriteVTK("%s-yyyydoy-%s%s.vtk" % (filehead,str.zfill(str(int(tyr)),4),str.zfill(str(int(tdoy)),3)),
+        WriteVTK("%s-yyyydoy-%s%s.vtk" % (filehead,str.zfill(str(int(tyr+inityr)),4),str.zfill(str(int(tdoy)),3)),
                  xyz,cells,False,cell_variables=var)
 
 
@@ -218,7 +220,7 @@ else:
     varnames = options.vars.split(':')  
 
 startyyyy = 1
-if(options.startyr != 1): startyyyy = int(options.startyr)
+if(int(options.startyr) > 1): startyyyy = int(options.startyr)
 endyyyy   = 9999
 if(options.endyr !=""):   endyyyy = int(options.endyr)
 
@@ -228,8 +230,8 @@ fincludes = ['h0','h1','h2','h3','h4','h5']
 # read-in datasets from 1 simulation year by year
 tmax = 0
 for iyr in range(startyyyy,endyyyy):
-    startdays = int(iyr)*365.0+1.0
-    enddays   = (int(iyr)+1)*365.0
+    startdays = (int(iyr)-1)*365.0+1.0
+    enddays   = (int(iyr)+0)*365.0
 
     nx, ny, nlgrnd, nldcmp, npft, varsdata, varsdims = \
         CLM_NcRead_1simulation(options.clm_odir, \
