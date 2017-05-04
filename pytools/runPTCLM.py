@@ -764,7 +764,7 @@ if (options.extended_pft):
 
 #(6h) namelist options for PFLOTRAN coupling ----
 if (options.pflotran):
-    output.write(" use_bgc_interface = .true.\n")
+    output.write(" use_clm_interface = .true.\n")
     output.write(" use_pflotran = .true.\n")
     output.write("/\n")
 
