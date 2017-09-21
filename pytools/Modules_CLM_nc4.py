@@ -93,7 +93,10 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
         if varnames_print:
             print (key)
             
-        if (key not in keep_vars) and (not vars_all): continue  #cycle the loop, if not required by users and NOT all_vars option
+        if (key not in keep_vars) and (not vars_all): 
+            continue  #cycle the loop, if not required by users and NOT all_vars option
+        if (key not in f.variables or f.variables[key].size<=0): 
+            continue                 #cycle the loop, if no data 
             
         if (len(chunk_keys)<=0) or (key not in chunk_keys): # only needs to read data once, if more than one available
             odata[key]      = np.asarray(f.variables[key])                

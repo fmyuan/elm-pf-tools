@@ -10,7 +10,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from Modules_CLM_nc4 import CLM_NcRead_1simulation
 
 # ---------------------------------------------------------------
-# Plot soil data with layers
+# Plot soil data with layers for ONE specific grid
 def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plotlabel):
 
     ax=plt.subplot(nrow, ncol, isubplot)
@@ -37,6 +37,27 @@ def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname,
     lx = 0.40
     ly = 0.90
     plt.text(lx, ly, plotlabel, transform=ax.transAxes)
+
+# Plot PFT fractioned data with layers for ONE specific grid
+def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, sdata, varname, plotlabel):
+
+    ax=plt.subplot(nrow, ncol, isubplot)
+    
+    active_pfts = []
+    for ip, wt in enumerate(pftwt):
+        if(wt>0.0): 
+            #active_pfts = active_pfts.append("PFT "+str(ip))
+            plt.plot(t, sdata[:,ip])
+    
+    #plt.legend((active_pfts), \
+    #        loc=0, fontsize=12)
+    plt.xlabel(t_unit)
+    plt.ylabel(varname)
+
+    lx = 0.40
+    ly = 0.90
+    plt.text(lx, ly, plotlabel, transform=ax.transAxes)
+
 
 # Plot Grided data
 def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plotlabel):
@@ -193,28 +214,39 @@ for var in varnames:
         nl = vdata.shape[zdim_indx]
 
     # pft ? (need further work here)
-    if(npft>0):
+    pdim_indx = -999
+    if('pft' in vdims):
         pdim_indx = vdims.index('pft')  
-    
+        npft = vdata.shape[pdim_indx]
+        pwt1cell = varsdata['pfts1d_wtgcell']
+        
     # data series
-    if(zdim_indx<0):# 2-D grid data
+    if(zdim_indx<0 and pdim_indx<0):# 2-D grid data
         gdata = np.zeros((nt,nx*ny))    #temporary data holder in 2-D (tt, grids)
-    else:
+    elif(zdim_indx>0):        
         sdata = np.zeros((nt,nl*nx*ny)) #temporary data holder in 2-D (tt, layers*grids)
+    elif(pdim_indx>0):        
+        sdata = np.zeros((nt,npft*nx*ny)) #temporary data holder in 2-D (tt, pfts*grids)
+    else:
+        exit("Variable to be plotted has 4-D dimension - NOT YET supported!")
     
     for i in range(len(tt)):
                 
-        if(zdim_indx<0):# 2-D grid data
+        if(zdim_indx<0 and pdim_indx<0):# 2-D grid data
             gdata[i,:] = vdata[it[i]].reshape(nx*ny)
         else:
                        
-            if(zdim_indx == 1): # 3-D soil data, z_dim in 1 
+            if(zdim_indx == 1 or pdim_indx==1): # 3-D soil/pft data, z_dim/p_dim in 1 
                 if(if2dgrid): 
                     sdata[i,:] = vdata[it[i]][:,iy,ix]
                 else:
-                    sdata[i,:] = vdata[it[i]][:,max(iy,ix)]
+                    if(len(vdata[it[i]].shape)>1):
+                        sdata[i,:] = vdata[it[i]][:,max(iy,ix)]
+                    else:
+                        sdata[i,:] = vdata[it[i]][:]
+                        
                 
-            elif(zdim_indx >= 2): # 3-D soil data, z_dim in 2 or 3 (likely x/y dims before z) 
+            elif(zdim_indx >= 2 or pdim_indx==2): # 3-D soil data, z_dim in 2 or 3 (likely x/y dims before z) 
                 if(if2dgrid): 
                     sdata[i,:] = vdata[it[i]][:,iy,ix,]
                 else:
@@ -223,13 +255,16 @@ for var in varnames:
     #plotting
     vname = varnames[varnames.index(var)]
     if(float(day_scaling)!=1.0): t = np.asarray(t)*day_scaling
-    if(zdim_indx<0):
+    if(zdim_indx<0 and pdim_indx<0):
         GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, \
                         vname, '(a) All Grids')
-    else:
+    elif(zdim_indx>0):
         SoilLayeredVarPlotting(plt, nrow, ncol, ivar, t, tunit, sdata, \
                         vname, '(a) Grid ( '+str(ix)+', '+str(iy)+')')
     
+    elif(pdim_indx>0):
+        PFTVarPlotting(plt, nrow, ncol, ivar, t, tunit, pwt1cell, sdata, \
+                        vname, '(a) Grid ( '+str(ix)+', '+str(iy)+')')
 
 
 # printing plot in PDF
