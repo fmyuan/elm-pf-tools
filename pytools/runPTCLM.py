@@ -916,8 +916,4 @@ if (options.finidat_case != ''):
 if (options.no_submit == False):        
     os.chdir(casedir)
     os.system('./case.submit')
-else:
-    
-    
-
 
