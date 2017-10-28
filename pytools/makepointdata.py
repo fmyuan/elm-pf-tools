@@ -14,20 +14,20 @@ parser.add_option("--metdomainfile", dest="metdomainfile", default="domain.360x7
 		          help = 'met forcing data domain file, usually under atm/datm7, either under met_directory or domain.clm - so must be indicated with file name')
 parser.add_option("--metdir", dest="metdir", default="atm_forcing.datm7.cruncep.0.5d.V4.c111104", \
                   help = 'subdirectory for met data forcing')
-parser.add_option("--metfile", dest="metfile", default="clmforc.cruncep.V4.c2011.0.5d.", \
+parser.add_option("--metfilehead", dest="metfilehead", default="clmforc.cruncep.V4.c2011.0.5d.", \
           help = 'met forcing data file name header, i.e. that without date-time portion')
 parser.add_option("--lons", dest="long", default="", \
-                      help = "number of x points (regional only)")
+                      help = "point longitude(s)")
 parser.add_option("--lats", dest="lati", default="", \
-                      help = "number of y points (regional only)")
+                      help = "point latitude(s)")
 parser.add_option("--yrstart", dest="yrstart", default=1901, \
-                      help = "number of y points (regional only)")
+                      help = "climate data starting year")
 parser.add_option("--yrend", dest="yrend", default=2010, \
-                      help = "number of y points (regional only)")
+                      help = "climate data ending year")
 parser.add_option("--sitename", dest="site", default="", \
-                      help = "number of y points (regional only)")
+                      help = "point site-name")
 parser.add_option("--ncobinpath", dest="ncobinpath", default="", \
-                      help = "number of y points (regional only)")
+                      help = "NCO bin path if not in $PATH")
 
 # ---------------------------------------------------------
 (options, args) = parser.parse_args()
@@ -65,9 +65,9 @@ domainfile_orig = metdomain_input+"/"+options.metdomainfile
 ncfile = domainfile_orig
 try:
     f = Dataset(ncfile,'r')
-    print('FILE: '+ncfile+' ------- ')
+    print('\n FILE: '+ncfile+' ------- ')
 except:
-    print('Error in READING File: '+ncfile)
+    print('\n Error in READING File: '+ncfile)
         
 allx=[]
 if('LONGXY' in f.variables.keys()):
@@ -160,27 +160,43 @@ os.system('mkdir -p ' + met_input_new)
 
 #checking where is the original data
 dirfiles = os.listdir(met_input)
-for dirfile in dirfiles:
-    if(isfile(met_input+'/'+dirfile)): 
-        if(options.metfile in dirfile):
-            metfile_old = met_input+'/'+dirfile
-            metfile_new = metfile_old.replace(metfile,pt_name)
-
-            os.system(ncopath+'ncks -d ni,'+str(ni)+','+str(ni+numxpts-1)+ \
-                      ' -d nj,'+str(nj)+','+str(nj+numypts-1)+ \
-                      ' '+metfile_old+' '+metfile_new)
+for dirfile in dirfiles:        
+    filehead = options.metfilehead
+    # in metdata directory
+    if(os.path.isfile(met_input+'/'+dirfile)): 
+        if(filehead in dirfile):
         
-    elif(isdir(met_input+'/'+dirfile)):
+            print('\n file: '+dirfile)
+
+            metfile_old = met_input+'/'+dirfile
+            dirfile_new = dirfile.replace(filehead,pt_name)
+            metfile_new = met_input_new+'/'+ dirfile_new
+
+            #extracting data
+            print('dirfile: '+dirfile + '  =======>  '+dirfile_new)
+
+            os.system(ncopath+'ncks -a -O -d lon,'+str(ni)+','+str(ni+numxpts-1)+ \
+                      ' -d lat,'+str(nj)+','+str(nj+numypts-1)+ \
+                      ' '+metfile_old+' '+metfile_new)
+    # in subdirectory of metdata directory
+    elif(os.path.isdir(met_input+'/'+dirfile)):
         subfiles = os.listdir(met_input+'/'+dirfile)
         for subfile in subfiles:
-            if(isfile(met_input+'/'+dirfile+'/'+subfile)):
-                if(options.metfile in dirfile):
-                    metfile_old = met_input+'/'+dirfile
-                    metfile_new = metfile_old.replace(metfile,pt_name)
-                 
-                    os.system(ncopath+'ncks -d ni,'+str(ni)+','+str(ni+numxpts-1)+ \
-                              ' -d nj,'+str(nj)+','+str(nj+numypts-1)+ \
+
+            if(os.path.isfile(met_input+'/'+dirfile+'/'+subfile)):
+                if(filehead in subfile):
+ 
+                    metfile_old = met_input+'/'+dirfile+'/'+subfile
+                    
+                    subfile_new = subfile.replace(filehead,pt_name)
+                    metfile_new = met_input_new+'/'+subfile_new
+ 
+                    #extracting data
+                    print('Subfile: '+subfile + '  =======>  '+subfile_new)
+                
+                    os.system(ncopath+'ncks -a -O -d lon,'+str(ni)+','+str(ni+numxpts-1)+ \
+                              ' -d lat,'+str(nj)+','+str(nj+numypts-1)+ \
                               ' '+metfile_old+' '+metfile_new)
     
-
+print('DONE!')
 
