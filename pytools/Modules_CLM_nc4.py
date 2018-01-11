@@ -267,8 +267,14 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
     keep_const.append("levdcmp") # need this for the number of layers for BGC
     keep_const.append("ZSOI")
     keep_const.append("DZSOI")
+    keep_const.append("column")
+    keep_const.append("cols1d_wtgcell")
+    keep_const.append("cols1d_ixy")
+    keep_const.append("cols1d_jxy")
     keep_const.append("pft")
     keep_const.append("pfts1d_wtgcell")
+    keep_const.append("pfts1d_ixy")
+    keep_const.append("pfts1d_jxy")
     keep_const.append("WATSAT")
     keep_const.append("SUCSAT")
     keep_const.append("BSW")
@@ -339,7 +345,8 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
     ny     = 0
     nldcmp = 0
     nlgrnd = 0
-    npft   = 0          
+    npft   = 0
+    ncol   = 0          
 
     hinc_done_print = []
     
@@ -387,8 +394,31 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
                 nlgrnd = len(chunkdatai['levgrnd'])
             if (nldcmp<=0 and 'levdcmp' in chunkdatai):
                 nldcmp = len(chunkdatai['levdcmp'])                
-            if (npft<=0 and 'pft' in chunkdatai):
-                npft = len(chunkdatai['pft'])    
+
+            if (npft<=0):
+                if('pft' in chunkdatai ):
+                    npft = len(chunkdatai['pft'])
+                if('pfts1d_wtgcell' in chunkdatai ):
+                    npft = len(chunkdatai['pfts1d_wtgcell'])
+                    global pfts1d_wtgcell
+                    pfts1d_wtgcell = chunkdatai['pfts1d_wtgcell']
+                    global pfts1d_ixy
+                    pfts1d_ixy = chunkdatai['pfts1d_ixy']
+                    global pfts1d_jxy
+                    pfts1d_jxy = chunkdatai['pfts1d_jxy']
+
+            if (ncol<=0):
+                if('column' in chunkdatai ):
+                    ncol = len(chunkdatai['pft'])
+                if('cols1d_wtgcell' in chunkdatai ):
+                    ncol = len(chunkdatai['cols1d_wtgcell'])
+                    global cols1d_wtgcell
+                    cols1d_wtgcell = chunkdatai['cols1d_wtgcell']
+                    global cols1d_ixy
+                    cols1d_ixy = chunkdatai['cols1d_ixy']
+                    global cols1d_jxy
+                    cols1d_jxy = chunkdatai['cols1d_jxy']
+                     
  
             if ('WATSAT' in chunkdatai): 
                 global porosity
@@ -449,6 +479,6 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
 #--------------------------------------------------------------------------------------
 #   
     # data-sets output
-    return nx, ny, nlgrnd, nldcmp, npft, varsdata, varsdims
+    return nx, ny, nlgrnd, nldcmp, ncol, npft, varsdata, varsdims
 
 

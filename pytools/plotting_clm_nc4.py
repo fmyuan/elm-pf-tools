@@ -149,7 +149,7 @@ ix=int(options.xindex);
 iy=int(options.yindex);
 
 # read-in datasets from 1 simulation
-nx, ny, nlgrnd, nldcmp, npft, varsdata, varsdims = \
+nx, ny, nlgrnd, nldcmp, ncol, npft, varsdata, varsdims = \
     CLM_NcRead_1simulation(options.clm_odir, \
                            options.ncfileheader, \
                            options.varnames_print, \

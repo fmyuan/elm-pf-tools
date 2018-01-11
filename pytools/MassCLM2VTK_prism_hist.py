@@ -94,12 +94,21 @@ def WriteCLMDataToVTK(filehead, xyz, cells, timekey, clmdata, clmdata_dims, updo
     if (len(clmdata["topo"].shape)==1):
         ny     = 1
     elif(len(clmdata["topo"].shape)==2):
-        ny     = clmdata["topo"].shape[1]
-    
+        ny     = clmdata["topo"].shape[1]   
     
     nz1    = clmdata["levgrnd"].shape[0]
     nz2    = clmdata["levdcmp"].shape[0]
     nz     = min(nztrunc, min(nz1,nz2))
+    
+    ncol = 0
+    if("cols1d_wtgcell" in clmdata): 
+        ncol   = clmdata["cols1d_wtgcell"].shape[0]
+    
+    npft = 0
+    if("pfts1d_wtgcell" in clmdata): 
+        npft   = clmdata["pfts1d_wtgcell"].shape[0]
+    
+    
     ncells = cells.shape[0]
 
     times  = np.asarray(clmdata[vhdr+"_time"],dtype=int)   # "time" in clm output *.nc IS in days from starting time of the year
@@ -117,6 +126,18 @@ def WriteCLMDataToVTK(filehead, xyz, cells, timekey, clmdata, clmdata_dims, updo
             data = clmdata[key]
             shp  = clmdata[key].shape           
             dim_list = clmdata_dims[key]
+            
+            #column-wised data: needs to be integrated into grid-cell
+            if("column" in dim_list):
+                cols1d_wt=clmdata["cols1d_wtgcell"]
+                cols1d_i=clmdata["cols1d_ixy"]
+                cols1d_j=clmdata["cols1d_jxy"]
+                
+                
+            #pft-wised data: needs to be integrated into grid-cell
+            if("pft" in dim_list):
+                pfts1d_wt=clmdata["pfts1d_wtgcell"]
+            
             
             if ("time" not in dim_list): continue      # skip if NOT time-series data array
 
@@ -183,11 +204,14 @@ parser.add_option("--adspinup", dest="adspinup", action="store_true", default=Fa
                   help="whether results of an ad_spinup run (default = False)")
 parser.add_option("--upsidedown", dest="updown", action="store_true", default=False, \
                   help="whether flip-over data vertically (upside-down) (default = False)")
-parser.add_option("--startyr", dest="startyr", default="1", \
+parser.add_option("--modelyr0", dest="modelyr0", default="1", \
                   help="clm run starting year (default = 1, this is for spinup; for transient it should be 1850; " \
                    " and can be user-defined)")
+parser.add_option("--startyr", dest="startyr", default="modelyr0", \
+                  help="clm data starting year (default = 'modelyr0'; " \
+                   " and can be user-defined)")
 parser.add_option("--endyr", dest="endyr", default="", \
-                  help="clm run ending year (default = none, i.e. end of simulation)")
+                  help="clm data ending year (default = none, i.e. end of simulation)")
 parser.add_option("--varname", dest="vars", default="ALL", \
                   help = "variable name(s) (default: ALL) to be reading, separated by comma ")
 (options, args) = parser.parse_args()
@@ -219,8 +243,9 @@ if (options.vars == ''):
 else:
     varnames = options.vars.split(':')  
 
-startyyyy = 1
-if(int(options.startyr) > 1): startyyyy = int(options.startyr)
+modelyr0  = int(options.modelyr0)
+startyyyy = modelyr0
+if(int(options.startyr) > 1): startyyyy = max(int(options.modelyr0),int(options.startyr))
 endyyyy   = 9999
 if(options.endyr !=""):   endyyyy = int(options.endyr)
 
@@ -230,10 +255,10 @@ fincludes = ['h0','h1','h2','h3','h4','h5']
 # read-in datasets from 1 simulation year by year
 tmax = 0
 for iyr in range(startyyyy,endyyyy):
-    startdays = (int(iyr)-1)*365.0+1.0
-    enddays   = (int(iyr)+0)*365.0
+    startdays = (int(iyr-modelyr0))*365.0+1.0
+    enddays   = (int(iyr-modelyr0)+1)*365.0
 
-    nx, ny, nlgrnd, nldcmp, npft, varsdata, varsdims = \
+    nx, ny, nlgrnd, nldcmp, ncol, npft, varsdata, varsdims = \
         CLM_NcRead_1simulation(options.clm_odir, \
                            options.clm_filehead, \
                            False, \
