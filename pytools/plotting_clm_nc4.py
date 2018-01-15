@@ -11,26 +11,19 @@ from Modules_CLM_nc4 import CLM_NcRead_1simulation
 
 # ---------------------------------------------------------------
 # Plot soil data with layers for ONE specific grid
-def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plotlabel):
+def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, layer_index, sdata, varname, plotlabel):
 
     ax=plt.subplot(nrow, ncol, isubplot)
     if(varname == 'SOILPSI'):
         sdata = -sdata
         ax.set_yscale("log", nonposy='clip')
     
-    plt.plot(t, sdata[:,0], 'b-.', t, sdata[:,1], 'g-.', \
-                  t, sdata[:,2], 'm-.', t, sdata[:,3], 'c-.', \
-                  t, sdata[:,4], 'r-.', \
-                  t, sdata[:,5], 'b-', t, sdata[:,6], 'g-', \
-                  t, sdata[:,7], 'm-', t, sdata[:,8], 'c-', \
-                  t, sdata[:,9], 'r-', \
-                  t, sdata[:,10], 'b--', \
-                  t, sdata[:,11], 'g--',  t, sdata[:,12], 'm--', \
-                  t, sdata[:,13], 'c--',  t, sdata[:,14], 'r--')
-    plt.legend(('Layer 15','Layer 14','Layer 13','Layer 12','Layer 11', \
-            'Layer 10','Layer 9','Layer 8','Layer 7','Layer 6', \
-            'Layer 5','Layer 4','Layer 3','Layer 2','Layer 1'), \
-            loc=0, fontsize=12)
+    layertext = []
+    for il in layer_index:
+        layertext.append(("Layer "+str(il)))
+        plt.plot(t, sdata[:,il])
+ 
+    plt.legend((layertext), loc=0, fontsize=12)
     plt.xlabel(t_unit)
     plt.ylabel(varname)
 
@@ -39,18 +32,18 @@ def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname,
     plt.text(lx, ly, plotlabel, transform=ax.transAxes)
 
 # Plot PFT fractioned data with layers for ONE specific grid
-def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, sdata, varname, plotlabel):
+def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, pft_index, sdata, varname, plotlabel):
 
     ax=plt.subplot(nrow, ncol, isubplot)
     
     active_pfts = []
-    for ip, wt in enumerate(pftwt):
-        if(wt>0.0): 
-            #active_pfts = active_pfts.append("PFT "+str(ip))
-            plt.plot(t, sdata[:,ip])
+    for ix in pft_index:
+        for ip, wt in enumerate(pftwt):
+            if(wt>0.0 and (ix<0 or ix==ip)): 
+                active_pfts.append(("PFT "+str(ip)))
+                plt.plot(t, sdata[:,ip])
     
-    #plt.legend((active_pfts), \
-    #        loc=0, fontsize=12)
+    plt.legend((active_pfts), loc=0, fontsize=12)
     plt.xlabel(t_unit)
     plt.ylabel(varname)
 
@@ -99,8 +92,28 @@ parser.add_option("--Xindex", dest="xindex", default=0, \
                   help = " X direction grid index to be reading/plotting, default 0 ")
 parser.add_option("--Yindex", dest="yindex", default=0, \
                   help = " Y direction grid index to be reading/plotting, default 0 ")
+parser.add_option("--LAYERindex", dest="zindex", default=-999, \
+                  help = " SOIL layer index to be reading/plotting, default -999 for all, with indexing from 0 ")
+parser.add_option("--PFTindex", dest="pindex", default=-999, \
+                  help = " PFT index to be reading/plotting, default -999 for all, with indexing from 0 ")
 
 (options, args) = parser.parse_args()
+
+if(options.pindex==-999):
+    pft_index = options.pindex
+else:
+    pft_index=[]
+    oppfts = options.pindex.split(':')
+    for ip in oppfts:    
+        pft_index.append(int(ip))
+
+if(options.zindex==-999):
+    layer_index = options.zindex
+else:
+    layer_index=[]
+    oplayers = options.zindex.split(':')
+    for il in oplayers:
+        layer_index.append(int(il))
 
 #
 if (options.clm_odir == './'):
@@ -259,11 +272,13 @@ for var in varnames:
         GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, \
                         vname, '(a) All Grids')
     elif(zdim_indx>0):
-        SoilLayeredVarPlotting(plt, nrow, ncol, ivar, t, tunit, sdata, \
+        if(len(layer_index)==1 and layer_index[0]<0): layer_index = range(0,nl)
+        SoilLayeredVarPlotting(plt, nrow, ncol, ivar, t, tunit, layer_index, sdata, \
                         vname, '(a) Grid ( '+str(ix)+', '+str(iy)+')')
     
     elif(pdim_indx>0):
-        PFTVarPlotting(plt, nrow, ncol, ivar, t, tunit, pwt1cell, sdata, \
+        if(len(pft_index)==1 and pft_index[0]<0): pft_index = range(0,npft)
+        PFTVarPlotting(plt, nrow, ncol, ivar, t, tunit, pwt1cell, pft_index, sdata, \
                         vname, '(a) Grid ( '+str(ix)+', '+str(iy)+')')
 
 
