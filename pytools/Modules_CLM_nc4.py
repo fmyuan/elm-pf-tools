@@ -195,7 +195,13 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
         if 'SOILLIQ' in odata.keys():
             dary = np.array(odata['SOILLIQ'])
             dvec = np.array(porosity*dz*denh2o)
-            odata['SOILSAT_LIQ'] = dary/dvec[None,:,:,:]
+            if (len(dvec.shape)==2):
+                odata['SOILSAT_LIQ'] = dary/dvec[None,:,:]
+            elif (len(dvec.shape)==3):
+                odata['SOILSAT_LIQ'] = dary/dvec[None,:,:,:]
+            else:
+                odata['SOILSAT_LIQ'] = dary/dvec
+
             odata_dims['SOILSAT_LIQ'] = odata_dims['SOILLIQ'] 
         
     denice = 917.0 #kg/m3
@@ -203,7 +209,13 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
         if 'SOILICE' in odata.keys():
             dary = np.array(odata['SOILICE'])
             dvec = np.array(porosity*dz*denice)
-            odata['SOILSAT_ICE'] = dary/dvec[None,:,:,:]
+            if (len(dvec.shape)==2):
+                odata['SOILSAT_ICE'] = dary/dvec[None,:,:]
+            elif (len(dvec.shape)==3):
+                odata['SOILSAT_ICE'] = dary/dvec[None,:,:,:]
+            else:
+                odata['SOILSAT_ICE'] = dary/dvec
+
             odata_dims['SOILSAT_ICE'] = odata_dims['SOILICE'] 
         
         
@@ -308,9 +320,11 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
         keep.extend(totlitn_vr)
         
     #
+    if 'SOILSAT_LIQ' in varnames and 'SOILLIQ' not in keep: keep.append('SOILLIQ') 
     if 'SOILLIQ' in varnames or VARS_ALL:
         if 'SOILSAT_LIQ' not in keep: keep.append('SOILSAT_LIQ') 
         
+    if 'SOILSAT_ICE' in varnames and 'SOILICE' not in keep: keep.append('SOILICE') 
     if 'SOILICE' in varnames or VARS_ALL:
         if 'SOILSAT_ICE' not in keep: keep.append('SOILSAT_ICE') 
 
