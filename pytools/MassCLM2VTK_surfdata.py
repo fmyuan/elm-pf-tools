@@ -9,8 +9,8 @@ import glob
 import math
 
 pfts=["not_vegetated",
-      "arctic_lichen",
-      "arctic_bryophyte",
+#      "arctic_lichen",
+#      "arctic_bryophyte",
       "needleleaf_evergreen_temperate_tree",
       "needleleaf_evergreen_boreal_tree",
       "needleleaf_deciduous_boreal_tree",
@@ -22,22 +22,25 @@ pfts=["not_vegetated",
       "broadleaf_evergreen_shrub",
       "broadleaf_deciduous_temperate_shrub",
       "broadleaf_deciduous_boreal_shrub",
-      "evergreen_arctic_shrub",
-      "deciduous_arctic_shrub",
-      "c3_arctic_sedge",
-      "c3_arctic_forb",
+#      "evergreen_arctic_shrub",
+#      "deciduous_arctic_shrub",
+#      "c3_arctic_sedge",
+#      "c3_arctic_forb",
       "c3_arctic_grass",
       "c3_non-arctic_grass",
-      "c4_grass","c3_crop",
+      "c4_grass",
+      "c3_crop",
       "c3_irrigated",
-      "corn",
-      "irrigated_corn",
-      "spring_temperate_cereal",
-      "irrigated_spring_temperate_cereal",
-      "winter_temperate_cereal",
-      "irrigated_winter_temperate_cereal",
-      "soybean",
-      "irrigated_soybean"]
+#      "corn",
+#      "irrigated_corn"
+#      "spring_temperate_cereal",
+#      "irrigated_spring_temperate_cereal",
+#      "winter_temperate_cereal",
+#      "irrigated_winter_temperate_cereal",
+#      "soybean",
+#      "irrigated_soybean"
+      ]
+
 
 
 def GetPflotranMeshData(filename, zscale, nztrunc):
