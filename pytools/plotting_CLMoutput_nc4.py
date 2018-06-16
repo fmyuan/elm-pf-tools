@@ -7,7 +7,7 @@ from optparse import OptionParser
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
-from Modules_CLM_nc4 import CLM_NcRead_1simulation
+from Modules_CLMoutput_nc4 import CLM_NcRead_1simulation
 
 # ---------------------------------------------------------------
 # Plot soil data with layers for ONE specific grid

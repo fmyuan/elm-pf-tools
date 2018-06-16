@@ -5,7 +5,7 @@ import glob
 import math
 import numpy as np
 import h5py as h5
-from Modules_CLM_nc4 import CLM_NcRead_1simulation
+from Modules_CLMoutput_nc4 import CLM_NcRead_1simulation
 from optparse import OptionParser
 
 #

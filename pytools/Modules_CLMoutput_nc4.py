@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-## Modules/Functions to Process CLM Netcdf Files
+## Modules/Functions to Process CLM Netcdf output Files
 ## Author: Fengming YUAN, CCSI/ESD-ORNL, Oak Ridge, TN
 ## Date: 2017-March 
 
