@@ -159,10 +159,12 @@ parser.add_option("--caserundir", dest="casedataroot", default="", \
 parser.add_option("--finidat", dest="finidat", default='', \
                   help = "initial data file to use" \
                   +" (should be in your run directory)")
-parser.add_option("--metdomain", dest="metdomain", default="", \
+parser.add_option("--met_domain", dest="metdomain", default="", \
                   help = 'datm domain file for met data forcing')
-parser.add_option("--metdir", dest="metdir", default="", \
+parser.add_option("--met_dir", dest="metdir", default="", \
                   help = 'subdirectory for met data forcing')
+parser.add_option("--met_fileheader", dest="metfileheader", default="", \
+                  help = 'headers of files for met data forcing')
 parser.add_option("--shared_domain", dest="shared_domain", default="", \
                   help = 'land domain file either in fullpath or filename in default path')
 parser.add_option("--surfdata", dest="surfdata", default="none", \
@@ -214,15 +216,20 @@ shareddomainname = os.path.splitext(shareddomainname)[0]
 #------------met input data and domain directory ------------------
 if(options.metdir.startswith('/') or \
     options.metdir.startswith('./')):
-    met_dir = os.path.abspath(options.metdir)
+    metdir = os.path.abspath(options.metdir)
 else:
-    met_dir   = os.path.abspath(ccsm_input+"/atm/datm7/"+options.metdir)
+    metdir   = os.path.abspath(ccsm_input+"/atm/datm7/"+options.metdir)
 
 if(options.metdomain.startswith('/') or \
    options.metdomain.startswith('./')):
     metdomain = os.path.abspath(options.metdomain)
 else:
     metdomain = os.path.abspath(ccsm_input+"/atm/datm7/"+options.metdomain)
+    if(not os.path.isfile(metdomain) and os.path.isdir(metdir)):
+        metdomain = os.path.abspath(metdir+"/"+options.metdomain)
+metdomainname = os.path.basename(metdomain)
+metdomainname = os.path.splitext(metdomainname)[0]
+
 
 #------------surfdata input data directory/file ------------------
 if(options.surfdata.startswith('/') or \
@@ -263,7 +270,7 @@ if (not options.shared_domain.strip()==''):
             ['nj','ni'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
 
 #------------new surfdata  -------------------------------------------------------------------
-if (not options.surfdata.strip()==''):    
+if (not options.surfdata.strip()==''):
     surfdata_new = outdir + surfname + '_'+ \
                options.newdata_affix + '.nc'
 
@@ -283,4 +290,96 @@ if (not options.surfdata.strip()==''):
         pts_num=[indx[pt][1],indy[pt][1]]
         nfmod.nco_extract(surfdata, surfdata_new, \
             ['lsmlat','lsmlon'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
+
+#------------new metdata domain -------------------------------------------------------------------
+if (not options.metdomain.strip()==''):
+    metdomain_new = outdir + metdomainname + '_'+ \
+               options.newdata_affix + '.nc'
+
+    print('INFO: extracting metdata domain - \n', metdomain, '\n -->', metdomain_new)
+
+    #
+    [alllats, vdim, vattr]=nfmod.getvar(metdomain,['yc'])
+    alllats = list(alllats.values())[0] # dict --> list
+    [alllons, vdim, vattr]=nfmod.getvar(metdomain,['xc'])
+    alllons = list(alllons.values())[0]
+    
+    #indx/indy: 2-D array with paired [startindex, numpts]
+    [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat)
+            
+    for pt in range(len(indx)):
+        pts_idx=[indx[pt][0],indy[pt][0]]
+        pts_num=[indx[pt][1],indy[pt][1]]
+        nfmod.nco_extract(metdomain, metdomain_new, \
+            ['nj','ni'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
+
+#------------new metdata -------------------------------------------------------------------
+if (not options.metdir.strip()==''):
+
+    metdir_new = outdir+ '/atm/datm7/newmetdata_'+ \
+               options.newdata_affix
+    os.system('mkdir -p ' + metdir_new)
+
+    #checking where is the original data
+    dirfiles = os.listdir(metdir)
+    for dirfile in dirfiles:        
+        filehead = options.metfileheader
+        filehead_new = filehead+'_'+options.newdata_affix
+        indx=[]; indy=[]
+        # in metdata directory
+        if(os.path.isfile(metdir+'/'+dirfile)): # file names
+            if(filehead in dirfile):
+            
+                print('\n file: '+dirfile)
+    
+                metfile_old = metdir+'/'+dirfile
+                dirfile_new = dirfile.replace(filehead,filehead_new)
+                metfile_new = metdir_new+'/'+ dirfile_new
+
+                print('INFO: extracting met-data - \n', metfile_old, '\n -->', metfile_new)
+                #
+                if(len(indx)<=0):#only needed from the first metfile
+                    [alllats, vdim, vattr]=nfmod.getvar(metfile_old,['LATIXY'])
+                    alllats = list(alllats.values())[0] # dict --> list
+                    [alllons, vdim, vattr]=nfmod.getvar(metfile_old,['LONGXY'])
+                    alllons = list(alllons.values())[0]    
+                    #indx/indy: 2-D array with paired [startindex, numpts]
+                    [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat)            
+                
+                for pt in range(len(indx)):
+                    pts_idx=[indx[pt][0],indy[pt][0]]
+                    pts_num=[indx[pt][1],indy[pt][1]]
+                    nfmod.nco_extract(metfile_old, metfile_new, \
+                            ['lat','lon'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
+
+        # in subdirectory of metdata directory
+        elif(os.path.isdir(metdir+'/'+dirfile)): # subdirectories
+            subfiles = os.listdir(metdir+'/'+dirfile)
+            for subfile in subfiles:
+    
+                if(os.path.isfile(metdir+'/'+dirfile+'/'+subfile)):
+                    if(filehead in subfile):
+     
+                        metfile_old = metdir+'/'+dirfile+'/'+subfile                        
+                        subfile_new = subfile.replace(filehead,filehead_new)
+                        metfile_new = metdir_new+'/'+subfile_new
+                        
+                        print('INFO: extracting met-data - \n', metfile_old, '\n -->', metfile_new)
+                        #
+                        if(len(indx)<=0):#only needed from the first metfile
+                            [alllats, vdim, vattr]=nfmod.getvar(metfile_old,['LATIXY'])
+                            alllats = list(alllats.values())[0] # dict --> list
+                            [alllons, vdim, vattr]=nfmod.getvar(metfile_old,['LONGXY'])
+                            alllons = list(alllons.values())[0]    
+                            #indx/indy: 2-D array with paired [startindex, numpts]
+                            [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat)            
+                        
+                        for pt in range(len(indx)):
+                            pts_idx=[indx[pt][0],indy[pt][0]]
+                            pts_num=[indx[pt][1],indy[pt][1]]
+                            nfmod.nco_extract(metfile_old, metfile_new, \
+                                    ['lat','lon'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
+
+#------------END of pointCLM_data -----------------------------------------------------------------------
+    
 
