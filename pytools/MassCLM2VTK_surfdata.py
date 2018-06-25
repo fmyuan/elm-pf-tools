@@ -86,7 +86,7 @@ def GetPflotranMeshData(filename, zscale, nztrunc):
         print("soil layers NOT an integer!")
         exit        
     elif nz > nztrunc:
-        z_trunc = np.cumsum(np.ones((nz-nztrunc)*cpl,dtype=int))-1
+        z_trunc = np.cumsum(np.ones((int(nz)-nztrunc)*cpl,dtype=int))-1
         cells = np.delete(cells, z_trunc, axis=0)
 
     return xyz,cells,sxyz,scells

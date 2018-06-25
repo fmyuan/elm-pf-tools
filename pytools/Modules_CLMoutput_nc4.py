@@ -17,7 +17,7 @@ from _bisect import bisect_right, bisect_left
 # commonly used for all
 
 # CLM pft names
-pfts=["not_vegetated", 
+pfts_user=["not_vegetated", 
       "arctic_lichen", 
       "arctic_bryophyte",
       "needleleaf_evergreen_temperate_tree",
