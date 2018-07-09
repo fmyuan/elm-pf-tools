@@ -7,11 +7,11 @@
 #                    datm domain, metdata, initial data
 #
 
-import netcdf_modules as nfmod
 import os, sys, time, math
 import numpy as np
 from optparse import OptionParser
 import re
+import netcdf_modules as nfmod
 
 #-------------------Local functions --------------------------------------------
 def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
