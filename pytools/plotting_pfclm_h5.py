@@ -14,7 +14,7 @@ parser.add_option("--workdir", dest="workdir", default="./", \
                   help = "data work directory (default = ./, i.e., under current dir)")
 parser.add_option("--pfh5file", dest="pfh5file", default="", \
                   help = "pflotran output h5 file name without .h5 ")
-parser.add_option("--time_unit", dest="tunit", default="", \
+parser.add_option("--plot_tunit", dest="tunit", default="", \
                   help = "time unit, default UNKNOWN ")
 parser.add_option("--varname", dest="vars", default="", \
                   help = "variable name(s) (max. 4) to be reading/plotting, separated by comma ")

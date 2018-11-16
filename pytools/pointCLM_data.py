@@ -24,7 +24,7 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
         lons_pt=[]
     else:                
         if ('str' in str(type(lons_pt))):#values with operators
-            nondecimal = re.compile(r'[^\d.,:;]+')
+            nondecimal = re.compile(r'[^\d.,:;-]+')
             v_pt = nondecimal.sub("",lons_pt)
             v_pt = np.float64(v_pt.split("[,:;]"))
             if("~" in lons_pt):#nearest point(s)
@@ -62,7 +62,7 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
         lats_pt =[]
     else:
         if ('str' in str(type(lats_pt))):#values with operators
-            nondecimal = re.compile(r'[^\d.,:;]+')
+            nondecimal = re.compile(r'[^\d.,:;-]+')
             v_pt = nondecimal.sub("",lats_pt)
             v_pt = np.float64(v_pt.split("[,:;]"))
             if("~" in lats_pt):#nearest point(s)
@@ -95,26 +95,27 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
                 lats_pt = np.float(lats_pt)
         
                      
-    # joined indices
     if np.size(lons_pt)>0:  
-        xind=np.where(np.isin(lons_all,lons_pt))
+        xind=np.where(np.isin(lons_all,lons_pt)) # paired indice
+        xind=np.ravel_multi_index(xind,lons_all.shape) # flatten indice
     else:
         xind=[]
     if np.size(lats_pt)>0:
         yind=np.where(np.isin(lats_all,lats_pt))
+        yind=np.ravel_multi_index(yind,lats_all.shape)
     else:
         yind=[]
 
     if(np.size(xind)>0 and np.size(yind)>0):
-        ij=np.isin(np.isin(xind[0],yind[0]),np.isin(xind[1],yind[1]))
-        xstart = xind[0][ij]
-        ystart = xind[1][ij]
+        # here we're picking points in 'xind' if it's in 'yind'. It shall be same if picking 'yind' if it's in 'xind'
+        ij=np.where(np.isin(xind, yind))        
+        ijindx=np.unravel_index(xind[ij], lons_all.shape)
     elif(np.size(xind)>0):
-        xstart = xind[0]
-        ystart = xind[1]        
+        ijindx=np.unravel_index(xind, lons_all.shape)
     elif(np.size(yind)>0):
-        xstart = yind[0]
-        ystart = yind[1]
+        ijindx=np.unravel_index(yind, lats_all.shape)
+    xstart = ijindx[0]
+    ystart = ijindx[1]
    
     #unique and countinuing indices count
     x= np.array(xstart,dtype=int)
@@ -122,27 +123,27 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
         x=np.unique(x)
         xdiff=np.insert(np.diff(x),0,-1)
         xi=x[np.where(xdiff!=1)] # unique and non-continuing index
-        loc=np.where(np.isin(x,xi))[0] # index of xi in x, from which continuing indices can be counted
-        loc=np.append(loc,np.size(x))
-        pts=np.diff(loc)       
+        xloc=np.where(np.isin(x,xi))[0] # index of xi in x, from which continuing indices can be counted
+        xloc=np.append(xloc,np.size(x))
+        xpts=np.diff(xloc)       
     elif(np.size(x)==1):
         xi=np.copy(x)
-        pts=np.array([1],dtype=int)
-    xindxpts = np.column_stack((xi,pts))
+        xpts=np.array([1],dtype=int)
+    xindxpts = np.column_stack((xi,xpts))
      
     # 
-    x= np.array(ystart,dtype=int)
-    if(np.size(x)>1):
-        x=np.unique(x)
-        xdiff=np.insert(np.diff(x),0,-1)
-        xi=x[np.where(xdiff!=1)] # unique and non-continuing index
-        loc=np.where(np.isin(x,xi))[0] # index of xi in x, from which continuing indices can be counted
-        loc=np.append(loc,np.size(x))
-        pts=np.diff(loc)       
-    elif(np.size(x)==1):
-        xi=np.copy(x)
-        pts=np.array([1],dtype=int)
-    yindxpts = np.column_stack((xi,pts))
+    y= np.array(ystart,dtype=int)
+    if(np.size(y)>1):
+        y=np.unique(y)
+        ydiff=np.insert(np.diff(y),0,-1)
+        yi=y[np.where(ydiff!=1)] # unique and non-continuing index
+        yloc=np.where(np.isin(y,yi))[0] # index of yi in y, from which continuing indices can be counted
+        yloc=np.append(yloc,np.size(y))
+        ypts=np.diff(yloc)       
+    elif(np.size(y)==1):
+        yi=np.copy(y)
+        ypts=np.array([1],dtype=int)
+    yindxpts = np.column_stack((yi,ypts))
     
     return xindxpts, yindxpts
 
@@ -155,7 +156,7 @@ parser.add_option("--e3sminput", dest="ccsm_input", \
                   default='./e3sm_inputdata', \
                   help = "input data directory for E3SM (required)")
 parser.add_option("--caserundir", dest="casedataroot", default="", \
-                  help = "component set to use (required)")
+                  help = "component set to use")
 parser.add_option("--finidat", dest="finidat", default='', \
                   help = "initial data file to use" \
                   +" (should be in your run directory)")
@@ -204,13 +205,15 @@ else:
     ccsm_input = os.path.abspath(options.ccsm_input)
 
 #-----------shared land/datm domain directory/file ------------------
-if(options.shared_domain.startswith('/') or \
-   options.shared_domain.startswith('./')):
-    shareddomain = os.path.abspath(options.shared_domain)   #user-defined file with full path
-else: # file with the default path
-    shareddomain = os.path.abspath(ccsm_input+"/share/domains/domain.clm/"+options.shared_domain)
-shareddomainname = os.path.basename(shareddomain)
-shareddomainname = os.path.splitext(shareddomainname)[0]
+if(not (options.shared_domain == '' or options.shared_domain == 'None')):
+    if(options.shared_domain.startswith('/') or \
+       options.shared_domain.startswith('./')):
+        shareddomain = os.path.abspath(options.shared_domain)   #user-defined file with full path
+    else: # file with the default path
+        shareddomain = os.path.abspath(ccsm_input+"/share/domains/domain.clm/"+options.shared_domain)
+    
+    shareddomainname = os.path.basename(shareddomain)
+    shareddomainname = os.path.splitext(shareddomainname)[0]
 
 
 #------------met input data and domain directory ------------------
@@ -232,13 +235,14 @@ metdomainname = os.path.splitext(metdomainname)[0]
 
 
 #------------surfdata input data directory/file ------------------
-if(options.surfdata.startswith('/') or \
-   options.surfdata.startswith('./')):
-    surfdata = os.path.abspath(options.surfdata)   #user-defined file with full path
-else: # file with the default path
-    surfdata = os.path.abspath(ccsm_input+"/lnd/clm2/surfdata_map/"+options.surfdata)
-surfname = os.path.basename(surfdata)
-surfname = os.path.splitext(surfname)[0]
+if(not (options.surfdata == '' or options.surfdata == 'none')):
+    if(options.surfdata.startswith('/') or \
+       options.surfdata.startswith('./')):
+        surfdata = os.path.abspath(options.surfdata)   #user-defined file with full path
+    else: # file with the default path
+        surfdata = os.path.abspath(ccsm_input+"/lnd/clm2/surfdata_map/"+options.surfdata)
+    surfname = os.path.basename(surfdata)
+    surfname = os.path.splitext(surfname)[0]
 
 ###########################################################################
 if(options.outdir.startswith('/')):
@@ -270,7 +274,7 @@ if (not options.shared_domain.strip()==''):
             ['nj','ni'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
 
 #------------new surfdata  -------------------------------------------------------------------
-if (not options.surfdata.strip()==''):
+if (not (options.surfdata.strip()=='' or options.surfdata=='none')):
     surfdata_new = outdir + surfname + '_'+ \
                options.newdata_affix + '.nc'
 

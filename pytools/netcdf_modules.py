@@ -23,11 +23,19 @@ def getvar(ncfile, varname):
         exit()
                 
     # If key is in varname list and in nc file, uniquely add to a dictionary    
-    for key in varname:           
-        if(key in f.variables.keys()):
+
+    if varname=="ALL" or varname[0]=="ALL": 
+        for key in f.variables.keys():
             odata[key]      = np.asarray(f.variables[key])                
             odata_dims[key] = f.variables[key].dimensions
             odata_attr[key] = f.variables[key].ncattrs()
+
+    else:
+        for key in varname:           
+            if(key in f.variables.keys()):
+                odata[key]      = np.asarray(f.variables[key])                
+                odata_dims[key] = f.variables[key].dimensions
+                odata_attr[key] = f.variables[key].ncattrs()
     
     # in case no-data for 'varname'
     if(len(odata)<1):
@@ -125,6 +133,56 @@ def dupexpand(ncfilein, ncfileout,dim_name,dim_multipler):
     print('done!')
 
 #----------------------------------------------------------------------------             
+# merge all variables along 1 named dimension
+# by append one file into another, with both exactly same defined dimensions and variables
+def mergefilesby1dim(ncfilein1, ncfilein2, ncfileout, dim_name):
+    with Dataset(ncfilein1) as src1, Dataset(ncfilein2) as src2, Dataset(ncfileout, "w") as dst:
+        # copy global attributes all at once via dictionary
+        dst.setncatts(src1.__dict__)
+   
+        if type(dim_name)==str: 
+            dim_name=[dim_name]
+
+        # adding dimensions, if defined
+        for name, dimension in src1.dimensions.items():
+            if name in dim_name:
+                dimension2 = src2.dimensions[name]
+                len_dimension = len(dimension) + len(dimension2)
+            else:
+                len_dimension = len(dimension)
+            
+            dst.createDimension(name, len_dimension if not dimension.isunlimited() else None)
+         #   
+    
+        # copy all file data except for matched-up variables, which instead multiply copied
+        for name, variable in src1.variables.items():
+
+            # create variables, but will update its values later 
+            # NOTE: here the variable value size updated due to newly-created dimensions above
+            dst.createVariable(name, variable.datatype, variable.dimensions)
+            
+            # copy variable attributes all at once via dictionary after created
+            dst[name].setncatts(src1[name].__dict__)
+
+            #
+            varvals1 = np.copy(src1[name][...])
+            tmp = varvals1
+            for dim in dim_name:
+                if dim in variable.dimensions:
+                    dim_indx = variable.dimensions.index(dim)
+                    varvals2=np.copy(src2[name][...])
+                    tmp=np.concatenate((varvals1,varvals2), axis=dim_indx)
+                
+            dst[name][...] = np.copy(tmp)
+        
+        #
+            
+    #            
+    print('done!')
+
+#----------------------------------------------------------------------------             
+
+#----------------------------------------------------------------------------             
 #Using NCO to extract all variables along named dimensions
 def nco_extract(ncfilein, ncfileout,dim_names,dim_starts, dim_lens, ncksdir=ncopath):   
     
@@ -160,6 +218,27 @@ def nco_extract(ncfilein, ncfileout,dim_names,dim_starts, dim_lens, ncksdir=ncop
     #
     
 #----------------------------------------------------------------------------             
+# convert nc to csv
+def nc2csv(file, varnames):
+    #file = 'test01.nc'
+    #varnames = ['LATIXY','LONGXY']
+    odata, odata_dims, odata_attr = getvar(file,varnames)
+    for key in odata.keys():
+        v=np.asarray(odata[key]).ravel()
+        if(key is odata.keys()[0]):
+            t_v = np.hstack((key, v))
+            same_dims = odata_dims[key]
+        else:
+            if(odata_dims[key]==same_dims):
+                t_v = np.vstack( (t_v,np.hstack((key, v)) ) )
+            else:
+                print(key+' has different dimensions, so will NOT included in .csv file')
+    
+    t_v = np.swapaxes(t_v, 1, 0)
+    np.savetxt(file+'.csv', t_v, delimiter=',', fmt='%s')
+    print('done!')
+
+
 
 #####################################################################
 # module testing
@@ -174,9 +253,22 @@ def nco_extract(ncfilein, ncfileout,dim_names,dim_starts, dim_lens, ncksdir=ncop
 #
 #dupexpand('test01.nc', 'test02.nc', ['lsmlat','lsmlon'], [2,3])
 
+# merge 2 files along 1-only named-dimension
+#files=['tmp1.nc','tmp2.nc','tmp3.nc','tmp4.nc','tmp5.nc','tmp6.nc']
+#f0='tmp0.nc'
+#fout='tmp_out.nc'
+#os.system('cp -rf '+ files[0]+' '+f0)
+#for f in files[1:]:
+#    mergefilesby1dim(f0, f, fout, 'lsmlon')
+#    os.system('cp -rf '+ fout+' '+f0)
+#os.system('rm -rf '+ f0)
+
 #
 #nco_extract('test02.nc', 'test03.nc', ['lsmlat','lsmlon'], [1,1], [1,1],'/usr/local/nco/bin')
 
 #print('good!')
 
-  
+# convert nc to csv
+#file = 'surfdata_51x63pt_kougarok-NGEE_simyr1850.nc'
+#varname = ['LONGXY','LATIXY']
+#nc2csv(file,varname)
