@@ -250,16 +250,19 @@ def nc2csv(file, varnames):
 #putvar('test02.nc',varname,vardata)
 #os.system('rm -rf test02.nc')
 
-#
+# duplicately expanding nc files along named dimension(s)
 #dupexpand('test01.nc', 'test02.nc', ['lsmlat','lsmlon'], [2,3])
+#dupexpand('landuse.timeseries_1x1pt_kougarok-NGEE_simyr1850-2015_c181015m64.nc', 'test6x1.nc', ['lsmlat','lsmlon'], [1,6])
 
 # merge 2 files along 1-only named-dimension
-#files=['tmp1.nc','tmp2.nc','tmp3.nc','tmp4.nc','tmp5.nc','tmp6.nc']
+#files=['tmp00.nc','tmp01.nc','tmp02.nc','tmp03.nc','tmp04.nc','tmp05.nc','tmp06.nc', 
+#       'tmp07.nc', 'tmp08.nc','tmp09.nc','tmp10.nc','tmp11.nc']
 #f0='tmp0.nc'
 #fout='tmp_out.nc'
+#dimname='lsmpft'
 #os.system('cp -rf '+ files[0]+' '+f0)
 #for f in files[1:]:
-#    mergefilesby1dim(f0, f, fout, 'lsmlon')
+#    mergefilesby1dim(f0, f, fout, dimname)
 #    os.system('cp -rf '+ fout+' '+f0)
 #os.system('rm -rf '+ f0)
 

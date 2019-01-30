@@ -24,8 +24,11 @@ def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, layer_index, sd
         plt.plot(t, sdata[:,il])
  
     plt.legend((layertext), loc=0, fontsize=12)
-    plt.xlabel(t_unit)
-    plt.ylabel(varname)
+    plt.xlabel(t_unit, fontsize=16, fontweight='bold')
+    plt.ylabel(varname, fontsize=16, fontweight='bold')
+
+    ax_user=plt.gca()
+    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 16)
 
     lx = 0.40
     ly = 0.90
@@ -44,8 +47,11 @@ def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, pft_index, sdata
                 plt.plot(t, sdata[:,ip])
     
     plt.legend((active_pfts), loc=0, fontsize=12)
-    plt.xlabel(t_unit)
-    plt.ylabel(varname)
+    plt.xlabel(t_unit, fontsize=16, fontweight='bold')
+    plt.ylabel(varname, fontsize=16, fontweight='bold')
+
+    ax_user=plt.gca()
+    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 16)
 
     lx = 0.40
     ly = 0.90
@@ -57,15 +63,33 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
 
     ax=plt.subplot(nrow, ncol, isubplot)
     
-    plt.plot(t, sdata)
+    if(varname=='TOTSOMC'):         
+        varname=varname+' (kgC/m2)'
+        sdata = sdata/1000.0
     
-    #plt.legend(loc=0, fontsize=12)
-    plt.xlabel(t_unit)
-    plt.ylabel(varname)
+    gridtext = []
+    if(len(sdata.shape)>1):
+        for igrd in range(sdata.shape[1]):
+            gridtext.append(("GRID "+str(igrd)))
+            plt.plot(t, sdata[:,igrd])
+    else:
+        gridtext.append(("GRID "+str(0)))
+        plt.plot(t, sdata)
+        
+    #gridtext = ["NAMC","DSLT","AS","WBT","TT-WBT","TT"]
+    #plt.legend((gridtext), loc=0, fontsize=12)
+    
+    plt.xlabel(t_unit, fontsize=16, fontweight='bold')    
+    plt.ylabel(varname, fontsize=16, fontweight='bold')
+    
+    ax_user=plt.gca()
+    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 16)
 
     lx = 0.40
     ly = 0.90
-    plt.text(lx, ly, plotlabel, transform=ax.transAxes)
+    plot_title = ''
+    if(varname=='TLAI'): plot_title = 'ICB-Highlat_pt390x10' #plotlabel
+    plt.text(lx, ly, plot_title, transform=ax.transAxes)
 
 #-------------------Parse options-----------------------------------------------
 
@@ -81,11 +105,14 @@ parser.add_option("--varname", dest="vars", default="", \
                   help = "variable name(s) (max. 4) to be reading/plotting, separated by comma ")
 parser.add_option("--adspinup", dest="adspinup", action="store_true", default=False, \
                   help="whether results of an ad_spinup run (default = False)")
+parser.add_option("--year0", dest="yr0", default="1", \
+                  help="clm simulation starting year (default = 1, this is for spinup; for transient it should be 1850; " \
+                   " and can be user-defined)")
 parser.add_option("--startyr", dest="startyr", default="1", \
-                  help="clm run starting year (default = 1, this is for spinup; for transient it should be 1850; " \
+                  help="clm output starting year to plot (default = 1, i.e. first year of simulation" \
                    " and can be user-defined)")
 parser.add_option("--endyr", dest="endyr", default="", \
-                  help="clm run ending year (default = none, i.e. end of simulation)")
+                  help="clm output ending year to plot (default = none, i.e. end of simulation)")
 parser.add_option("--plot_tunit", dest="t_unit", default="Days", \
                   help="X-axis time unit (default = Days, i.e. Days since start-time of simulation)")
 parser.add_option("--Xindex", dest="xindex", default=0, \
@@ -144,7 +171,11 @@ if (options.varnames_print):
     varnames = []
 
 startdays = -9999
-startdays = (int(options.startyr)-1)*365.0
+if(options.yr0 != 1 and options.startyr != 1):
+    startdays = (int(options.startyr)-int(options.yr0))*365.0
+else:
+    startdays = (int(options.startyr)-1)*365.0
+    
 enddays = -9999
 if(options.endyr !=""): enddays = int(options.endyr)*365.0
 
@@ -155,7 +186,7 @@ elif tunit.startswith("Y"):
     day_scaling = 1.0/365.0
 else:
     day_scaling = 1.0
-
+tunit0 = float(options.yr0)*365.0*day_scaling #the simulation year 0 timing (in day)
 
 
 ix=int(options.xindex);
@@ -267,7 +298,7 @@ for var in varnames:
         
     #plotting
     vname = varnames[varnames.index(var)]
-    if(float(day_scaling)!=1.0): t = np.asarray(t)*day_scaling
+    if(float(day_scaling)!=1.0): t = np.asarray(t)*day_scaling + tunit0
     if(zdim_indx<0 and pdim_indx<0):
         GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, \
                         vname, '(a) All Grids')
@@ -285,7 +316,7 @@ for var in varnames:
 # printing plot in PDF
 ofname = 'Figure_CLM.pdf'
 fig = plt.gcf()
-fig.set_size_inches(12, 15)
+fig.set_size_inches(8.5, 11.5)
 plt.savefig(ofname)
 plt.show()
 
