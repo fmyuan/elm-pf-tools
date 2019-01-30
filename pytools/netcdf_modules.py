@@ -99,7 +99,7 @@ def dupexpand(ncfilein, ncfileout,dim_name,dim_multipler):
                 len_dimension = len(dimension)
             
             dst.createDimension(name, len_dimension if not dimension.isunlimited() else None)
-         #   
+        #   
     
         # copy all file data except for matched-up variables, which instead multiply copied
         for name, variable in src.variables.items():
@@ -123,7 +123,7 @@ def dupexpand(ncfilein, ncfileout,dim_name,dim_multipler):
                         multipler-=1
                     #
                     varvals=tmp
-             #           
+            #           
                 
             dst[name][...] = np.copy(varvals)
         
@@ -203,11 +203,11 @@ def nco_extract(ncfilein, ncfileout,dim_names,dim_starts, dim_lens, ncksdir=ncop
 
     
     dim_string = ''
-    for id in range(0,len(dim_names)):
+    for idim in range(0,len(dim_names)):
         dim_string = dim_string + ' -d ' \
-                                +dim_names[id].strip()+',' \
-                                +str(dim_starts[id])+',' \
-                                +str(dim_starts[id]+dim_lens[id]-1)
+                                +dim_names[idim].strip()+',' \
+                                +str(dim_starts[idim])+',' \
+                                +str(dim_starts[idim]+dim_lens[idim]-1)
 
     #
     if(not ncksdir.endswith('/')):
