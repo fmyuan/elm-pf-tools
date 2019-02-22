@@ -212,7 +212,7 @@ def nco_extract(ncfilein, ncfileout,dim_names,dim_starts, dim_lens, ncksdir=ncop
     #
     if(not ncksdir.endswith('/')):
         ncksdir = ncksdir.strip()+'/'
-    os.system(ncksdir+'ncks -a -O '+ dim_string+ \
+    os.system(ncksdir+'ncks --no_abc -O '+ dim_string+ \
           ' '+ncfilein+' '+ncfileout)
 
     #
