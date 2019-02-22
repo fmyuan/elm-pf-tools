@@ -11,12 +11,11 @@ import re
 import netcdf_modules as nfmod
 
 #-------------------Local functions --------------------------------------------
-def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
+def pointLocator(lons_all, lats_all, lons_pt, lats_pt, is1D):
     
     xindxpts = []
     yindxpts = []
-    
-    
+        
     if(lons_pt.strip()==''):
         lons_pt=[]
     else:                
@@ -102,18 +101,27 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
     else:
         yind=[]
 
-    if(np.size(xind)>0 and np.size(yind)>0):
-        ij=np.isin(np.isin(xind[0],yind[0]),np.isin(xind[1],yind[1]))
-        xstart = xind[0][ij]
-        ystart = xind[1][ij]
-    elif(np.size(xind)>0):
-        xstart = xind[0]
-        if(len(xind)>1):
-            ystart = xind[1]
-    elif(np.size(yind)>0):
-        xstart = yind[0]
-        if(len(yind)>1):
-            ystart = yind[1]
+    #
+    xstart = []
+    if(len(xind)>0): xstart = xind[0]
+    ystart = []
+    if(len(yind)>0): ystart = yind[0]
+
+    if(is1D):
+        if(np.size(xind)>0 and np.size(yind)>0):
+            ij=np.isin(np.isin(xind[0],yind[0]),np.isin(xind[1],yind[1]))
+            xstart = xind[0][ij]
+            ystart = xind[1][ij]
+        
+        elif(np.size(xind)>0):
+            xstart = xind[0]
+            if(len(xind)>1):
+                ystart = xind[1]
+    
+        elif(np.size(yind)>0):
+            ystart = yind[0]
+            if(len(yind)>1):
+                ystart = yind[1]
    
     #unique and continuing indices count
     x= np.array(xstart,dtype=int)
@@ -127,24 +135,21 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
     elif(np.size(x)==1):
         xi=np.copy(x)
         pts=np.array([1],dtype=int)
-    xindxpts = np.column_stack((xi,pts))
+    if(len(x)>0): xindxpts = np.column_stack((xi,pts))
      
     # 
-    if():
-        x= np.array(ystart,dtype=int)
-        if(np.size(x)>1):
-            x=np.unique(x)
-            xdiff=np.insert(np.diff(x),0,-1)
-            xi=x[np.where(xdiff!=1)] # unique and non-continuing index
-            loc=np.where(np.isin(x,xi))[0] # index of xi in x, from which continuing indices can be counted
-            loc=np.append(loc,np.size(x))
-            pts=np.diff(loc)       
-        elif(np.size(x)==1):
-            xi=np.copy(x)
-            pts=np.array([1],dtype=int)
-        yindxpts = np.column_stack((xi,pts))
-    else:
-        yindxpts = []
+    y= np.array(ystart,dtype=int)
+    if(np.size(y)>1):
+        y=np.unique(y)
+        ydiff=np.insert(np.diff(y),0,-1)
+        yi=y[np.where(ydiff!=1)] # unique and non-continuing index
+        loc=np.where(np.isin(y,yi))[0] # index of xi in x, from which continuing indices can be counted
+        loc=np.append(loc,np.size(y))
+        pts=np.diff(loc)       
+    elif(np.size(y)==1):
+        yi=np.copy(y)
+        pts=np.array([1],dtype=int)
+    if(len(y)>0): yindxpts = np.column_stack((yi,pts))
     
     return xindxpts, yindxpts
 
@@ -175,8 +180,8 @@ currdir = os.getcwd()
 #--------------- nco bin path -----------
 if(not options.ncobinpath.strip()==''):
     ncopath = options.ncobinpath
-
-
+else:
+    ncopath = '/usr/local/nco/bin'
 
 ###########################################################################
 if(options.outdir.startswith('/')):
@@ -194,10 +199,6 @@ if (os.path.isdir(outdir.strip())):
     for dirfile in dirfiles:        
         filehead = options.header
         filehead_new = filehead+'_'+options.newdata_affix
-        indx1=[]; indy1=[]
-        indx2=[]; indy2=[]
-        indx3=[]; indy3=[]
-        indx4=[]; indy4=[]
         
         # in outdir directory
         if(os.path.isfile(outdir+'/'+dirfile)): # file names
@@ -213,72 +214,64 @@ if (os.path.isdir(outdir.strip())):
                 #
 
                 outfile_temp = outdir+'/temp.nc'
-                # (1) for pft-level data: Doing this first may be faster (because the generated 'temp.nc' would be for rest ncks operation)
-                  
-                if(len(indx1)<=0):#only needed from the first output file                   
-                    [alllats, vdim, vattr]=nfmod.getvar(outfile_old,['pfts1d_lat'])
-                    alllats = list(alllats.values())[0] # dict --> list
-                    [alllons, vdim, vattr]=nfmod.getvar(outfile_old,['pfts1d_lon'])
-                    alllons = list(alllons.values())[0]    
-                    #indx/indy: 2-D array with paired [startindex, numpts]
-                    [indx1,indy1] = pointLocator(alllons, alllats, options.ptlon, options.ptlat)                
-                for pt in range(len(indx1)):
-                    pts_idx=[indx1[pt][0]]
-                    pts_num=[indx1[pt][1]]
-                    nfmod.nco_extract(outfile_old,outfile_new, \
-                            ['pft'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
+                os.system('cp -f ' + outfile_old + ' '+ outfile_temp)
 
-                # (2) for column-level data                   
-                os.system('mv -f ' + outfile_new + ' '+ outfile_temp)   # do the extraction continuously
+                #loop through possible longitude/latitude pairs, with their dimension(s)
+                coord_vars = [['lon','lat'], 
+                               ['pfts1d_lon','pfts1d_lat'],
+                               ['cols1d_lon','cols1d_lat'],
+                               ['land1d_lon','land1d_lat'],
+                               ['grid1d_lon','grid1d_lat'] ];
+                coord_dims = [['lon','lat'], 
+                               ['pft'],
+                               ['column'],
+                               ['landunit'],
+                               ['gridcell'] ];
+                
+ 
+                #
+                for idim in range(len(coord_dims)):
+                    indx = []; indy =[];
 
-                if(len(indx2)<=0):#only needed from the first output file                   
-                    [alllats, vdim, vattr]=nfmod.getvar(outfile_temp,['cols1d_lat'])
-                    alllats = list(alllats.values())[0] # dict --> list
-                    [alllons, vdim, vattr]=nfmod.getvar(outfile_temp,['cols1d_lon'])
-                    alllons = list(alllons.values())[0]    
-                    #indx/indy: 2-D array with paired [startindex, numpts]
-                    [indx2,indy2] = pointLocator(alllons, alllats, options.ptlon, options.ptlat)                
-                for pt in range(len(indx2)):
-                    pts_idx=[indx2[pt][0]]
-                    pts_num=[indx2[pt][1]]
-                    nfmod.nco_extract(outfile_temp,outfile_new, \
-                            ['column'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
+                    dim = coord_dims[idim]
+                    coord = coord_vars[idim]
+                    is1D = True
+                    if(len(dim)>1): is1D = False
+                    
+                    # all lon/lat pairs
+                    [alllons, vdim, vattr]=nfmod.getvar(outfile_temp,[coord[0]])
+                    if(len(alllons)>0):
+                        alllons = list(alllons.values())[0] # dict --> list
+                        
+                        [alllats, vdim, vattr]=nfmod.getvar(outfile_temp,[coord[1]])
+                        if(len(alllats)>0):    
+                            alllats = list(alllats.values())[0]    
+                            #indx/indy: 2-D array with paired [startindex, numpts]
+                            [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat, is1D)                
+                
+                    
+                    if(len(indx)>0):
+                        for pt in range(len(indx)):
+                            pts_idx=[indx[pt][0]]
+                            pts_num=[indx[pt][1]]
+                            nfmod.nco_extract(outfile_temp,outfile_new, \
+                                              [dim[0]], pts_idx, pts_num,ncksdir=ncopath)
+                    
+                            #newly-updated nc file for further processing, if any
+                            os.system('mv -f ' + outfile_new + ' '+ outfile_temp)   # do the extraction continuously
 
-                # (3) for landunit-level data                   
-                os.system('mv -f ' + outfile_new + ' '+ outfile_temp)   # do the extraction continuously
-
-                if(len(indx3)<=0):#only needed from the first output file                   
-                    [alllats, vdim, vattr]=nfmod.getvar(outfile_temp,['land1d_lat'])
-                    alllats = list(alllats.values())[0] # dict --> list
-                    [alllons, vdim, vattr]=nfmod.getvar(outfile_temp,['land1d_lon'])
-                    alllons = list(alllons.values())[0]    
-                    #indx/indy: 2-D array with paired [startindex, numpts]
-                    [indx3,indy3] = pointLocator(alllons, alllats, options.ptlon, options.ptlat)                
-                for pt in range(len(indx3)):
-                    pts_idx=[indx3[pt][0]]
-                    pts_num=[indx3[pt][1]]
-                    nfmod.nco_extract(outfile_temp,outfile_new, \
-                            ['landunit'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
+                    if(len(indy)>0):
+                        for pt in range(len(indy)):
+                            pts_idx=[indy[pt][0]]
+                            pts_num=[indy[pt][1]]
+                            nfmod.nco_extract(outfile_temp,outfile_new, \
+                                              [dim[1]], pts_idx, pts_num,ncksdir=ncopath)
+                    
+                            #newly-updated nc file for further processing, if any
+                            os.system('mv -f ' + outfile_new + ' '+ outfile_temp)   # do the extraction continuously
 
 
-                # (4) for gridcell-level data                   
-                os.system('mv -f ' + outfile_new + ' '+ outfile_temp)   # do the extraction continuously
-
-                if(len(indx4)<=0):#only needed from the first output file                   
-                    [alllats, vdim, vattr]=nfmod.getvar(outfile_temp,['grid1d_lat'])
-                    alllats = list(alllats.values())[0] # dict --> list
-                    [alllons, vdim, vattr]=nfmod.getvar(outfile_temp,['grid1d_lon'])
-                    alllons = list(alllons.values())[0]    
-                    #indx/indy: 2-D array with paired [startindex, numpts]
-                    [indx4,indy4] = pointLocator(alllons, alllats, options.ptlon, options.ptlat)                
-                for pt in range(len(indx4)):
-                    pts_idx=[indx4[pt][0]]
-                    pts_num=[indx4[pt][1]]
-                    nfmod.nco_extract(outfile_temp,outfile_new, \
-                            ['gridcell'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
-
-                os.system("rm -f " + outfile_temp)
-            
+           
 #------------END of pointCLM_data -----------------------------------------------------------------------
     
 
