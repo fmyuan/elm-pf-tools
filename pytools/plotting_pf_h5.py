@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import os, sys, time, math
+import re
 import numpy as np
 import h5py as h5
 import matplotlib.pyplot as plt
@@ -65,10 +67,41 @@ else:
     print('Time Unit: '+time_unit)
 
 #
+pts = [None]*2
+str_pts = [options.xindex, options.yindex]
+for i in np.arange(len(str_pts)):
+    str_pt = str_pts[i]
+    if(str_pt==0):
+        pts[i] = 0
+    else:
+        if(str_pt.strip()==':'):
+            pts[i]=1
+        else:                
+            if ('str' in str(type(str_pt))):#values with operators
+                nondecimal = re.compile(r'[^\d.,:]+')
+                v_pt = nondecimal.sub("",str_pt)
+                if(':' in str_pt):
+                    if sys.version_info[0] < 3:
+                        v_pt = v_pt.split(':')
+                    else:
+                        v_pt = np.split(v_pt,':')
+                    pts[i] = np.arange(int(v_pt[0]),int(v_pt[1])+1, dtype=int)
+            
+                elif(',' in str_pt):
+                    if sys.version_info[0] < 3:
+                        v_pt = v_pt.split(',')
+                    else:
+                        v_pt = np.split(v_pt,',')
+                    pts[i] = np.int(v_pt)
+                else:
+                    pts[i] = np.int(v_pt)                                                  
+                   
+            else: # exactly point(s)
+                pts[i] = np.int(str_pt)
 
-x=int(options.xindex);
-y=int(options.yindex);
-
+xpts = pts[0]
+ypts = pts[1]
+#
 f0 = h5.File(filename1, 'r')
 if(nfiles==2):
     f1 = h5.File(filename2, 'r')
@@ -89,10 +122,10 @@ for i in f0.keys():
             h5vars = j.split()
 
             if(nfiles==1):
-                vdata = group0[j][x,y,:]
+                vdata = group0[j][xpts,ypts,:]
             elif(nfiles==2):
                 group1 = f1[i]
-                vdata = group0[j][x,y,:]-group1[j][x,y,:]
+                vdata = group0[j][xpts,ypts,:]-group1[j][xpts,ypts,:]
             
             varname0 = varnames[0]
             if (h5vars[0] == varname0 and varname0 != ''):
@@ -117,7 +150,7 @@ for i in f0.keys():
 t  = sorted(tt)
 it = sorted(range(len(tt)), key=lambda k: tt[k])
 nt = len(tt)
-nl = len(vardata0[0])
+nl = np.size(xpts)*np.size(ypts)
 
 # plotting
 
@@ -131,7 +164,7 @@ if(nvars>=3):
 # plot 1
 sdata = np.zeros((nt,nl))
 for i in range(len(tt)):
-    sdata[i,:] = vardata0[it[i]]
+    sdata[i,:] = np.squeeze(vardata0[it[i]])
 
 ax0=plt.subplot(nrow, ncol, 1)
 if(varname0 == 'Liquid_Pressure'):
@@ -150,7 +183,7 @@ plt.text(lx, ly, '(a) ', transform=ax0.transAxes)
 if (nvars >= 2):
     sdata = np.zeros((nt,nl))
     for i in range(len(tt)):
-        sdata[i,:] = vardata1[it[i]]
+        sdata[i,:] = np.squeeze(vardata1[it[i]])
 
     ax1=plt.subplot(nrow, ncol, 2)
     if(varname1 == 'Liquid_Pressure'):
@@ -169,7 +202,7 @@ if (nvars >= 2):
 if (nvars >= 3):
     sdata = np.zeros((nt,nl))
     for i in range(len(tt)):
-        sdata[i,:] = vardata2[it[i]]
+        sdata[i,:] = np.squeeze(vardata2[it[i]])
 
     ax2=plt.subplot(nrow, ncol, 3)
     if(varname2 == 'Liquid_Pressure'):
@@ -187,7 +220,7 @@ if (nvars >= 3):
 if (nvars >= 4):
     sdata = np.zeros((nt,nl))
     for i in range(len(tt)):
-        sdata[i,:] = vardata3[it[i]]
+        sdata[i,:] = np.squeeze(vardata3[it[i]])
 
     ax3=plt.subplot(nrow, ncol, 4)
     if(varname3 == 'Liquid_Pressure'):
