@@ -21,9 +21,11 @@ parser.add_option("--time_unit", dest="tunit", default="", \
 parser.add_option("--varname", dest="vars", default="", \
                   help = "variable name(s) (max. 4) to be reading/plotting, separated by comma ")
 parser.add_option("--Xindex", dest="xindex", default=0, \
-                  help = " X direction grid index to be reading/plotting, default 0 ")
+                  help = " X direction mesh index to be reading/plotting, default 0 ")
 parser.add_option("--Yindex", dest="yindex", default=0, \
-                  help = " Y direction grid index to be reading/plotting, default 0 ")
+                  help = " Y direction mesh cell index to be reading/plotting, default 0 ")
+parser.add_option("--Zindex", dest="zindex", default=0, \
+                  help = " Z direction mesh cell index to be reading/plotting, default 0 ")
 
 (options, args) = parser.parse_args()
 
@@ -67,8 +69,8 @@ else:
     print('Time Unit: '+time_unit)
 
 #
-pts = [None]*2
-str_pts = [options.xindex, options.yindex]
+pts = [None]*3
+str_pts = [options.xindex, options.yindex, options.zindex]
 for i in np.arange(len(str_pts)):
     str_pt = str_pts[i]
     if(str_pt==0):
@@ -88,11 +90,7 @@ for i in np.arange(len(str_pts)):
                     pts[i] = np.arange(int(v_pt[0]),int(v_pt[1])+1, dtype=int)
             
                 elif(',' in str_pt):
-                    if sys.version_info[0] < 3:
-                        v_pt = v_pt.split(',')
-                    else:
-                        v_pt = np.split(v_pt,',')
-                    pts[i] = np.int(v_pt)
+                    pts[i] = np.fromstring(v_pt,sep=',')
                 else:
                     pts[i] = np.int(v_pt)                                                  
                    
@@ -101,6 +99,7 @@ for i in np.arange(len(str_pts)):
 
 xpts = pts[0]
 ypts = pts[1]
+zpts = pts[2]
 #
 f0 = h5.File(filename1, 'r')
 if(nfiles==2):
@@ -122,10 +121,10 @@ for i in f0.keys():
             h5vars = j.split()
 
             if(nfiles==1):
-                vdata = group0[j][xpts,ypts,:]
+                vdata = group0[j][xpts,ypts,zpts]
             elif(nfiles==2):
                 group1 = f1[i]
-                vdata = group0[j][xpts,ypts,:]-group1[j][xpts,ypts,:]
+                vdata = group0[j][xpts,ypts,zpts]-group1[j][xpts,ypts,zpts]
             
             varname0 = varnames[0]
             if (h5vars[0] == varname0 and varname0 != ''):
@@ -150,7 +149,7 @@ for i in f0.keys():
 t  = sorted(tt)
 it = sorted(range(len(tt)), key=lambda k: tt[k])
 nt = len(tt)
-nl = np.size(xpts)*np.size(ypts)
+nl = np.size(xpts)*np.size(ypts)*np.size(zpts)
 
 # plotting
 
