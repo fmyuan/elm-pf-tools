@@ -167,8 +167,8 @@ for i in range(len(tt)):
 
 ax0=plt.subplot(nrow, ncol, 1)
 if(varname0 == 'Liquid_Pressure'):
-    sdata = -sdata
-    ax0.set_yscale("log", nonposy='clip')
+    sdata = sdata
+    #ax0.set_yscale("log", nonposy='clip')
     
 plt.plot(t, sdata)
 plt.xlabel('Time ('+time_unit+')')
@@ -186,7 +186,7 @@ if (nvars >= 2):
 
     ax1=plt.subplot(nrow, ncol, 2)
     if(varname1 == 'Liquid_Pressure'):
-        sdata = -sdata
+        sdata = sdata
         #ax1.set_yscale("log", nonposy='clip')
     
     plt.plot(t, sdata)
@@ -205,7 +205,7 @@ if (nvars >= 3):
 
     ax2=plt.subplot(nrow, ncol, 3)
     if(varname2 == 'Liquid_Pressure'):
-        sdata = -sdata
+        sdata = sdata
         #ax2.set_yscale("log", nonposy='clip')
     
     plt.plot(t, sdata)
@@ -223,7 +223,7 @@ if (nvars >= 4):
 
     ax3=plt.subplot(nrow, ncol, 4)
     if(varname3 == 'Liquid_Pressure'):
-        sdata = -sdata
+        sdata = sdata
         #ax3.set_yscale("log", nonposy='clip')
     
     plt.plot(t, sdata)
