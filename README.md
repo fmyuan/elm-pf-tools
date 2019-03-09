@@ -8,11 +8,11 @@
 ```
 |
 | --machine-userdefined   (a few sets of user-defined machine files for CLM4.5.35)
-  --userdefined_output    (a  few examples of user-defined outputs from CLM: it's copied to 'lnd_in' under CLM run directory)
+  --userdefined_output    (a few examples of user-defined outputs from CLM: it's copied to 'lnd_in' under CLM run directory)
   --link-tree             (a script to soft-link CLM inputdata to user's inputdata directory. It was in scripts/ before 4.5.81, but removed after and appears useful)
 
-  --runPTCLM.py           (a python script to run PoinT-mode CLM)
-  --runGRDCLM.py          (a python script to run Global-mode CLM)
+  --pytools               (a few python scripts to run CLM & post-processing CLM data)
+    |-- 
   
   --alm_runPTCLMpy_mymac.sh   (a bash example script to link/copy data and call 'runPTCLM.py' on MAC OSX to configure, build, and run off-line CLM)
   --alm_runPTCLMpy_cades.sh   (a bash example script to link/copy data and call 'runPTCLM.py' on CADES-OR-CONDO to configure, build, and run off-line CLM)
