@@ -23,6 +23,10 @@ parser.add_option("--outdir", dest="outdir", default="", \
                   help = 'output directory')
 parser.add_option("--ofheader", dest="header", default="none", \
                   help = 'header of output files either in fullpath or filename in default path')
+parser.add_option("--varlist", dest="varlist", default="", \
+                      help = "variable list, separated by ':,;' default is all variables")
+parser.add_option("--varlisttxt", dest="varlisttxt", default="", \
+                      help = "variable list txt file")
 parser.add_option("--yrstart", dest="yrstart", default="", \
                       help = "user-defined start year")
 parser.add_option("--yrend", dest="yrend", default="", \
@@ -68,6 +72,14 @@ if (os.path.isdir(outdir.strip())):
 yrstart = ncfiles[0].split('.')[-2]
 yrend = ncfiles[-1].split('.')[-2]
 
+varlist = [] # this actually will concatentate all variables, except for 'excl_vars'
+if(options.varlisttxt<>''):  # varlist txt file is checked first, so over-ride 'options.varlist'
+    ftxt = open(options.varlisttxt,'r')
+    varlist = ftxt.read().splitlines()
+    ftxt.close()    
+elif(options.varlist<>''):
+    varlist = re.split('[:,;]',options.varlist)
+    
 #------------extract all vars one by one as needed -----------------------------------
 vars_name={}
 vars_dims={}
@@ -83,13 +95,14 @@ for nf in ncfiles:
         allvars = f.variables.keys()
         for key in allvars:                       
             if(('time' in f.variables[key].dimensions) and (key not in excl_vars)):
-                vars_dims[key]=f.variables[key].dimensions
-                vars_name[key]=f.variables[key].name
+                if(key in varlist or len(varlist)==0):
+                    vars_dims[key]=f.variables[key].dimensions
+                    vars_name[key]=f.variables[key].name
         f.close()
                       
     #-------------------------------------------------------------
     # (2) 'time' not always a record dimension
-    os.system(ncopath+'ncks -O -h --no_abc --mk_rec_dim time '+ outfile_old + ' -o alltemp.nc') 
+    os.system(ncopath+'ncks -O -h --mk_rec_dim time '+ outfile_old + ' -o alltemp.nc') 
            
     #-------------------------------------------------------------
     # (3)
@@ -113,7 +126,7 @@ for nf in ncfiles:
                     vstring += (','+str(dimv.strip()))
 
         #
-        os.system(ncopath+'ncks -h --no_abc -O '+ vstring+ \
+        os.system(ncopath+'ncks -h -O '+ vstring+ \
                               ' alltemp.nc -o temp.nc')
                     
         #
