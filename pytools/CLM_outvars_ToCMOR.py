@@ -58,45 +58,60 @@ if (os.path.isdir(outdir.strip())):
     #
     ncfiles.sort(key = lambda x: x.split('.')[-2])
                 
-yrstart = ncfiles[0].split('.')[-2]
-yrend = ncfiles[-1].split('.')[-2]
-
 #------------get all CMOR variable NC header files-----------------------------------
 ftxt = []
 if(options.cmorlist<>''):  # varlist txt file is checked first, so over-ride 'options.varlist'
-    if (os.path.isdir('./'+options.cmorlist.strip())):
-        # a bunch of ascii files in current directory
-        flist=os.listdir('./'+options.cmorlist.strip()) 
+    if (os.path.isdir(options.cmorlist.strip())):
+        fdir = options.cmorlist.strip()
+        if(not fdir.endswith('/')):
+            fdir = fdir + '/'
+        # a bunch of ascii files in the directory
+        flist=os.listdir(fdir)
         for ifile in flist:
-            if(ifile.endswith('.txt')): ftxt.append(ifile)
-    elif (os.path.isfile('./'+options.cmorlist.strip())):
+            if(ifile.endswith('.txt')): ftxt.append(fdir+ifile)
+    
+    elif (os.path.isfile(options.cmorlist.strip())):
         # a single ascii file
-        ftxt.append('./'+options.cmorlist.strip())
+        ftxt.append(options.cmorlist.strip())
+        
+    else:
+        print ('\n '+options.cmorlist+'is not a txt file or directory to contain CMOR variable NC header')
+        sys.exit()
+        
           
 else:
     print ('\n MUST provide a txt file or directory to contain CMOR variable NC header')
     sys.exit()
 
 
-vars_name=[]
-vars_att=[]
-for fivar in ftxt: 
-    with open(fivar) as f:
+vars_name={}
+vars_att={}
+for i in range(0,len(ftxt)):
+    vars_att[i]=[]
+    vars_name[i]=[]
+    with open(ftxt[i]) as f:
         lns = f.read().splitlines()
+        lns = list(filter(None,lns))
         for l in lns:
             l = l.strip()
             if (':' in l):
                 l = re.split('[:;]+',l,1)
-                vars_att.append(l[1].strip()) # [0] is the variable name
+                vars_att[i].append(l[1].strip()) # [0] is the variable name
             else:
                 l = re.split('[,;\s\(\)]+',l)
-                vars_name.append(l[1].strip()) # the [0] is the type
+                l = list(filter(None,l))
+                vars_name[i].append(l[1].strip()) # the [0] is the type
+                
+                print('\nCMOR-var: '+str(vars_name[i]))
               
     f.close()
               
     
 #------------pick and merge vars in the NC file list -----------------------------------
-CMOR_files = []
+CMOR_varname={} # dict for holding informations on CMOR variables actually available
+CMOR_varatt={}
+CMOR_ncfile={}
+n_var = -1
 for nf in ncfiles:            
     
     outfile_old = outdir+'/'+nf
@@ -107,11 +122,12 @@ for nf in ncfiles:
                    
     #-------------------------------------------------------------
     for ivar in range(0,len(vars_name)):
-        var_new = vars_name[ivar].strip()
+        var_new = vars_name[ivar]
+        var_new = var_new[0] #list to one single string
          
         outfile_new = './CMOR_'+var_new+'_'+nf
                 
-        for iatt in vars_att:
+        for iatt in vars_att[ivar]:
             if ('original_name' in iatt): 
             # ELM's output variable name(s), 
             #  e.g. tsl:original_name = "TSOI" ;
@@ -136,8 +152,12 @@ for nf in ncfiles:
         if(not YESinNCFILE): 
             continue
         else:
+            n_var = n_var + 1
             print('\n Now Processing file: '+nf + '---> '+ outfile_new)
-            CMOR_files.append(outfile_new) # save the new files for using next-step
+
+            CMOR_varname[n_var]=var_new
+            CMOR_varatt[n_var]=vars_att[ivar]
+            CMOR_ncfile[n_var]=outfile_new # save the new files for using next-step. NOTE: must be in exactly-order as 'ivar' in vars_name and vars_att
        
         #-------------------------------------------------------------
         for var_old in varname_orig:
@@ -162,8 +182,8 @@ for nf in ncfiles:
                                                   
 #------------any arithmatic operations in the CMOR NC files -----------------------------------
 
-for ivar in range(0,len(vars_name)):
-    var_new = vars_name[ivar].strip()
+for ivar in range(0,len(CMOR_varname)):
+    var_new = CMOR_varname[ivar]
         
     # multiplier for converting from ELM variable to CMOR
     multiplier = 1.0
@@ -171,7 +191,7 @@ for ivar in range(0,len(vars_name)):
     # summed over soil layers, if required
     summed_soillayers = False
         
-    for iatt in vars_att:
+    for iatt in CMOR_varatt[ivar]:
         if ('original_name' in iatt): 
             # ELM's output variable name(s), 
             #  e.g. tsl:original_name = "TSOI" ;
@@ -199,55 +219,51 @@ for ivar in range(0,len(vars_name)):
     # multiplier for a specific variable
     if(var_new=='burntArea'):
     #burntArea:comment = "FAREA_BURNED times days per month and 86400*100 to convert to percentage" ;
-        multiplier=30.0*86400.0*100.0
+        multiplier=365.0/12.0*86400.0*100.0 # not exactly (TODO)
                       
                   
     #-------------------------------------------------------------
     var_old = varname_orig[0]
-    for outfile_new in CMOR_files:        
-        f = Dataset(outfile_new,'r')
-        allvars = f.variables.keys()
-        f.close()
+    
+    #-------------------------------------------------------------
+    outfile_new = CMOR_ncfile[ivar]      
+    f = Dataset(outfile_new,'r')
+    allvars = f.variables.keys()
+    f.close()
         
-        #-------------------------------------------------------------
-        if(var_old in allvars):
+    print('\n Now Arithematic Operation of File: '+ outfile_new)
 
-            print('\n Now Arithematic Operation of File: '+ outfile_new)
+    # add-up operation.
+    # NOTE: if other than 'sum' of involved variables, please modify this (TODO)    
+    for iv in range(1,len(varname_orig)):
+        vstring = var_old + '='+var_old+'+'+varname_orig[iv]
+        os.system(ncopath+"ncap2 --append -s '"+ vstring +";' "+ outfile_new + " -o "+ outfile_new)
+        # remove no-more-needed original variable
+        os.system(ncopath+'ncks -O -x -v '+ varname_orig[iv] +' '+outfile_new + ' -o '+ outfile_new)             
+        # (END) for-loop for vars from 1 ~ end in varname_orig
 
-            # add-up operation.
-            # NOTE: if other than 'sum' of involved variables, please modify this (TODO)    
-            for iv in range(1,len(varname_orig)):
-                vstring = var_old + '='+var_old+'+'+varname_orig[iv]
-                print('\n'+ncopath+"ncap2 --append -s '"+ vstring +";' "+ outfile_new + " -o "+ outfile_new)
-                os.system(ncopath+"ncap2 --append -s '"+ vstring +";' "+ outfile_new + " -o "+ outfile_new)
-                # remove no-more-needed original variable
-                os.system(ncopath+'ncks -O -x -v '+ varname_orig[iv] +' '+outfile_new + ' -o '+ outfile_new)             
-            # (END) for-loop for vars from 1 ~ end in varname_orig
-
-            # rename variable, after clean-up original variable(s)
-            os.system(ncopath+'ncrename -O -v '+var_old+','+var_new+' '+ outfile_new + ' -o '+ outfile_new)    
+    # rename variable, after clean-up original variable(s)
+    os.system(ncopath+'ncrename -O -v '+var_old+','+var_new+' '+ outfile_new + ' -o '+ outfile_new)    
               
-            # summed over soil layers, dim of 'levgrnd' usually the second slice of 'time,levgrnd,lat,lon'
-            if(summed_soillayers):
-                os.system(ncopath+"ncwa -O -a levgrnd " + outfile_new + " -o "+ outfile_new) 
-                vstring = var_new + '='+var_new+'*15.0'
-                os.system(ncopath+"ncap2 --append -s '"+ vstring +";' "+ outfile_new + " -o "+ outfile_new)
+    # summed over soil layers, dim of 'levgrnd' usually the second slice of 'time,levgrnd,lat,lon'
+    if(summed_soillayers):
+        os.system(ncopath+"ncwa -O -a levgrnd " + outfile_new + " -o "+ outfile_new) 
+        vstring = var_new + '='+var_new+'*15.0'
+        os.system(ncopath+"ncap2 --append -s '"+ vstring +";' "+ outfile_new + " -o "+ outfile_new)
         
-            # multiplier, if any other than 1
-            if(multiplier <> 1.0):
-                vstring = var_new + '='+var_new+'*'+str(multiplier)
-                os.system(ncopath+"ncap2 --append -s '"+ vstring +";' "+ outfile_new + " -o "+ outfile_new)
+    # multiplier, if any other than 1
+    if(multiplier <> 1.0):
+        vstring = var_new + '='+var_new+'*'+str(multiplier)
+        os.system(ncopath+"ncap2 --append -s '"+ vstring +";' "+ outfile_new + " -o "+ outfile_new)
 
-            # rename/add attributes for varialbe
-            for iatt in vars_att:
-                att=re.split('[=]+',iatt)
-                v_string = var_new+'@'+att[0]+'='+att[1]+';'
-                v_string = " -s '"+v_string+" ' "+outfile_new + " -o "+outfile_new
-                os.system(ncopath+"ncap2 -O "+v_string) 
-            #(END) for-loop of renaming attributes
-        
-        #end of if-block (var_old in CMOR_files)
-        
+    # rename/add attributes for varialbe
+    for iatt in vars_att[ivar]:
+        att=re.split('[=]+',iatt)
+        v_string = var_new+'@'+att[0]+'='+att[1]+';'
+        v_string = " -s '"+v_string+" ' "+outfile_new + " -o "+outfile_new
+        os.system(ncopath+"ncap2 -O "+v_string) 
+    #(END) for-loop of renaming attributes
+                
 #(END) for-loop of 'var_new in vars_name of CMOR' 
                                         
 #------------END of CLM_outvars_ToCMOR -----------------------------------------------------------------------
