@@ -1,0 +1,9 @@
+	float rsds(time, lat, lon) ;
+		rsds:long_name = "atmospheric incident solar radiation" ;
+		rsds:standard_name = "surface_downwelling_shortwave_flux_in_air" ;
+		rsds:original_name = "FSDS" ;
+		rsds:comment = "FSDS unchanged" ;
+		rsds:units = "W m-2" ;
+		rsds:missing_value = -1.e+20f ;
+		rsds:_FillValue = -1.e+20f ;
+		rsds:cell_methods = "time: mean" ;

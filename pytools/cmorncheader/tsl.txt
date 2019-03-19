@@ -1,0 +1,9 @@
+	float tsl(time, levgrnd, lat, lon) ;
+		tsl:long_name = "soil temperature (vegetated landunits only)" ;
+		tsl:standard_name = "soil_temperature" ;
+		tsl:original_name = "TSOI" ;
+		tsl:comment = "TSOI unchanged" ;
+		tsl:units = "K" ;
+		tsl:missing_value = -1.e+20f ;
+		tsl:_FillValue = -1.e+20f ;
+		tsl:cell_methods = "time: mean" ;

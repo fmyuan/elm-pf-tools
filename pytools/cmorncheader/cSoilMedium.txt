@@ -1,0 +1,9 @@
+	float cSoilMedium(time, lat, lon) ;
+		cSoilMedium:long_name = "SOIL3 C" ;
+		cSoilMedium:standard_name = "medium_soil_pool_carbon_content" ;
+		cSoilMedium:original_name = "SOIL3C" ;
+		cSoilMedium:comment = "SOIL3C divide by 1000 to convert g to kg" ;
+		cSoilMedium:units = "kg m-2" ;
+		cSoilMedium:missing_value = -1.e+20f ;
+		cSoilMedium:_FillValue = -1.e+20f ;
+		cSoilMedium:cell_methods = "time: mean" ;

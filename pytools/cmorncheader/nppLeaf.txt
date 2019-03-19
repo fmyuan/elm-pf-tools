@@ -1,0 +1,9 @@
+	float nppLeaf(time, lat, lon) ;
+		nppLeaf:long_name = "leaf C allocation" ;
+		nppLeaf:standard_name = "net_primary_productivity_of_carbon_accumulated_in_leaves" ;
+		nppLeaf:original_name = "LEAFC_ALLOC" ;
+		nppLeaf:comment = "LEAFC_ALLOC divide by 1000 to convert g to kg" ;
+		nppLeaf:units = "kg m-2 s-1" ;
+		nppLeaf:missing_value = -1.e+20f ;
+		nppLeaf:_FillValue = -1.e+20f ;
+		nppLeaf:cell_methods = "time: mean" ;

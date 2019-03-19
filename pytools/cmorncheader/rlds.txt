@@ -1,0 +1,9 @@
+	float rlds(time, lat, lon) ;
+		rlds:long_name = "atmospheric longwave radiation" ;
+		rlds:standard_name = "surface_downwelling_longwave_flux_in_air" ;
+		rlds:original_name = "FLDS" ;
+		rlds:comment = "FLDS unchanged" ;
+		rlds:units = "W m-2" ;
+		rlds:missing_value = -1.e+20f ;
+		rlds:_FillValue = -1.e+20f ;
+		rlds:cell_methods = "time: mean" ;

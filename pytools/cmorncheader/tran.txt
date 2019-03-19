@@ -1,0 +1,9 @@
+	float tran(time, lat, lon) ;
+		tran:long_name = "canopy transpiration" ;
+		tran:standard_name = "transpiration_flux" ;
+		tran:original_name = "QVEGT" ;
+		tran:comment = "QVEGT unchanged" ;
+		tran:units = "kg m-2 s-1" ;
+		tran:missing_value = -1.e+20f ;
+		tran:_FillValue = -1.e+20f ;
+		tran:cell_methods = "time: mean" ;

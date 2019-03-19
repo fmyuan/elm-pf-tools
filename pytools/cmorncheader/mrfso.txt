@@ -1,0 +1,9 @@
+	float mrfso(time, lat, lon) ;
+		mrfso:long_name = "soil ice (vegetated landunits only)" ;
+		mrfso:standard_name = "soil_frozen_water_content" ;
+		mrfso:original_name = "SOILICE" ;
+		mrfso:comment = "SOILICE summed over soil layer depths" ;
+		mrfso:units = "kg m-2" ;
+		mrfso:missing_value = -1.e+20f ;
+		mrfso:_FillValue = -1.e+20f ;
+		mrfso:cell_methods = "time: mean" ;

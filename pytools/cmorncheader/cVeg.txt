@@ -1,0 +1,9 @@
+	float cVeg(time, lat, lon) ;
+		cVeg:long_name = "total vegetation carbon, excluding cpool" ;
+		cVeg:standard_name = "vegetation_carbon_content" ;
+		cVeg:original_name = "TOTVEGC" ;
+		cVeg:comment = "TOTVEGC divide by 1000 to convert g to kg" ;
+		cVeg:units = "kg m-2" ;
+		cVeg:missing_value = -1.e+20f ;
+		cVeg:_FillValue = -1.e+20f ;
+		cVeg:cell_methods = "time: mean" ;

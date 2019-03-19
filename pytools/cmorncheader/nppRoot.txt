@@ -1,0 +1,9 @@
+	float nppRoot(time, lat, lon) ;
+		nppRoot:long_name = "fine root C allocation" ;
+		nppRoot:standard_name = "net_primary_productivity_of_carbon_accumulated_in_roots" ;
+		nppRoot:original_name = "FROOTC_ALLOC" ;
+		nppRoot:comment = "FROOTC_ALLOC divide by 1000 to convert g to kg" ;
+		nppRoot:units = "kg m-2 s-1" ;
+		nppRoot:missing_value = -1.e+20f ;
+		nppRoot:_FillValue = -1.e+20f ;
+		nppRoot:cell_methods = "time: mean" ;

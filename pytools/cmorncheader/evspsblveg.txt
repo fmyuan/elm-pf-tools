@@ -1,0 +1,9 @@
+	float evspsblveg(time, lat, lon) ;
+		evspsblveg:long_name = "canopy evaporation" ;
+		evspsblveg:standard_name = "water_evaporation_flux_from_canopy" ;
+		evspsblveg:original_name = "QVEGE" ;
+		evspsblveg:comment = "QVEGE unchanged" ;
+		evspsblveg:units = "kg m-2 s-1" ;
+		evspsblveg:missing_value = -1.e+20f ;
+		evspsblveg:_FillValue = -1.e+20f ;
+		evspsblveg:cell_methods = "time: mean" ;

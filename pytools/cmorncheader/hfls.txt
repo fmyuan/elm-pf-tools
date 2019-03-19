@@ -1,0 +1,9 @@
+	float hfls(time, lat, lon) ;
+		hfls:long_name = "total latent heat flux [+ to atm]" ;
+		hfls:standard_name = "surface_upward_latent_heat_flux" ;
+		hfls:original_name = "EFLX_LH_TOT" ;
+		hfls:comment = "EFLX_LH_TOT unchanged" ;
+		hfls:units = "W m-2" ;
+		hfls:missing_value = -1.e+20f ;
+		hfls:_FillValue = -1.e+20f ;
+		hfls:cell_methods = "time: mean" ;

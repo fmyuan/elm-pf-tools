@@ -1,0 +1,9 @@
+	float rlus(time, lat, lon) ;
+		rlus:long_name = "emitted infrared (longwave) radiation" ;
+		rlus:standard_name = "surface_upwelling_longwave_flux_in_air" ;
+		rlus:original_name = "FIRE" ;
+		rlus:comment = "FIRE unchanged" ;
+		rlus:units = "W m-2" ;
+		rlus:missing_value = -1.e+20f ;
+		rlus:_FillValue = -1.e+20f ;
+		rlus:cell_methods = "time: mean" ;

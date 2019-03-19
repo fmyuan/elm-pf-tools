@@ -1,0 +1,9 @@
+	float hurs(time, lat, lon) ;
+		hurs:long_name = "2m relative humidity" ;
+		hurs:standard_name = "relative_humidity" ;
+		hurs:original_name = "RH2M" ;
+		hurs:comment = "RH2M unchanged" ;
+		hurs:units = "%" ;
+		hurs:missing_value = -1.e+20f ;
+		hurs:_FillValue = -1.e+20f ;
+		hurs:cell_methods = "time: mean" ;

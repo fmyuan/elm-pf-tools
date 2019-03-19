@@ -1,0 +1,9 @@
+	float evspsbl(time, lat, lon) ;
+		evspsbl:long_name = "Ground evaporation (soil/snow evaporation + soil/snow sublimation - dew)" ;
+		evspsbl:standard_name = "water_evaporation_flux" ;
+		evspsbl:original_name = "QSOIL,QVEGE,QVEGT" ;
+		evspsbl:comment = "QSOIL+QVEGE+QVEGT" ;
+		evspsbl:units = "kg m-2 s-1" ;
+		evspsbl:missing_value = -1.e+20f ;
+		evspsbl:_FillValue = -1.e+20f ;
+		evspsbl:cell_methods = "time: mean" ;

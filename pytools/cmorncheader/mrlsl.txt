@@ -1,0 +1,9 @@
+	float mrlsl(time, levgrnd, lat, lon) ;
+		mrlsl:long_name = "soil liquid water (vegetated landunits only)" ;
+		mrlsl:standard_name = "moisture_content_of_soil_layer" ;
+		mrlsl:original_name = "SOILLIQ,SOILICE" ;
+		mrlsl:comment = "SOILLIQ+SOILICE" ;
+		mrlsl:units = "kg m-2" ;
+		mrlsl:missing_value = -1.e+20f ;
+		mrlsl:_FillValue = -1.e+20f ;
+		mrlsl:cell_methods = "time: mean" ;

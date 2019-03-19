@@ -1,0 +1,9 @@
+	float pr(time, lat, lon) ;
+		pr:long_name = "atmospheric rain" ;
+		pr:standard_name = "precipitation_flux" ;
+		pr:original_name = "RAIN, SNOW" ;
+		pr:comment = "RAIN+SNOW" ;
+		pr:units = "kg m-2 s-1" ;
+		pr:missing_value = -1.e+20f ;
+		pr:_FillValue = -1.e+20f ;
+		pr:cell_methods = "time: mean" ;

@@ -1,0 +1,9 @@
+	float cSoilFast(time, lat, lon) ;
+		cSoilFast:long_name = "SOIL1 C" ;
+		cSoilFast:standard_name = "fast_soil_pool_carbon_content" ;
+		cSoilFast:original_name = "SOIL1C" ;
+		cSoilFast:comment = "SOIL1C divide by 1000 to convert g to kg" ;
+		cSoilFast:units = "kg m-2" ;
+		cSoilFast:missing_value = -1.e+20f ;
+		cSoilFast:_FillValue = -1.e+20f ;
+		cSoilFast:cell_methods = "time: mean" ;

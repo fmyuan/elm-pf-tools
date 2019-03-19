@@ -1,0 +1,9 @@
+	float ps(time, lat, lon) ;
+		ps:long_name = "atmospheric pressure" ;
+		ps:standard_name = "surface_air_pressure" ;
+		ps:original_name = "PBOT" ;
+		ps:comment = "PBOT unchanged" ;
+		ps:units = "Pa" ;
+		ps:missing_value = -1.e+20f ;
+		ps:_FillValue = -1.e+20f ;
+		ps:cell_methods = "time: mean" ;

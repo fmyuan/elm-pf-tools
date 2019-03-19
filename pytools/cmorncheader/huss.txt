@@ -1,0 +1,9 @@
+	float huss(time, lat, lon) ;
+		huss:long_name = "2m specific humidity" ;
+		huss:standard_name = "specific_humidity" ;
+		huss:original_name = "Q2M" ;
+		huss:comment = "Q2M unchanged" ;
+		huss:units = "1" ;
+		huss:missing_value = -1.e+20f ;
+		huss:_FillValue = -1.e+20f ;
+		huss:cell_methods = "time: mean" ;

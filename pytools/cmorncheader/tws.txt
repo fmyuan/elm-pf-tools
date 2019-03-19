@@ -1,0 +1,6 @@
+	float TWS(time, lat, lon) ;
+		TWS:long_name = "total water storage" ;
+		TWS:units = "mm" ;
+		TWS:cell_methods = "time: mean" ;
+		TWS:_FillValue = 1.e+36f ;
+		TWS:missing_value = 1.e+36f ;

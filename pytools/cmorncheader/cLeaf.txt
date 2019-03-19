@@ -1,0 +1,9 @@
+	float cLeaf(time, lat, lon) ;
+		cLeaf:long_name = "leaf C" ;
+		cLeaf:standard_name = "leaf_carbon_content" ;
+		cLeaf:original_name = "LEAFC" ;
+		cLeaf:comment = "LEAFC divide by 1000 to convert g to kg" ;
+		cLeaf:units = "kg m-2" ;
+		cLeaf:missing_value = -1.e+20f ;
+		cLeaf:_FillValue = -1.e+20f ;
+		cLeaf:cell_methods = "time: mean" ;

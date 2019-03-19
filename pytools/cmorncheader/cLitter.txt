@@ -1,0 +1,9 @@
+	float cLitter(time, lat, lon) ;
+		cLitter:long_name = "total litter carbon" ;
+		cLitter:standard_name = "litter_carbon_content" ;
+		cLitter:original_name = "TOTLITC" ;
+		cLitter:comment = "TOTLITC divide by 1000 to convert g to kg" ;
+		cLitter:units = "kg m-2" ;
+		cLitter:missing_value = -1.e+20f ;
+		cLitter:_FillValue = -1.e+20f ;
+		cLitter:cell_methods = "time: mean" ;

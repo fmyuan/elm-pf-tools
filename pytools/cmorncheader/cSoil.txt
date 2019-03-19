@@ -1,0 +1,9 @@
+	float cSoil(time, lat, lon) ;
+		cSoil:long_name = "total soil organic matter carbon to 1 meter depth" ;
+		cSoil:standard_name = "soil_carbon_content" ;
+		cSoil:original_name = "TOTSOMC_1m" ;
+		cSoil:comment = "TOTSOMC_1m divide by 1000 to convert g to kg" ;
+		cSoil:units = "kg m-2" ;
+		cSoil:missing_value = -1.e+20f ;
+		cSoil:_FillValue = -1.e+20f ;
+		cSoil:cell_methods = "time: mean" ;

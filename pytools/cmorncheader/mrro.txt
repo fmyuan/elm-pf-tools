@@ -1,0 +1,9 @@
+	float mrro(time, lat, lon) ;
+		mrro:long_name = "total liquid runoff (does not include QSNWCPICE)" ;
+		mrro:standard_name = "runoff_flux" ;
+		mrro:original_name = "QRUNOFF" ;
+		mrro:comment = "QRUNOFF unchanged" ;
+		mrro:units = "kg m-2 s-1" ;
+		mrro:missing_value = -1.e+20f ;
+		mrro:_FillValue = -1.e+20f ;
+		mrro:cell_methods = "time: mean" ;

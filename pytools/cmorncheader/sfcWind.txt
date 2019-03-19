@@ -1,0 +1,9 @@
+	float sfcWind(time, lat, lon) ;
+		sfcWind:long_name = "atmospheric wind velocity magnitude" ;
+		sfcWind:standard_name = "wind_speed" ;
+		sfcWind:original_name = "WIND" ;
+		sfcWind:comment = "WIND unchanged" ;
+		sfcWind:units = "m s-1" ;
+		sfcWind:missing_value = -1.e+20f ;
+		sfcWind:_FillValue = -1.e+20f ;
+		sfcWind:cell_methods = "time: mean" ;

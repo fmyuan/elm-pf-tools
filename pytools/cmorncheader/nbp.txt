@@ -1,0 +1,9 @@
+	float nbp(time, lat, lon) ;
+		nbp:long_name = "net biome production, includes fire, landuse, and harvest flux, positive for sink" ;
+		nbp:standard_name = "surface_net_downward_mass_flux_of_carbon_dioxide_expressed_as_carbon_due_to_all_land_processes" ;
+		nbp:original_name = "NBP" ;
+		nbp:comment = "NBP divide by 1000 to convert g to kg" ;
+		nbp:units = "kg m-2 s-1" ;
+		nbp:missing_value = -1.e+20f ;
+		nbp:_FillValue = -1.e+20f ;
+		nbp:cell_methods = "time: mean" ;

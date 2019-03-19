@@ -1,0 +1,10 @@
+	float hfss(time, lat, lon) ;
+		hfss:long_name = "sensible heat" ;
+		hfss:standard_name = "surface_upward_sensible_heat_flux" ;
+		hfss:original_name = "FSH" ;
+		hfss:comment = "FSH unchanged" ;
+		hfss:units = "W m-2" ;
+		hfss:missing_value = -1.e+20f ;
+		hfss:_FillValue = -1.e+20f ;
+		hfss:cell_methods = "time: mean" ;
+

@@ -1,0 +1,9 @@
+	float snc(time, lat, lon) ;
+		snc:long_name = "fraction of ground covered by snow" ;
+		snc:standard_name = "surface_snow_area_fraction" ;
+		snc:original_name = "FSNO" ;
+		snc:comment = "FSNO times 100 to convert to percentage" ;
+		snc:units = "%" ;
+		snc:missing_value = -1.e+20f ;
+		snc:_FillValue = -1.e+20f ;
+		snc:cell_methods = "time: mean" ;

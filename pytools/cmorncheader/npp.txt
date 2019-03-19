@@ -1,0 +1,9 @@
+	float npp(time, lat, lon) ;
+		npp:long_name = "net primary production" ;
+		npp:standard_name = "net_primary_productivity_of_carbon" ;
+		npp:original_name = "NPP" ;
+		npp:comment = "NPP divide by 1000 to convert g to kg" ;
+		npp:units = "kg m-2 s-1" ;
+		npp:missing_value = -1.e+20f ;
+		npp:_FillValue = -1.e+20f ;
+		npp:cell_methods = "time: mean" ;

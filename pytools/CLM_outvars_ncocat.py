@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 
 #----------------------
-# Extract point(s) data from ELM outputs
+# Concatentating ELM monthly/yearly output nc files, for a list of variables
+# with each in a single nc file.
+# The dafault is to do so for all variables in the first file.
 #
 
 import os, sys, time, math

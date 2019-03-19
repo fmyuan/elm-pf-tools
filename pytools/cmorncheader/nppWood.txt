@@ -1,0 +1,9 @@
+	float nppWood(time, lat, lon) ;
+		nppWood:long_name = "wood C eallocation" ;
+		nppWood:standard_name = "net_primary_productivity_of_carbon_accumulated_in_wood" ;
+		nppWood:original_name = "WOODC_ALLOC" ;
+		nppWood:comment = "WOODC_ALLOC divide by 1000 to convert g to kg" ;
+		nppWood:units = "kg m-2 s-1" ;
+		nppWood:missing_value = -1.e+20f ;
+		nppWood:_FillValue = -1.e+20f ;
+		nppWood:cell_methods = "time: mean" ;

@@ -1,0 +1,9 @@
+	float lai(time, lat, lon) ;
+		lai:long_name = "total projected leaf area index" ;
+		lai:standard_name = "leaf_area_index" ;
+		lai:original_name = "TLAI" ;
+		lai:comment = "TLAI unchanged" ;
+		lai:units = "1" ;
+		lai:missing_value = -1.e+20f ;
+		lai:_FillValue = -1.e+20f ;
+		lai:cell_methods = "time: mean" ;

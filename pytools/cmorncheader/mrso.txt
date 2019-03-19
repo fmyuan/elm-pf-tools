@@ -1,0 +1,9 @@
+	float mrso(time, lat, lon) ;
+		mrso:long_name = "soil ice (vegetated landunits only)" ;
+		mrso:standard_name = "soil_moisture_content" ;
+		mrso:original_name = "SOILICE, SOILLIQ" ;
+		mrso:comment = "SOILICE+SOILLIQ, summed over soil depths, capped at 5000 kg m-2" ;
+		mrso:units = "kg m-2" ;
+		mrso:missing_value = -1.e+20f ;
+		mrso:_FillValue = -1.e+20f ;
+		mrso:cell_methods = "time: mean" ;

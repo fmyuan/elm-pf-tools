@@ -1,0 +1,9 @@
+	float ra(time, lat, lon) ;
+		ra:long_name = "autotrophic respiration (MR + GR)" ;
+		ra:standard_name = "plant_respiration_carbon_flux" ;
+		ra:original_name = "AR" ;
+		ra:comment = "AR divide by 1000 to convert g to kg" ;
+		ra:units = "kg m-2 s-1" ;
+		ra:missing_value = -1.e+20f ;
+		ra:_FillValue = -1.e+20f ;
+		ra:cell_methods = "time: mean" ;

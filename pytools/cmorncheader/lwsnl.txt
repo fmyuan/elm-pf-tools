@@ -1,0 +1,9 @@
+	float lwsnl(time, lat, lon) ;
+		lwsnl:long_name = "snow liquid water" ;
+		lwsnl:standard_name = "liquid_water_content_of_snow_layer" ;
+		lwsnl:original_name = "SNOWLIQ" ;
+		lwsnl:comment = "SNOWLIQ missing values set to 0" ;
+		lwsnl:units = "kg m-2" ;
+		lwsnl:missing_value = -1.e+20f ;
+		lwsnl:_FillValue = -1.e+20f ;
+		lwsnl:cell_methods = "time: mean" ;

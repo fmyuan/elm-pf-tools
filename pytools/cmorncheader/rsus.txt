@@ -1,0 +1,9 @@
+	float rsus(time, lat, lon) ;
+		rsus:long_name = "reflected solar radiation" ;
+		rsus:standard_name = "surface_upwelling_shortwave_flux_in_air" ;
+		rsus:original_name = "FSR" ;
+		rsus:comment = "FSR unchanged" ;
+		rsus:units = "W m-2" ;
+		rsus:missing_value = -1.e+20f ;
+		rsus:_FillValue = -1.e+20f ;
+		rsus:cell_methods = "time: mean" ;

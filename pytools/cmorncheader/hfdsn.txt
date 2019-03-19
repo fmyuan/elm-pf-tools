@@ -1,0 +1,9 @@
+	float hfdsn(time, lat, lon) ;
+		hfdsn:long_name = "heat flux into soil/snow including snow melt and lake / snow light transmission" ;
+		hfdsn:standard_name = "surface_downward_heat_flux_in_snow" ;
+		hfdsn:original_name = "FGR" ;
+		hfdsn:comment = "FGR reversed sign" ;
+		hfdsn:units = "W m-2" ;
+		hfdsn:missing_value = -1.e+20f ;
+		hfdsn:_FillValue = -1.e+20f ;
+		hfdsn:cell_methods = "time: mean" ;

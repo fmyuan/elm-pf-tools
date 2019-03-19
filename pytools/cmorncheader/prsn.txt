@@ -1,0 +1,9 @@
+	float prsn(time, lat, lon) ;
+		prsn:long_name = "atmospheric snow" ;
+		prsn:standard_name = "snowfall_flux" ;
+		prsn:original_name = "SNOW" ;
+		prsn:comment = "SNOW unchanged" ;
+		prsn:units = "kg m-2 s-1" ;
+		prsn:missing_value = -1.e+20f ;
+		prsn:_FillValue = -1.e+20f ;
+		prsn:cell_methods = "time: mean" ;

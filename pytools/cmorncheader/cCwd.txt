@@ -1,0 +1,9 @@
+	float cCwd(time, lat, lon) ;
+		cCwd:long_name = "CWD C" ;
+		cCwd:standard_name = "wood_debris_carbon_content" ;
+		cCwd:original_name = "CWDC" ;
+		cCwd:comment = "CWDC divide by 1000 to convert g to kg" ;
+		cCwd:units = "kg m-2" ;
+		cCwd:missing_value = -1.e+20f ;
+		cCwd:_FillValue = -1.e+20f ;
+		cCwd:cell_methods = "time: mean" ;

@@ -1,0 +1,9 @@
+	float snd(time, lat, lon) ;
+		snd:long_name = "gridcell mean snow height" ;
+		snd:standard_name = "surface_snow_thickness" ;
+		snd:original_name = "SNOWDP" ;
+		snd:comment = "SNOWDP missing values set to 0" ;
+		snd:units = "m" ;
+		snd:missing_value = -1.e+20f ;
+		snd:_FillValue = -1.e+20f ;
+		snd:cell_methods = "time: mean" ;

@@ -1,0 +1,9 @@
+	float gpp(time, lat, lon) ;
+		gpp:long_name = "gross primary production" ;
+		gpp:standard_name = "gross_primary_productivity_of_carbon" ;
+		gpp:original_name = "GPP" ;
+		gpp:comment = "GPP divide by 1000 to convert g to kg" ;
+		gpp:units = "kg m-2 s-1" ;
+		gpp:missing_value = -1.e+20f ;
+		gpp:_FillValue = -1.e+20f ;
+		gpp:cell_methods = "time: mean" ;

@@ -1,0 +1,9 @@
+	float tas(time, lat, lon) ;
+		tas:long_name = "2m air temperature" ;
+		tas:standard_name = "air_temperature" ;
+		tas:original_name = "TSA" ;
+		tas:comment = "TSA unchanged" ;
+		tas:units = "K" ;
+		tas:missing_value = -1.e+20f ;
+		tas:_FillValue = -1.e+20f ;
+		tas:cell_methods = "time: mean" ;

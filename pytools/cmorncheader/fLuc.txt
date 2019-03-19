@@ -1,0 +1,9 @@
+	float fLuc(time, lat, lon) ;
+		fLuc:long_name = "total C emitted from land cover conversion and wood product pools" ;
+		fLuc:standard_name = "surface_net_upward_mass_flux_of_carbon_dioxide_expressed_as_carbon_due_to_emission_from_anthropogenic_land_use_change" ;
+		fLuc:original_name = "LAND_USE_FLUX" ;
+		fLuc:comment = "LAND_USE_FLUX divide by 1000 to convert g to kg" ;
+		fLuc:units = "kg m-2 s-1" ;
+		fLuc:missing_value = -1.e+20f ;
+		fLuc:_FillValue = -1.e+20f ;
+		fLuc:cell_methods = "time: mean" ;

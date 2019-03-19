@@ -1,0 +1,9 @@
+	float rMaint(time, lat, lon) ;
+		rMaint:long_name = "maintenance respiration" ;
+		rMaint:standard_name = "surface_upward_carbon_mass_flux_due_to_plant_respiration_for_biomass_maintenance" ;
+		rMaint:original_name = "MR" ;
+		rMaint:comment = "MR divide by 1000 to convert g to kg" ;
+		rMaint:units = "kg m-2 s-1" ;
+		rMaint:missing_value = -1.e+20f ;
+		rMaint:_FillValue = -1.e+20f ;
+		rMaint:cell_methods = "time: mean" ;

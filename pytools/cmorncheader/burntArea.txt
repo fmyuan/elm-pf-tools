@@ -1,0 +1,9 @@
+	float burntArea(time, lat, lon) ;
+		burntArea:long_name = "timestep fractional area burned" ;
+		burntArea:standard_name = "area_fraction" ;
+		burntArea:original_name = "FAREA_BURNED" ;
+		burntArea:comment = "FAREA_BURNED times days per month and 86400*100 to convert to percentage" ;
+		burntArea:units = "%" ;
+		burntArea:missing_value = -1.e+20f ;
+		burntArea:_FillValue = -1.e+20f ;
+		burntArea:cell_methods = "time: mean" ;
