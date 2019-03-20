@@ -1,0 +1,10 @@
+        float rh(time, lat, lon) ;
+                rh:long_name = "total heterotrophic respiration" ;
+                rh:standard_name = "heterotrophic_respiration_carbon_flux" ;
+                rh:original_name = "HR" ;
+                rh:comment = "HR divide by 1000 to convert g to kg" ;
+                rh:units = "kg m-2 s-1" ;
+                rh:missing_value = -1.e+20f ;
+                rh:_FillValue = -1.e+20f ;
+                rh:cell_methods = "time: mean" ;
+

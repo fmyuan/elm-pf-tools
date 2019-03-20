@@ -1,9 +1,9 @@
 	float snw(time, lat, lon) ;
-		snw:long_name = "snow depth (liquid water)" ;
+		snw:long_name = "snow depth (snow liquid water equivalent)" ;
 		snw:standard_name = "surface_snow_amount" ;
 		snw:original_name = "H2OSNO" ;
-		snw:comment = "H2OSNO missing values set to 0" ;
-		snw:units = "kg m-2" ;
+		snw:comment = "H2OSNO missing values set to 0, and  divided by 1000 to convert kg/m2 to meters " ;
+		snw:units = "m" ;
 		snw:missing_value = -1.e+20f ;
 		snw:_FillValue = -1.e+20f ;
 		snw:cell_methods = "time: mean" ;
