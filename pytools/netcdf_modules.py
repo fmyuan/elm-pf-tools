@@ -233,11 +233,69 @@ def nc2csv(file, varnames):
                 t_v = np.vstack( (t_v,np.hstack((key, v)) ) )
             else:
                 print(key+' has different dimensions, so will NOT included in .csv file')
-    
+                            
     t_v = np.swapaxes(t_v, 1, 0)
     np.savetxt(file+'.csv', t_v, delimiter=',', fmt='%s')
     print('done!')
 
+#----------------------------------------------------------------------------             
+# convert geotiff to ncfile
+def geotiff2nc(file, bandinfos):
+    # file: file name
+    # bandinfos in 2-D strings: tiff file' bands and its NC name, units, long_name, standard_name
+    import datetime as dt
+    import gdal
+    import re
+
+    gdalf = gdal.Open(file)
+    alldata = gdalf.ReadAsArray()
+    nband,nlat,nlon = np.shape(alldata)
+
+    b = gdalf.GetGeoTransform() #bbox, interval
+    lon = np.arange(nlon)*b[1]+b[0]
+    lat = np.arange(nlat)*b[5]+b[3]
+
+    # create NetCDF output file
+    ncof = Dataset(file+'.nc','w',clobber=True)
+   
+    # create dimensions, variables and attributes:
+    ncof.createDimension('lon',nlon)
+    ncof.createDimension('lat',nlat)
+
+    lono = ncof.createVariable('lon','f4',('lon'))
+    lono.units = 'degrees_east'
+    lono.standard_name = 'longitude'
+
+    lato = ncof.createVariable('lat','f4',('lat'))
+    lato.units = 'degrees_north'
+    lato.standard_name = 'latitude'
+
+    # create variables
+    if('bands' in bandinfos.keys()):
+        nvars = len(bandinfos['bands'])
+    else:
+        exit('Must have bands name in bandinfos!')
+        
+    varo = {}
+    for iv in range(0,nvars):
+        v = bandinfos['bands'][iv]
+        varo[v] = ncof.createVariable(v, 'f4',  ('lat', 'lon'), fill_value=-1.0e20)
+        if 'units' in bandinfos.keys():
+            varo[v].units = bandinfos['units'][iv]
+        if 'long_name' in bandinfos.keys():
+            varo[v].long_name = bandinfos['long_name'][iv]
+        if 'standard_name' in bandinfos.keys():
+            varo[v].standard_name = bandinfos['standard_name'][iv]
+
+        # write variable
+        varo[v][:,:] = alldata[iv]
+        
+    #write lon,lat
+    lono[:]=lon
+    lato[:]=lat
+
+    ncof.close()
+#
 
 
 #####################################################################
@@ -275,3 +333,20 @@ def nc2csv(file, varnames):
 #file = 'surfdata_51x63pt_kougarok-NGEE_simyr1850.nc'
 #varname = ['LONGXY','LATIXY']
 #nc2csv(file,varname)
+
+# convert geotiff to nc
+file = 'land_cover.tif'
+bandinfos={'bands': ['tree','shrub','herbaceous','barren'], 
+           'units': ['%','%','%','%'], 
+           'long_name': ['land cover percentage of trees',
+                         'land cover percentage of shrubs',
+                         'land cover percentage of herbaceous',
+                         'land cover percentage of barren'
+                         ],
+           'standard_name': ['percentage of trees', 
+                             'percentage of shrubs',
+                             'percentage of herbaceous',
+                             'percentage of barren']
+           }
+
+geotiff2nc(file, bandinfos)
