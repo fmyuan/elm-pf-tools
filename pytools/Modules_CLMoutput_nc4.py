@@ -285,6 +285,8 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
     keep_const.append("cols1d_jxy")
     keep_const.append("pft")
     keep_const.append("pfts1d_wtgcell")
+    keep_const.append("pfts1d_itype_veg")
+    keep_const.append("pfts1d_itype_lunit")
     keep_const.append("pfts1d_ixy")
     keep_const.append("pfts1d_jxy")
     keep_const.append("WATSAT")

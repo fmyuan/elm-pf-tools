@@ -24,36 +24,36 @@ def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, layer_index, sd
         plt.plot(t, sdata[:,il])
  
     plt.legend((layertext), loc=0, fontsize=12)
-    plt.xlabel(t_unit, fontsize=16, fontweight='bold')
-    plt.ylabel(varname, fontsize=16, fontweight='bold')
+    plt.xlabel(t_unit, fontsize=12, fontweight='bold')
+    plt.ylabel(varname, fontsize=12, fontweight='bold')
 
     ax_user=plt.gca()
     ax_user.tick_params(axis = 'both', which = 'major', labelsize = 16)
 
-    lx = 0.40
+    lx = 0.10
     ly = 0.90
     plt.text(lx, ly, plotlabel, transform=ax.transAxes)
 
 # Plot PFT fractioned data with layers for ONE specific grid
-def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, pft_index, sdata, varname, plotlabel):
+def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, pftvidx, pft_index, sdata, varname, plotlabel):
 
     ax=plt.subplot(nrow, ncol, isubplot)
     
     active_pfts = []
     for ix in pft_index:
         for ip, wt in enumerate(pftwt):
-            if(wt>0.0 and (ix<0 or ix==ip)): 
+            if(wt>0.0 and (pftvidx[ix]>0 and ix==ip)): 
                 active_pfts.append(("PFT "+str(ip)))
                 plt.plot(t, sdata[:,ip])
     
     plt.legend((active_pfts), loc=0, fontsize=12)
-    plt.xlabel(t_unit, fontsize=16, fontweight='bold')
-    plt.ylabel(varname, fontsize=16, fontweight='bold')
+    plt.xlabel(t_unit, fontsize=12, fontweight='bold')
+    plt.ylabel(varname, fontsize=12, fontweight='bold')
 
     ax_user=plt.gca()
     ax_user.tick_params(axis = 'both', which = 'major', labelsize = 16)
 
-    lx = 0.40
+    lx = 0.10
     ly = 0.90
     plt.text(lx, ly, plotlabel, transform=ax.transAxes)
 
@@ -62,8 +62,11 @@ def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, pft_index, sdata
 def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plotlabel):
 
     ax=plt.subplot(nrow, ncol, isubplot)
+
+    plt.subplots_adjust(left=0.065, bottom=None, right=0.99, top=0.98,
+                wspace=0.33, hspace=None)
     
-    if(varname=='TOTSOMC'):         
+    if('TOTSOMC' in varname):         
         varname=varname+' (kgC/m2)'
         sdata = sdata/1000.0
     
@@ -79,17 +82,17 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
     #gridtext = ["NAMC","DSLT","AS","WBT","TT-WBT","TT"]
     #plt.legend((gridtext), loc=0, fontsize=12)
     
-    plt.xlabel(t_unit, fontsize=16, fontweight='bold')    
-    plt.ylabel(varname, fontsize=16, fontweight='bold')
+    plt.xlabel(t_unit, fontsize=12, fontweight='bold')    
+    plt.ylabel(varname, fontsize=12, fontweight='bold')
     
     ax_user=plt.gca()
     ax_user.tick_params(axis = 'both', which = 'major', labelsize = 16)
 
-    lx = 0.40
+    lx = 0.10
     ly = 0.90
     plot_title = ''
-    if(varname=='TLAI'): plot_title = 'ICB-Highlat_pt390x10' #plotlabel
-    plt.text(lx, ly, plot_title, transform=ax.transAxes)
+    if(varname=='TLAI'): plot_title = 'ICB-Highlat_pt406x22' #plotlabel
+    plt.text(lx, ly, plot_title, transform=ax.transAxes,fontsize=14, fontweight='bold')
 
 #-------------------Parse options-----------------------------------------------
 
@@ -127,7 +130,7 @@ parser.add_option("--PFTindex", dest="pindex", default=-999, \
 (options, args) = parser.parse_args()
 
 if(options.pindex==-999):
-    pft_index = options.pindex
+    pft_index = [options.pindex]
 else:
     pft_index=[]
     oppfts = options.pindex.split(':')
@@ -135,7 +138,7 @@ else:
         pft_index.append(int(ip))
 
 if(options.zindex==-999):
-    layer_index = options.zindex
+    layer_index = [options.zindex]
 else:
     layer_index=[]
     oplayers = options.zindex.split(':')
@@ -215,10 +218,9 @@ nl = max(nlgrnd, nldcmp)
 # plotting
 nrow = 1   # sub-plot vertically arranged number (row no.)
 ncol = 1   # sub-plot horizontally arranged number (column no.)
-if(nvars>=2):
-    nrow = 2
-if(nvars>=3):
-    ncol = 2
+if(nvars==2): ncol = 2
+if(nvars==3): ncol = 3
+if(nvars==4): nrow=2; ncol=2
 
 ivar = 0
 for var in varnames:
@@ -263,6 +265,7 @@ for var in varnames:
         pdim_indx = vdims.index('pft')  
         npft = vdata.shape[pdim_indx]
         pwt1cell = varsdata['pfts1d_wtgcell']
+        pft1vidx = varsdata['pfts1d_itype_veg']
         
     # data series
     if(zdim_indx<0 and pdim_indx<0):# 2-D grid data
@@ -309,14 +312,14 @@ for var in varnames:
     
     elif(pdim_indx>0):
         if(len(pft_index)==1 and pft_index[0]<0): pft_index = range(0,npft)
-        PFTVarPlotting(plt, nrow, ncol, ivar, t, tunit, pwt1cell, pft_index, sdata, \
+        PFTVarPlotting(plt, nrow, ncol, ivar, t, tunit, pwt1cell, pft1vidx, pft_index, sdata, \
                         vname, '(a) Grid ( '+str(ix)+', '+str(iy)+')')
 
 
 # printing plot in PDF
 ofname = 'Figure_CLM.pdf'
 fig = plt.gcf()
-fig.set_size_inches(8.5, 11.5)
+fig.set_size_inches(11.5, 8.5)
 plt.savefig(ofname)
 plt.show()
 
