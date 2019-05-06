@@ -8,6 +8,88 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from optparse import OptionParser
 
+
+#-------------------PLotting submodule-----------------------------------------------
+# plotting 1 graph with at most 4 sub-plots 
+
+def SinglePlot(tt, time_unit, varnames, varunits, vardatas, figno=None):
+    nvars = len(varnames)
+    
+    nrow = 1   # sub-plot vertically arranged number (row no.)
+    ncol = 1   # sub-plot horizontally arranged number (column no.)
+    if(nvars>=2):
+        nrow = 2
+    if(nvars>=3):
+        ncol = 2
+
+
+    fig = plt.figure(figsize=(8.5,11.5))
+     
+    # plot 1, or subplot 1 if more than 1 subplot
+    if (nvars >= 2):
+        sdata = vardatas[0][:]
+    else:
+        sdata = vardatas
+       
+    ax0=plt.subplot(nrow, ncol, 1)
+    if (not figno is None): plt.suptitle('FIGURE '+figno)
+    plt.plot(tt, sdata)
+    plt.xlabel('Time ('+time_unit+')')
+    plt.ylabel(varnames[0]+varunits[0])
+
+    lx = 0.05
+    ly = 0.95
+    if(nvars>=2):
+        plt.text(lx, ly, '(a) ', transform=ax0.transAxes)
+    else:
+        plt.text(lx, ly, '', transform=ax0.transAxes)
+        
+    # subplot 2
+    if (nvars >= 2):
+        sdata = vardatas[1][:]
+        
+        ax1=plt.subplot(nrow, ncol, 2)
+        plt.plot(tt, sdata)
+        plt.xlabel('Time ('+time_unit+')')
+        plt.ylabel(varnames[1]+varunits[1])
+        lx = 0.05
+        ly = 0.95
+        plt.text(lx, ly, '(b) ', transform=ax1.transAxes)
+
+    # subplot 3
+    if (nvars >= 3):
+        sdata = vardatas[2][:]
+
+        ax2=plt.subplot(nrow, ncol, 3)
+        plt.plot(tt, sdata)
+        plt.xlabel('Time ('+time_unit+')')
+        plt.ylabel(varnames[2]+varunits[2])
+        lx = 0.05
+        ly = 0.95
+        plt.text(lx, ly, '(c) ', transform=ax2.transAxes)
+
+    # sub-plot 4
+    if (nvars >= 4):
+        sdata = vardatas[3][:]
+
+        ax3=plt.subplot(nrow, ncol, 4)
+        plt.plot(tt, sdata)
+        plt.xlabel('Time ('+time_unit+')')
+        plt.ylabel(varnames[3]+varunits[3])
+        lx = 0.05
+        ly = 0.95
+        plt.text(lx, ly, '(d) ', transform=ax3.transAxes)
+
+    #
+    ofname = 'Figure_pflotran.pdf'
+    if (not figno is None): ofname = 'Figure_pflotran-'+figno+'.pdf'
+    plt.savefig(ofname)
+    plt.show()
+
+    plt.close('all')
+
+
+
 #-------------------Parse options-----------------------------------------------
 
 parser = OptionParser()
@@ -19,7 +101,7 @@ parser.add_option("--pfh5file", dest="pfh5file", default="", \
 parser.add_option("--time_unit", dest="tunit", default="", \
                   help = "time unit, default UNKNOWN ")
 parser.add_option("--varname", dest="vars", default="", \
-                  help = "variable name(s) (max. 4) to be reading/plotting, separated by comma ")
+                  help = "variable name(s) (max. 4 in one PLOT, or, with ALL for each var in one PLOT) to be reading/plotting, separated by comma ")
 parser.add_option("--Xindex", dest="xindex", default=0, \
                   help = " X direction mesh index to be reading/plotting, default 0 ")
 parser.add_option("--Yindex", dest="yindex", default=0, \
@@ -54,6 +136,9 @@ else:
 if (options.vars == ''):
     print('MUST input at least one variable name by " --varname=??? "')
     sys.exit()
+elif (options.vars == 'ALL'):
+    print('WILL plot each Variable One by One - could be hugh!')
+    varnames = []    
 else:
     varnames = options.vars.split(':')  
     nvars = len(varnames)
@@ -106,17 +191,16 @@ if(nfiles==2):
     f1 = h5.File(filename2, 'r')
 
 tt = []
-vardata0 = []
-vardata1 = []
-vardata2 = []
-vardata3 = []
+varunits = []
+vardatas = {}
 
 for i in f0.keys():
     title = i.split()
+    # PFLOTRAN h5 data grouped by 'Time' steps, so needs to concat. by time for each variable 
     if title[0] == 'Time:':
         tt.append(float(title[1]))	
         group0 = f0[i]
-            
+        if time_unit=='': time_unit = title[2]
         for j in group0.keys():
             h5vars = j.split()
 
@@ -125,127 +209,67 @@ for i in f0.keys():
             elif(nfiles==2):
                 group1 = f1[i]
                 vdata = group0[j][xpts,ypts,zpts]-group1[j][xpts,ypts,zpts]
-            
-            varname0 = varnames[0]
-            if (h5vars[0] == varname0 and varname0 != ''):
-                vardata0.append(vdata)
+                        
+            # vars individually
+            varname = h5vars[0]
+                
+            if(options.vars == 'ALL'): # all variables, with 1 variable in 1 plot in 1 single figure
+                if varname not in varnames: 
+                    varnames.append(varname) # build a variable list
+                    if len(h5vars)>1: 
+                        varunits.append(h5vars[1])
+                    else:
+                        varunits.append('')
 
-            if(nvars >= 2):
-                varname1 = varnames[1]
-                if (h5vars[0] == varname1 and varname1 != ''):
-                    vardata1.append(vdata)
+                    vardatas[varname] = vdata
+                else:
+                    vardatas[varname]=np.vstack([vardatas[varname],vdata])
+                
+            else: # user-picked variable(s) at most 4 for (sub-)plotting in 1 single figure               
+                if varname in varnames: 
+                    if varname not in vardatas.keys():
+                        vardatas[varname] = vdata
+                        if len(h5vars)>1: 
+                            varunits.append(h5vars[1])
+                        else:
+                            varunits.append('')
+                    else:
+                        vardatas[varname]=np.vstack([vardatas[varname],vdata])
+                        
+                    
 
-            if(nvars >= 3):
-                varname2 = varnames[2]
-                if (h5vars[0] == varname2 and varname2 != ''):
-                    vardata2.append(vdata)
 
-            if(nvars == 4):
-                varname3 = varnames[3]
-                if (h5vars[0] == varname3 and varname3 != ''):
-                    vardata3.append(vdata)
-
-# data-sets
+# CANNOT assume data-sets are time-sorted, so must sort them by time at first
 t  = sorted(tt)
 it = sorted(range(len(tt)), key=lambda k: tt[k])
+
+nvars = len(varnames)
 nt = len(tt)
 nl = np.size(xpts)*np.size(ypts)*np.size(zpts)
-
-# plotting
-
-nrow = 1   # sub-plot vertically arranged number (row no.)
-ncol = 1   # sub-plot horizontally arranged number (column no.)
-if(nvars>=2):
-    nrow = 2
-if(nvars>=3):
-    ncol = 2
-
-# plot 1
-sdata = np.zeros((nt,nl))
-for i in range(len(tt)):
-    sdata[i,:] = np.squeeze(vardata0[it[i]])
-
-ax0=plt.subplot(nrow, ncol, 1)
-if(varname0 == 'Liquid_Pressure'):
-    sdata = sdata
-    #ax0.set_yscale("log", nonposy='clip')
-    
-plt.plot(t, sdata)
-plt.xlabel('Time ('+time_unit+')')
-plt.ylabel(varname0)
-
-lx = 0.05
-ly = 0.9
-plt.text(lx, ly, '(a) ', transform=ax0.transAxes)
-
-# plot 2
-if (nvars >= 2):
+if(options.vars == 'ALL'): # all variables, with 1 variable in 1 plot
     sdata = np.zeros((nt,nl))
-    for i in range(len(tt)):
-        sdata[i,:] = np.squeeze(vardata1[it[i]])
+    for ivar in range(0,nvars-1):
+        # plotting 'varname' one by one
+        vardata = vardatas[varnames[ivar]]
+        varname = varnames[ivar]
+        varunit = varunits[ivar]
+        for i in range(len(tt)):
+            sdata[i,:] = np.squeeze(vardata[it[i]])
+        SinglePlot(t, time_unit, [varname], [varunit], sdata, figno=str(ivar)+' - '+varname)
+        
+                
+else: # user-picked variable(s) at most 4 for (sub-)plotting in 1 single plot               
+    sdata = np.zeros((nvars,nt,nl))
+    ivar = -1
+    for varname in varnames:
+        # plotting one or more sub-plots in 1 single figure
+        ivar = ivar + 1
+        vardata = vardatas[varname]
+        for i in range(len(tt)):
+            sdata[ivar,i,:] = np.squeeze(vardata[it[i]])
 
-    ax1=plt.subplot(nrow, ncol, 2)
-    if(varname1 == 'Liquid_Pressure'):
-        sdata = sdata
-        #ax1.set_yscale("log", nonposy='clip')
-    
-    plt.plot(t, sdata)
-
-    plt.xlabel('Time ('+time_unit+')')
-    plt.ylabel(varname1)
-    lx = 0.05
-    ly = 0.9
-    plt.text(lx, ly, '(b) ', transform=ax1.transAxes)
-
-# plot 3
-if (nvars >= 3):
-    sdata = np.zeros((nt,nl))
-    for i in range(len(tt)):
-        sdata[i,:] = np.squeeze(vardata2[it[i]])
-
-    ax2=plt.subplot(nrow, ncol, 3)
-    if(varname2 == 'Liquid_Pressure'):
-        sdata = sdata
-        #ax2.set_yscale("log", nonposy='clip')
-    
-    plt.plot(t, sdata)
-    plt.xlabel('Time ('+time_unit+')')
-    plt.ylabel(varname2)
-    lx = 0.05
-    ly = 0.9
-    plt.text(lx, ly, '(c) ', transform=ax2.transAxes)
-
-# plot 4
-if (nvars >= 4):
-    sdata = np.zeros((nt,nl))
-    for i in range(len(tt)):
-        sdata[i,:] = np.squeeze(vardata3[it[i]])
-
-    ax3=plt.subplot(nrow, ncol, 4)
-    if(varname3 == 'Liquid_Pressure'):
-        sdata = sdata
-        #ax3.set_yscale("log", nonposy='clip')
-    
-    plt.plot(t, sdata)
-    plt.xlabel('Time ('+time_unit+')')
-    plt.ylabel(varname3)
-    lx = 0.05
-    ly = 0.9
-    plt.text(lx, ly, '(d) ', transform=ax3.transAxes)
-
-#
-ofname = 'Figure_pflotran.pdf'
-fig = plt.gcf()
-fig.set_size_inches(12, 15)
-plt.savefig(ofname)
-plt.show()
-
-#with PdfPages(ofname) as pdf:
-#    fig = plt.figure()
-#    plt.show()
-#    pdf.savefig(fig)
-
-plt.close('all')
+    # (sub-)plotting in 1 single plot
+    SinglePlot(t, time_unit, varnames, varunits, sdata)
 
 f0.close()
 if(nfiles==2):
