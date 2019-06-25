@@ -280,7 +280,21 @@ for var in varnames:
     for i in range(len(tt)):
                 
         if(zdim_indx<0 and pdim_indx<0):# 2-D grid data
-            gdata[i,:] = vdata[it[i]].reshape(nx*ny)
+            if(ix>=0 or iy>=0):
+                if(if2dgrid): 
+                    if(ix<0):
+                        gdata[i,:] = vdata[it[i]][iy,:]
+                    elif(iy<0):
+                        gdata[i,:] = vdata[it[i]][:,ix]
+                    else:
+                        gdata[i,:] = vdata[it[i]][iy,ix]
+                else:
+                    gdata[i,:] = vdata[it[i]][max(iy,ix)]
+
+            else: # all grids
+                gdata[i,:] = vdata[it[i]].reshape(nx*ny)
+        
+        
         else:
                        
             if(zdim_indx == 1 or pdim_indx==1): # 3-D soil/pft data, z_dim/p_dim in 1 

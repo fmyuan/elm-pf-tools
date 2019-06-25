@@ -248,7 +248,7 @@ nt = len(tt)
 nl = np.size(xpts)*np.size(ypts)*np.size(zpts)
 if(options.vars == 'ALL'): # all variables, with 1 variable in 1 plot
     sdata = np.zeros((nt,nl))
-    for ivar in range(0,nvars-1):
+    for ivar in range(0,nvars):
         # plotting 'varname' one by one
         vardata = vardatas[varnames[ivar]]
         varname = varnames[ivar]
