@@ -3,6 +3,7 @@
 import sys
 import glob
 import re
+import math
 from optparse import OptionParser
 import numpy as np
 import matplotlib.pyplot as plt
@@ -69,6 +70,12 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
     if('TOTSOMC' in varname):         
         varname=varname+' (kgC/m2)'
         sdata = sdata/1000.0
+
+    if(varname == 'SNOW'):         
+        varname=varname+' (mm/d)'
+        sdata = sdata*86400.0
+    if(varname == 'SNOW_DEPTH'):         
+        varname=varname+' (m)'
     
     gridtext = []
     if(len(sdata.shape)>1):
@@ -79,8 +86,8 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
         gridtext.append(("GRID "+str(0)))
         plt.plot(t, sdata)
         
-    #gridtext = ["NAMC","DSLT","AS","WBT","TT-WBT","TT"]
-    #plt.legend((gridtext), loc=0, fontsize=12)
+    gridtext = ["Climate-Grid"] #["NAMC","DSLT","AS","WBT","TT-WBT","TT"]
+    plt.legend((gridtext), loc=0, fontsize=12)
     
     plt.xlabel(t_unit, fontsize=12, fontweight='bold')    
     plt.ylabel(varname, fontsize=12, fontweight='bold')
@@ -126,6 +133,12 @@ parser.add_option("--LAYERindex", dest="zindex", default=-999, \
                   help = " SOIL layer index to be reading/plotting, default -999 for all, with indexing from 0 ")
 parser.add_option("--PFTindex", dest="pindex", default=-999, \
                   help = " PFT index to be reading/plotting, default -999 for all, with indexing from 0 ")
+parser.add_option("--COLindex", dest="cindex", default=-999, \
+                  help = " COLUMN index to be reading/plotting, default -999 for all, with indexing from 0 ")
+parser.add_option("--seasonally", dest="seasonally", default=False, \
+                  help = "averaged over years to get seasonal", action="store_true")
+parser.add_option("--annually", dest="annually", default=False, \
+                  help = "averaged over seasons to get annual", action="store_true")
 
 (options, args) = parser.parse_args()
 
@@ -136,6 +149,14 @@ else:
     oppfts = options.pindex.split(':')
     for ip in oppfts:    
         pft_index.append(int(ip))
+
+if(options.cindex==-999):
+    col_index = [options.cindex]
+else:
+    col_index=[]
+    opcols = options.cindex.split(':')
+    for icol in opcols:    
+        col_index.append(int(icol))
 
 if(options.zindex==-999):
     layer_index = [options.zindex]
@@ -180,9 +201,10 @@ else:
     startdays = (int(options.startyr)-1)*365.0
     
 enddays = -9999
-if(options.endyr !=""): enddays = int(options.endyr)*365.0
+if(options.endyr !=""): enddays = int(options.endyr)*365.0-1.0
 
 tunit = str.capitalize(options.t_unit)
+if(options.annually): tunit = 'YEAR'
 if tunit.startswith("H"): 
     day_scaling = 24.0
 elif tunit.startswith("Y"): 
@@ -196,7 +218,7 @@ ix=int(options.xindex);
 iy=int(options.yindex);
 
 # read-in datasets from 1 simulation
-nx, ny, nlgrnd, nldcmp, ncol, npft, varsdata, varsdims = \
+nx, ny, nlgrnd, nldcmp, ncolumn, npft, varsdata, varsdims = \
     CLM_NcRead_1simulation(options.clm_odir, \
                            options.ncfileheader, \
                            options.varnames_print, \
@@ -224,7 +246,7 @@ if(nvars==4): nrow=2; ncol=2
 
 ivar = 0
 for var in varnames:
-
+    print ivar,var
     # names for variable and its time-axis
     for hv in vars_list:
         if re.search(var, hv): 
@@ -236,7 +258,7 @@ for var in varnames:
     vdata = varsdata[var_h]
     vdims = varsdims[var_h]
     
-    tt = varsdata[var_t]
+    tt = varsdata[var_t]   # time unit: days
     t  = sorted(tt)
     it = sorted(range(len(tt)), key=lambda k: tt[k])
     nt = len(tt)
@@ -259,15 +281,34 @@ for var in varnames:
         zdim_indx = vdims.index('levdcmp')
         nl = vdata.shape[zdim_indx]
 
-    # pft ? (need further work here)
+    # pft dim, if existed
     pdim_indx = -999
     if('pft' in vdims):
         pdim_indx = vdims.index('pft')  
         npft = vdata.shape[pdim_indx]
         pwt1cell = varsdata['pfts1d_wtgcell']
         pft1vidx = varsdata['pfts1d_itype_veg']
+        pft1active = varsdata['pfts1d_active']
+
+        if(len(pft_index)==1 and pft_index[0]<0): # when NOT output specific PFT(s), sum all pfts
+            vdata = np.sum(vdata*pwt1cell,axis=pdim_indx)
+            pdim_indx = -999 # because weighted-sum, pft-dimension is removed (no more 3-D data)
+
+
+    # column dim, if existed
+    cdim_indx = -999
+    if('column' in vdims):
+        cdim_indx = vdims.index('column')  
+        ncolumn = vdata.shape[cdim_indx]
+        colwt1cell = varsdata['cols1d_wtgcell']
+        col1active = varsdata['cols1d_active']
+        if(len(col_index)==1 and col_index[0]<0): # when NOT output specific COLUMN(s), sum all cols
+            vdata = np.sum(vdata*colwt1cell,axis=cdim_indx)
+            cdim_indx = -999 # because weighted-sum, column-dimension is removed (no more 3-D data)
         
     # data series
+    gdata=[]
+    sdata=[]
     if(zdim_indx<0 and pdim_indx<0):# 2-D grid data
         gdata = np.zeros((nt,nx*ny))    #temporary data holder in 2-D (tt, grids)
     elif(zdim_indx>0):        
@@ -312,10 +353,42 @@ for var in varnames:
                     sdata[i,:] = vdata[it[i]][:,iy,ix,]
                 else:
                     sdata[i,:] = vdata[it[i]][:,max(iy,ix),]
+
+    if(options.seasonally):
+        t=np.asarray(t)/365.0
+        dim_yr=int(math.ceil(max(t))-math.floor(min(t)))
+        t=(t-np.floor(t))*365.0 # still in days
+        t=t.reshape(dim_yr,-1)
+        t=np.mean(t,axis=0)
         
+        if(len(gdata)>0):
+            shp=np.hstack(([dim_yr,-1],gdata.shape[1:]))
+            gdata=gdata.reshape(shp)
+            gdata=np.mean(gdata,axis=0)
+        elif(len(sdata)>0):
+            shp=np.hstack(([dim_yr,-1],sdata.shape[1:]))
+            sdata=sdata.reshape(shp)
+            sdata=np.mean(sdata,axis=0)
+    elif(options.annually):
+        t=np.asarray(t)/365.0
+        dim_yr=int(math.ceil(max(t))-math.floor(min(t)))
+        t=np.floor(t)*365.0 # still in days
+        t=t.reshape(dim_yr,-1)
+        dim_season = t.shape[1]
+        t=np.mean(t,axis=1)
+        
+        if(len(gdata)>0):
+            shp=np.hstack(([-1, dim_season],gdata.shape[1:]))
+            gdata=gdata.reshape(shp)
+            gdata=np.mean(gdata,axis=1)
+        elif(len(sdata)>0):
+            shp=np.hstack(([-1, dim_season],sdata.shape[1:]))
+            sdata=sdata.reshape(shp)
+            sdata=np.mean(sdata,axis=1)
+
     #plotting
     vname = varnames[varnames.index(var)]
-    if(float(day_scaling)!=1.0): t = np.asarray(t)*day_scaling + tunit0
+    t = np.asarray(t)*day_scaling + tunit0
     if(zdim_indx<0 and pdim_indx<0):
         GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, \
                         vname, '(a) All Grids')
