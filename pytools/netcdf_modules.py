@@ -335,18 +335,18 @@ def geotiff2nc(file, bandinfos):
 #nc2csv(file,varname)
 
 # convert geotiff to nc
-file = 'land_cover.tif'
-bandinfos={'bands': ['tree','shrub','herbaceous','barren'], 
-           'units': ['%','%','%','%'], 
-           'long_name': ['land cover percentage of trees',
-                         'land cover percentage of shrubs',
-                         'land cover percentage of herbaceous',
-                         'land cover percentage of barren'
-                         ],
-           'standard_name': ['percentage of trees', 
-                             'percentage of shrubs',
-                             'percentage of herbaceous',
-                             'percentage of barren']
-           }
+#file = 'land_cover.tif'
+#bandinfos={'bands': ['tree','shrub','herbaceous','barren'], 
+#           'units': ['%','%','%','%'], 
+#           'long_name': ['land cover percentage of trees',
+#                         'land cover percentage of shrubs',
+#                         'land cover percentage of herbaceous',
+#                         'land cover percentage of barren'
+#                         ],
+#           'standard_name': ['percentage of trees', 
+#                             'percentage of shrubs',
+#                             'percentage of herbaceous',
+#                             'percentage of barren']
+#           }
 
-geotiff2nc(file, bandinfos)
+#geotiff2nc(file, bandinfos)

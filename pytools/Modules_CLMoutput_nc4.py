@@ -228,7 +228,7 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
 #
 # Read variable(s) from multiple CLM nc files in 1 simulation
 #
-def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
+def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
                            vars, \
                            startdays, enddays, \
                            adspinup):
@@ -334,8 +334,8 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, varnames_print, \
         if 'SOILSAT_ICE' not in keep: keep.append('SOILSAT_ICE') 
 
     # build all nc files into one or two arrays
-    fincludes = ['h0','h1','h2','h3','h4','h5']
     allfile = glob.glob("%s.h*.*.nc" % clmhead)
+    fincludes = [ncfincl]#['h0','h1','h2','h3','h4','h5']
     if(len(allfile)<=0):
         sys.exit("No nc file exists - %s.h*.*.nc in: %s" %(clmhead, cwdir))
     

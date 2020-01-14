@@ -19,6 +19,9 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
     xindxpts = []
     yindxpts = []
     
+    # convert 'longitude' in format of 0-360, otherwise not works
+    for lon in np.nditer(lons_all, op_flags=['readwrite']):
+            if(lon<0.0): lon[...] = lon[...]+360.0
     
     if(lons_pt.strip()==''):
         lons_pt=[]
@@ -27,6 +30,11 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
             nondecimal = re.compile(r'[^\d.,:;-]+')
             v_pt = nondecimal.sub("",lons_pt)
             v_pt = np.float64(v_pt.split("[,:;]"))
+            
+            # convert 'longitude' in format of 0-360 (sama as 'lons_all', otherwise not works
+            for v in np.nditer(v_pt, op_flags=['readwrite']):
+                if(v<0.0): v[...] = v[...]+360.0
+            
             if("~" in lons_pt):#nearest point(s)
                 pt_val=[]
                 for v in v_pt:
@@ -271,7 +279,7 @@ if (not options.shared_domain.strip()==''):
         pts_idx=[indx[pt][0],indy[pt][0]]
         pts_num=[indx[pt][1],indy[pt][1]]
         nfmod.nco_extract(shareddomain, shareddomain_new, \
-            ['nj','ni'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
+            ['nj','ni'], pts_idx, pts_num,ncksdir=options.ncobinpath)
 
 #------------new surfdata  -------------------------------------------------------------------
 if (not (options.surfdata.strip()=='' or options.surfdata=='none')):
@@ -293,11 +301,15 @@ if (not (options.surfdata.strip()=='' or options.surfdata=='none')):
         pts_idx=[indx[pt][0],indy[pt][0]]
         pts_num=[indx[pt][1],indy[pt][1]]
         nfmod.nco_extract(surfdata, surfdata_new, \
-            ['lsmlat','lsmlon'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
+            ['lsmlat','lsmlon'], pts_idx, pts_num,ncksdir=options.ncobinpath)
 
 #------------new metdata domain -------------------------------------------------------------------
 if (not options.metdomain.strip()==''):
-    metdomain_new = outdir + metdomainname + '_'+ \
+    if(options.newdata_affix == ''):
+        metdomain_new = outdir + 'atm/datm7/new_'+metdomainname + \
+               '.nc'
+    else:
+        metdomain_new = outdir + 'atm/datm7/new_'+metdomainname + '_'+ \
                options.newdata_affix + '.nc'
 
     print('INFO: extracting metdata domain - \n', metdomain, '\n -->', metdomain_new)
@@ -315,12 +327,15 @@ if (not options.metdomain.strip()==''):
         pts_idx=[indx[pt][0],indy[pt][0]]
         pts_num=[indx[pt][1],indy[pt][1]]
         nfmod.nco_extract(metdomain, metdomain_new, \
-            ['nj','ni'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
+            ['nj','ni'], pts_idx, pts_num,ncksdir=options.ncobinpath)
 
 #------------new metdata -------------------------------------------------------------------
 if (not options.metdir.strip()==''):
 
-    metdir_new = outdir+ '/atm/datm7/newmetdata_'+ \
+    if(options.newdata_affix == ''):
+        metdir_new = outdir+ '/atm/datm7/newmetdata'
+    else:
+        metdir_new = outdir+ '/atm/datm7/newmetdata_'+ \
                options.newdata_affix
     os.system('mkdir -p ' + metdir_new)
 
@@ -328,7 +343,11 @@ if (not options.metdir.strip()==''):
     dirfiles = os.listdir(metdir)
     for dirfile in dirfiles:        
         filehead = options.metfileheader
-        filehead_new = filehead+'_'+options.newdata_affix
+        if(options.newdata_affix != ''):
+            filehead_new = filehead+'_'+options.newdata_affix
+        else:
+            filehead_new = filehead
+            
         indx=[]; indy=[]
         # in metdata directory
         if(os.path.isfile(metdir+'/'+dirfile)): # file names
@@ -354,7 +373,7 @@ if (not options.metdir.strip()==''):
                     pts_idx=[indx[pt][0],indy[pt][0]]
                     pts_num=[indx[pt][1],indy[pt][1]]
                     nfmod.nco_extract(metfile_old, metfile_new, \
-                            ['lat','lon'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
+                            ['lat','lon'], pts_idx, pts_num,ncksdir=options.ncobinpath)
 
         # in subdirectory of metdata directory
         elif(os.path.isdir(metdir+'/'+dirfile)): # subdirectories
@@ -382,7 +401,7 @@ if (not options.metdir.strip()==''):
                             pts_idx=[indx[pt][0],indy[pt][0]]
                             pts_num=[indx[pt][1],indy[pt][1]]
                             nfmod.nco_extract(metfile_old, metfile_new, \
-                                    ['lat','lon'], pts_idx, pts_num,ncksdir='/usr/local/nco/bin')
+                                    ['lat','lon'], pts_idx, pts_num,ncksdir=options.ncobinpath)
 
 #------------END of pointCLM_data -----------------------------------------------------------------------
     

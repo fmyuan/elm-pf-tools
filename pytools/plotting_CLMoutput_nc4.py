@@ -107,8 +107,12 @@ parser = OptionParser()
 
 parser.add_option("--clmout_dir", dest="clm_odir", default="./", \
                   help="clm output directory (default = ./, i.e., under current directory)")
+parser.add_option("--clmout_timestep", dest="clmout_ts", default="monthly", \
+                  help="clm output variable timestep (default = 'monthly', other option daily)")
 parser.add_option("--clmfile_head", dest="ncfileheader", default="", \
                   help = "clm output file name header, usually the portion before *.clm2.h[0-5].*.nc")
+parser.add_option("--clmfile_fincl", dest="ncfincl", default="h0", \
+                  help = "clm output file numbering, h[0-5]")
 parser.add_option("--varname_help", dest="varnames_print", default=False, \
                   help = "print out VARIABLES available ", action="store_true")
 parser.add_option("--varname", dest="vars", default="", \
@@ -199,9 +203,13 @@ if(options.yr0 != 1 and options.startyr != 1):
     startdays = (int(options.startyr)-int(options.yr0))*365.0
 else:
     startdays = (int(options.startyr)-1)*365.0
+if(options.clmout_ts=='daily'): 
+    startdays=startdays+1.0
+elif(options.clmout_ts=='monthly'): 
+    startdays=startdays-1.0
     
 enddays = -9999
-if(options.endyr !=""): enddays = int(options.endyr)*365.0-1.0
+if(options.endyr !=""): enddays = int(options.endyr)*365.0
 
 tunit = str.capitalize(options.t_unit)
 if(options.annually): tunit = 'YEAR'
@@ -221,6 +229,7 @@ iy=int(options.yindex);
 nx, ny, nlgrnd, nldcmp, ncolumn, npft, varsdata, varsdims = \
     CLM_NcRead_1simulation(options.clm_odir, \
                            options.ncfileheader, \
+                           options.ncfincl, \
                            options.varnames_print, \
                            varnames, \
                            startdays, enddays, \
@@ -284,27 +293,71 @@ for var in varnames:
     # pft dim, if existed
     pdim_indx = -999
     if('pft' in vdims):
-        pdim_indx = vdims.index('pft')  
-        npft = vdata.shape[pdim_indx]
+        pdim_indx = vdims.index('pft')
+        npft = vdata.shape[pdim_indx] # this actually is nxy*npft
         pwt1cell = varsdata['pfts1d_wtgcell']
         pft1vidx = varsdata['pfts1d_itype_veg']
         pft1active = varsdata['pfts1d_active']
 
-        if(len(pft_index)==1 and pft_index[0]<0): # when NOT output specific PFT(s), sum all pfts
-            vdata = np.sum(vdata*pwt1cell,axis=pdim_indx)
-            pdim_indx = -999 # because weighted-sum, pft-dimension is removed (no more 3-D data)
+        if(nxy>1):
+            npft = npft/nxy
+            if(if2dgrid): 
+                vdata = vdata.reshape(-1,ny,nx,npft)
+                pwt1cell = pwt1cell.reshape(ny,nx,npft)
+                pft1vidx = pft1vidx.reshape(ny,nx,npft)
+                pft1active = pft1active.reshape(ny,nx,npft)
+                pdim_indx = pdim_indx + 2 # 
+            else:
+                vdata = vdata.reshape(-1, nxy,npft)
+                pwt1cell = pwt1cell.reshape(nxy,npft)
+                pft1vidx = pft1vidx.reshape(nxy,npft)
+                pft1active = pft1active.reshape(nxy,npft)
+                pdim_indx = pdim_indx + 1 # 
+            
+            if(len(pft_index)==1 and pft_index[0]<0): 
+                # when NOT output specific PFT(s) for all grid, sum all pfts
+                if(ix<0 and iy<0):
+                    vdata = np.sum(vdata*pwt1cell,axis=pdim_indx)
+                    pdim_indx = -999 # because weighted-sum, pft-dimension is removed (no more 3-D data)
+
+            if(ix>=0 and iy>=0):
+                # when output for a specific grid, need to extract that grid's pft info
+                # (BUT don't do so for 'vdata', which will do so when passing to 'sdata' 
+                if(if2dgrid): 
+                    pwt1cell = pwt1cell[iy,ix,:]
+                    pft1vidx = pft1vidx[iy,ix,:]
+                    pft1active = pft1active[iy,ix,:]
+                else:
+                    pwt1cell = pwt1cell[max(iy,ix),:]
+                    pft1vidx = pft1vidx[max(iy,ix),:]
+                    pft1active = pft1active[max(iy,ix),:]
 
 
     # column dim, if existed
     cdim_indx = -999
     if('column' in vdims):
         cdim_indx = vdims.index('column')  
-        ncolumn = vdata.shape[cdim_indx]
+        ncolumn = vdata.shape[cdim_indx] # this actually is nxy*ncolumn
         colwt1cell = varsdata['cols1d_wtgcell']
         col1active = varsdata['cols1d_active']
-        if(len(col_index)==1 and col_index[0]<0): # when NOT output specific COLUMN(s), sum all cols
-            vdata = np.sum(vdata*colwt1cell,axis=cdim_indx)
-            cdim_indx = -999 # because weighted-sum, column-dimension is removed (no more 3-D data)
+
+        if(nxy>1):
+            ncolumn = ncolumn/nxy
+            if(if2dgrid): 
+                vdata = vdata.reshape(-1,ny,nx,ncolumn)
+                colwt1cell = colwt1cell.reshape(ny,nx,ncolumn)
+                col1active = col1active.reshape(ny,nx,ncolumn)
+                cdim_indx = cdim_indx + 2 # 
+            else:
+                vdata = vdata.reshape(-1, nxy,ncolumn)
+                colwt1cell = colwt1cell.reshape(nxy,ncolumn)
+                col1active = col1active.reshape(nxy,ncolumn)
+                cdim_indx = cdim_indx + 1 # 
+        
+        if(len(col_index)==1):
+            if(col_index[0]<0): # when NOT output specific COLUMN(s), sum all cols
+                vdata = np.sum(vdata*colwt1cell,axis=cdim_indx)
+                cdim_indx = -999 # because weighted-sum, column-dimension is removed (no more 3-D data)
         
     # data series
     gdata=[]
@@ -314,7 +367,15 @@ for var in varnames:
     elif(zdim_indx>0):        
         sdata = np.zeros((nt,nl*nx*ny)) #temporary data holder in 2-D (tt, layers*grids)
     elif(pdim_indx>0):        
-        sdata = np.zeros((nt,npft*nx*ny)) #temporary data holder in 2-D (tt, pfts*grids)
+        if(iy>=0 and ix>=0): #[ix,iy] is location of 2-D grids, starting from 0
+            sdata = np.zeros((nt,npft))      #temporary data holder in 2-D (tt, pfts*1 grid)
+        if(iy>=0):
+            sdata = np.zeros((nt,npft*nx))   #temporary data holder in 2-D (tt, pfts*nx grid)
+        if(ix>=0):
+            sdata = np.zeros((nt,npft*ny))   #temporary data holder in 2-D (tt, pfts*ny grid)
+        else:
+            sdata = np.zeros((nt,npft*nx*ny)) #temporary data holder in 2-D (tt, pfts*grids)
+    
     else:
         exit("Variable to be plotted has 4-D dimension - NOT YET supported!")
     
@@ -348,11 +409,11 @@ for var in varnames:
                         sdata[i,:] = vdata[it[i]][:]
                         
                 
-            elif(zdim_indx >= 2 or pdim_indx==2): # 3-D soil data, z_dim in 2 or 3 (likely x/y dims before z) 
+            elif(zdim_indx >= 2 or pdim_indx==2): # 3-D soil data, z_dim/p_dim in 2 or 3 (likely x/y dims before z) 
                 if(if2dgrid): 
                     sdata[i,:] = vdata[it[i]][:,iy,ix,]
                 else:
-                    sdata[i,:] = vdata[it[i]][:,max(iy,ix),]
+                    sdata[i,:] = vdata[it[i]][max(iy,ix),]
 
     if(options.seasonally):
         t=np.asarray(t)/365.0
@@ -360,6 +421,7 @@ for var in varnames:
         t=(t-np.floor(t))*365.0 # still in days
         t=t.reshape(dim_yr,-1)
         t=np.mean(t,axis=0)
+        t=np.where(t==0,365.0,t)  # day 0 shall be day 365, otherwise plotting X axis not good
         
         if(len(gdata)>0):
             shp=np.hstack(([dim_yr,-1],gdata.shape[1:]))
