@@ -99,8 +99,14 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
             continue                 #cycle the loop, if no data 
             
         if (len(chunk_keys)<=0) or (key not in chunk_keys): # only needs to read data once, if more than one available
-            odata[key]      = np.asarray(f.variables[key])                
             odata_dims[key] = f.variables[key].dimensions
+            
+            key_val    = np.asarray(f.variables[key])
+            if(hasattr(f.variables[key], '_FillValue')):
+                v_missing  = f.variables[key]._FillValue
+                key_val[key_val==v_missing] = np.nan
+            odata[key] = key_val
+
         else:
             continue
            

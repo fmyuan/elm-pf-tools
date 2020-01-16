@@ -20,6 +20,12 @@ def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, layer_index, sd
         ax.set_yscale("log", nonposy='clip')
     
     layertext = []
+    
+    # add a zero-degree-C line for 'TSOI'
+    if(varname == 'TSOI'):
+        plt.plot([min(t),max(t)],[273.15,273.15],'k--')
+        layertext.append("0oC ")
+
     for il in layer_index:
         layertext.append(("Layer "+str(il)))
         plt.plot(t, sdata[:,il])
@@ -41,6 +47,12 @@ def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, pftvidx, pft_ind
     ax=plt.subplot(nrow, ncol, isubplot)
     
     active_pfts = []
+
+    # add a zero line for a few variables
+    if(varname in ['GPP','NPP','NEE','MR','GR']):
+        plt.plot([min(t),max(t)],[0.0,0.0],'k--')
+        active_pfts.append("0 line ")
+    
     for ix in pft_index:
         for ip, wt in enumerate(pftwt):
             if(wt>0.0 and (pftvidx[ix]>0 and ix==ip)): 
@@ -74,19 +86,34 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
     if(varname == 'SNOW'):         
         varname=varname+' (mm/d)'
         sdata = sdata*86400.0
-    if(varname == 'SNOW_DEPTH'):         
+    if(varname in ['SNOW_DEPTH','SNOWDP']):         
         varname=varname+' (m)'
+
     
     gridtext = []
+
+    # add a zero line for a few variables
+    if(varname in ['GPP','NPP','NEE','MR','GR']):
+        plt.plot([min(t),max(t)],[0.0,0.0],'k--')
+        gridtext.append("0 line ")
+
+    # add a zero-degree-C line for 'TBOT'
+    if(varname == 'TBOT'):
+        plt.plot([min(t),max(t)],[273.15,273.15],'k--')
+        gridtext.append("0oC")
+
     if(len(sdata.shape)>1):
         for igrd in range(sdata.shape[1]):
-            gridtext.append(("GRID "+str(igrd)))
+            #gridtext.append(("GRID "+str(igrd)))
             plt.plot(t, sdata[:,igrd])
+        #gridtext.append(["NAMC","DSLT","AS","WBT","TT-WBT","TT"])
+        gridtext.append("Grid_Alert-CANADA")
+
     else:
-        gridtext.append(("GRID "+str(0)))
+        #gridtext.append(("GRID "+str(0)))
         plt.plot(t, sdata)
         
-    gridtext = ["Climate-Grid"] #["NAMC","DSLT","AS","WBT","TT-WBT","TT"]
+    
     plt.legend((gridtext), loc=0, fontsize=12)
     
     plt.xlabel(t_unit, fontsize=12, fontweight='bold')    
@@ -98,7 +125,7 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
     lx = 0.10
     ly = 0.90
     plot_title = ''
-    if(varname=='TLAI'): plot_title = 'ICB-Highlat_pt406x22' #plotlabel
+    #plot_title = 'ICB-Highlat_pt406x22' #plotlabel
     plt.text(lx, ly, plot_title, transform=ax.transAxes,fontsize=14, fontweight='bold')
 
 #-------------------Parse options-----------------------------------------------
@@ -255,7 +282,11 @@ if(nvars==4): nrow=2; ncol=2
 
 ivar = 0
 for var in varnames:
-    print ivar,var
+    if(sys.version_info[0]==3): 
+        print (ivar,var)
+    #elif(sys.version_info[0]==2):
+    #    print ivar,var
+        
     # names for variable and its time-axis
     for hv in vars_list:
         if re.search(var, hv): 
@@ -288,6 +319,9 @@ for var in varnames:
         nl = vdata.shape[zdim_indx]
     elif('levdcmp' in vdims): 
         zdim_indx = vdims.index('levdcmp')
+        nl = vdata.shape[zdim_indx]
+    elif('levsno' in vdims): 
+        zdim_indx = vdims.index('levsno')
         nl = vdata.shape[zdim_indx]
 
     # pft dim, if existed
@@ -331,6 +365,23 @@ for var in varnames:
                     pwt1cell = pwt1cell[max(iy,ix),:]
                     pft1vidx = pft1vidx[max(iy,ix),:]
                     pft1active = pft1active[max(iy,ix),:]
+            elif(ix<0 and iy<0):
+                if (pft_index[0]<0 and npft>1):
+                    # for all grid, must specify a PFT (that is to say: not yet support 4-D plotting)
+                    print ('must specify a PFT index for grid-wised plotting')
+                    system.exit()
+                else:
+                    if(if2dgrid): 
+                        vdata = vdata[:,:,:,pft_index[0]]
+                        pwt1cell = pwt1cell[:,:,pft_index[0]]
+                        pft1vidx = pft1vidx[:,:,pft_index[0]]
+                        pft1active = pft1active[:,:,pft_index[0]]
+                    else:
+                        vdata = vdata[:,:,pft_index[0]]
+                        pwt1cell = pwt1cell[:,pft_index[0]]
+                        pft1vidx = pft1vidx[:,pft_index[0]]
+                        pft1active = pft1active[:,pft_index[0]]
+                    pdim_indx = -999 # 
 
 
     # column dim, if existed
@@ -382,7 +433,7 @@ for var in varnames:
     for i in range(len(tt)):
                 
         if(zdim_indx<0 and pdim_indx<0):# 2-D grid data
-            if(ix>=0 or iy>=0):
+            if((ix>=0 or iy>=0) and nxy>1):
                 if(if2dgrid): 
                     if(ix<0):
                         gdata[i,:] = vdata[it[i]][iy,:]
@@ -393,7 +444,7 @@ for var in varnames:
                 else:
                     gdata[i,:] = vdata[it[i]][max(iy,ix)]
 
-            else: # all grids
+            else: # all grids or only 1 grid
                 gdata[i,:] = vdata[it[i]].reshape(nx*ny)
         
         
@@ -409,7 +460,7 @@ for var in varnames:
                         sdata[i,:] = vdata[it[i]][:]
                         
                 
-            elif(zdim_indx >= 2 or pdim_indx==2): # 3-D soil data, z_dim/p_dim in 2 or 3 (likely x/y dims before z) 
+            elif(zdim_indx >= 2 or pdim_indx>=2): # 3-D soil/pft data, z_dim/p_dim in 2 or 3 (likely x/y dims before z) 
                 if(if2dgrid): 
                     sdata[i,:] = vdata[it[i]][:,iy,ix,]
                 else:

@@ -29,6 +29,16 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt, is1D):
                     pt_nearest=np.argmin(abs(lons_all-v))
                     pt_nearest=np.unravel_index(pt_nearest,lons_all.shape)
                     pt_val=np.append(pt_val,lons_all[pt_nearest])
+                    # if lons_all are multiple points, i.e. max. distance can be calculated,
+                    # then 'pt_nearest' cannot be beyond that max. distance 
+                    # (This is for 'lons_all' are from multiple files or datasets)
+                    if(len(lons_all)>1):
+                        max_dist = abs(np.diff(lons_all))
+                        max_dist = np.argmax(max_dist)
+                    else:
+                        max_dist = abs(lons_all[pt_nearest]-v)
+                    if(abs(lons_all[pt_nearest]-v)<=max_dist):
+                        pt_val=np.append(pt_val,lons_all[pt_nearest])
             else:
                 if("<=" in lons_pt): 
                     pt_val=lons_all[lons_all<=max(v_pt)]
@@ -67,6 +77,16 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt, is1D):
                     pt_nearest=np.argmin(abs(lats_all-v))
                     pt_nearest=np.unravel_index(pt_nearest,lats_all.shape)
                     pt_val=np.append(pt_val,lats_all[pt_nearest])
+                    # if lats_all are multiple points, i.e. max. distance can be calculated,
+                    # then 'pt_nearest' cannot be beyond that max. distance 
+                    # (This is for 'lats_all' are from multiple files or datasets)
+                    if(len(lats_all)>1):
+                        max_dist = abs(np.diff(lats_all))
+                        max_dist = np.argmax(max_dist)
+                    else:
+                        max_dist = abs(lats_all[pt_nearest]-v)
+                    if(abs(lats_all[pt_nearest]-v)<=max_dist):
+                        pt_val=np.append(pt_val,lats_all[pt_nearest])
             else:
                 if("<=" in lats_pt): 
                     pt_val=lats_all[lats_all<=max(v_pt)]

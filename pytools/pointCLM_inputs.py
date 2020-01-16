@@ -14,7 +14,7 @@ import re
 import netcdf_modules as nfmod
 
 #-------------------Local functions --------------------------------------------
-def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
+def pointLocator(lons_all, lats_all, lons_pt, lats_pt, is2d):
     
     xindxpts = []
     yindxpts = []
@@ -23,13 +23,13 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
     for lon in np.nditer(lons_all, op_flags=['readwrite']):
             if(lon<0.0): lon[...] = lon[...]+360.0
     
-    if(lons_pt.strip()==''):
-        lons_pt=[]
+    if(lons_pt.strip()==''): # not-lon-specified point(s) 
+        lons_pt=lons_all
     else:                
         if ('str' in str(type(lons_pt))):#values with operators
-            nondecimal = re.compile(r'[^\d.,:;-]+')
+            nondecimal = re.compile(r'[^\d.,:;]+')
             v_pt = nondecimal.sub("",lons_pt)
-            v_pt = np.float64(v_pt.split("[,:;]"))
+            v_pt = np.float64(re.split("[,:;]",v_pt))
             
             # convert 'longitude' in format of 0-360 (sama as 'lons_all', otherwise not works
             for v in np.nditer(v_pt, op_flags=['readwrite']):
@@ -40,7 +40,16 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
                 for v in v_pt:
                     pt_nearest=np.argmin(abs(lons_all-v))
                     pt_nearest=np.unravel_index(pt_nearest,lons_all.shape)
-                    pt_val=np.append(pt_val,lons_all[pt_nearest])
+                    # if lons_all are multiple points, i.e. max. distance can be calculated,
+                    # then 'pt_nearest' cannot be beyond that max. distance 
+                    # (This is for 'lons_all' are from multiple files or datasets)
+                    if(len(lons_all)>1):
+                        max_dist = abs(np.diff(sorted(lons_all)))
+                        max_dist = np.amax(max_dist)
+                    else:
+                        max_dist = abs(lons_all[pt_nearest]-v)
+                    if(abs(lons_all[pt_nearest]-v)<=max_dist):
+                        pt_val=np.append(pt_val,lons_all[pt_nearest])
             else:
                 if("<=" in lons_pt): 
                     pt_val=lons_all[lons_all<=max(v_pt)]
@@ -66,8 +75,8 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
                 lons_pt = np.float(lons_pt)
         
     #   
-    if(lats_pt.strip()==''):
-        lats_pt =[]
+    if(lats_pt.strip()==''): # not-lat-specified point(s)
+        lats_pt = lats_all
     else:
         if ('str' in str(type(lats_pt))):#values with operators
             nondecimal = re.compile(r'[^\d.,:;-]+')
@@ -78,7 +87,16 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
                 for v in v_pt:
                     pt_nearest=np.argmin(abs(lats_all-v))
                     pt_nearest=np.unravel_index(pt_nearest,lats_all.shape)
-                    pt_val=np.append(pt_val,lats_all[pt_nearest])
+                    # if lats_all are multiple points, i.e. max. distance can be calculated,
+                    # then 'pt_nearest' cannot be beyond that max. distance 
+                    # (This is for 'lats_all' are from multiple files or datasets)
+                    if(len(lats_all)>1):
+                        max_dist = abs(np.diff(sorted(lats_all)))
+                        max_dist = np.amax(max_dist)
+                    else:
+                        max_dist = abs(lats_all[pt_nearest]-v)
+                    if(abs(lats_all[pt_nearest]-v)<=max_dist):
+                        pt_val=np.append(pt_val,lats_all[pt_nearest])
             else:
                 if("<=" in lats_pt): 
                     pt_val=lats_all[lats_all<=max(v_pt)]
@@ -114,45 +132,49 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt):
     else:
         yind=[]
 
+    # must have both x and y index
     if(np.size(xind)>0 and np.size(yind)>0):
-        # here we're picking points in 'xind' if it's in 'yind'. It shall be same if picking 'yind' if it's in 'xind'
-        ij=np.where(np.isin(xind, yind))        
-        ijindx=np.unravel_index(xind[ij], lons_all.shape)
-    elif(np.size(xind)>0):
-        ijindx=np.unravel_index(xind, lons_all.shape)
-    elif(np.size(yind)>0):
-        ijindx=np.unravel_index(yind, lats_all.shape)
-    xstart = ijindx[0]
-    ystart = ijindx[1]
+        
+        # starting index
+        if(is2d):
+            xstart = xind
+            ystart = yind
+        else:
+            # here we're picking points in 'xind' if it's in 'yind'. It shall be same if picking 'yind' if it's in 'xind'
+            ij=np.where(np.isin(xind, yind))        
+            ijindx=np.unravel_index(xind[ij], lons_all.shape)
+            xstart = ijindx[0]
+            ystart = ijindx[0]
+
    
-    #unique and countinuing indices count
-    x= np.array(xstart,dtype=int)
-    if(np.size(x)>1):
-        x=np.unique(x)
-        xdiff=np.insert(np.diff(x),0,-1)
-        xi=x[np.where(xdiff!=1)] # unique and non-continuing index
-        xloc=np.where(np.isin(x,xi))[0] # index of xi in x, from which continuing indices can be counted
-        xloc=np.append(xloc,np.size(x))
-        xpts=np.diff(xloc)       
-    elif(np.size(x)==1):
-        xi=np.copy(x)
-        xpts=np.array([1],dtype=int)
-    xindxpts = np.column_stack((xi,xpts))
+        #unique and countinuing indices count
+        x= np.array(xstart,dtype=int)
+        if(np.size(x)>1):
+            x=np.unique(x)
+            xdiff=np.insert(np.diff(x),0,-1)
+            xi=x[np.where(xdiff!=1)] # unique and non-continuing index
+            xloc=np.where(np.isin(x,xi))[0] # index of xi in x, from which continuing indices can be counted
+            xloc=np.append(xloc,np.size(x))
+            xpts=np.diff(xloc)
+        elif(np.size(x)==1):
+            xi=np.copy(x)
+            xpts=np.array([1],dtype=int)
+        xindxpts = np.column_stack((xi,xpts))
      
-    # 
-    y= np.array(ystart,dtype=int)
-    if(np.size(y)>1):
-        y=np.unique(y)
-        ydiff=np.insert(np.diff(y),0,-1)
-        yi=y[np.where(ydiff!=1)] # unique and non-continuing index
-        yloc=np.where(np.isin(y,yi))[0] # index of yi in y, from which continuing indices can be counted
-        yloc=np.append(yloc,np.size(y))
-        ypts=np.diff(yloc)       
-    elif(np.size(y)==1):
-        yi=np.copy(y)
-        ypts=np.array([1],dtype=int)
-    yindxpts = np.column_stack((yi,ypts))
+        y= np.array(ystart,dtype=int)
+        if(np.size(y)>1):
+            y=np.unique(y)
+            ydiff=np.insert(np.diff(y),0,-1)
+            yi=y[np.where(ydiff!=1)] # unique and non-continuing index
+            yloc=np.where(np.isin(y,yi))[0] # index of yi in y, from which continuing indices can be counted
+            yloc=np.append(yloc,np.size(y))
+            ypts=np.diff(yloc)
+        elif(np.size(y)==1):
+            yi=np.copy(y)
+            ypts=np.array([1],dtype=int)
+        yindxpts = np.column_stack((yi,ypts))
     
+    #
     return xindxpts, yindxpts
 
 
@@ -273,13 +295,18 @@ if (not options.shared_domain.strip()==''):
     alllons = list(alllons.values())[0]
     
     #indx/indy: 2-D array with paired [startindex, numpts]
-    [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat)
+    is2d=False
+    if(len(alllons.shape)==2 or len(alllats.shape)==2):
+        is2d=True
+        alllons=alllons[0,:]
+        alllats=alllats[:,0]
+    [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat, is2d)
             
     for pt in range(len(indx)):
         pts_idx=[indx[pt][0],indy[pt][0]]
         pts_num=[indx[pt][1],indy[pt][1]]
         nfmod.nco_extract(shareddomain, shareddomain_new, \
-            ['nj','ni'], pts_idx, pts_num,ncksdir=options.ncobinpath)
+            ['ni','nj'], pts_idx, pts_num,ncksdir=options.ncobinpath)
 
 #------------new surfdata  -------------------------------------------------------------------
 if (not (options.surfdata.strip()=='' or options.surfdata=='none')):
@@ -295,13 +322,18 @@ if (not (options.surfdata.strip()=='' or options.surfdata=='none')):
     alllons = list(alllons.values())[0]
     
     #indx/indy: 2-D array with paired [startindex, numpts]
-    [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat)
+    is2d=False
+    if(len(alllons.shape)==2 or len(alllats.shape)==2):
+        is2d=True
+        alllons=alllons[0,:]
+        alllats=alllats[:,0]
+    [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat, is2d)
             
     for pt in range(len(indx)):
         pts_idx=[indx[pt][0],indy[pt][0]]
         pts_num=[indx[pt][1],indy[pt][1]]
         nfmod.nco_extract(surfdata, surfdata_new, \
-            ['lsmlat','lsmlon'], pts_idx, pts_num,ncksdir=options.ncobinpath)
+            ['lsmlon','lsmlat'], pts_idx, pts_num,ncksdir=options.ncobinpath)
 
 #------------new metdata domain -------------------------------------------------------------------
 if (not options.metdomain.strip()==''):
@@ -321,7 +353,10 @@ if (not options.metdomain.strip()==''):
     alllons = list(alllons.values())[0]
     
     #indx/indy: 2-D array with paired [startindex, numpts]
-    [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat)
+    dim_names = list(vdim['yc']) # must be same for 'LATIXY' and 'LONGXY'
+    is2d=True
+    if(len(dim_names)<=1): is2d=False
+    [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat, is2d)
             
     for pt in range(len(indx)):
         pts_idx=[indx[pt][0],indy[pt][0]]
@@ -365,15 +400,18 @@ if (not options.metdir.strip()==''):
                     [alllats, vdim, vattr]=nfmod.getvar(metfile_old,['LATIXY'])
                     alllats = list(alllats.values())[0] # dict --> list
                     [alllons, vdim, vattr]=nfmod.getvar(metfile_old,['LONGXY'])
-                    alllons = list(alllons.values())[0]    
+                    alllons = list(alllons.values())[0]
+                    dim_names = list(vdim['LONGXY']) # must be same for 'LATIXY' and 'LONGXY'
+                    is2d=True
+                    if(len(dim_names)<=1): is2d=False
                     #indx/indy: 2-D array with paired [startindex, numpts]
-                    [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat)            
+                    [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat, is2d)            
                 
                 for pt in range(len(indx)):
                     pts_idx=[indx[pt][0],indy[pt][0]]
                     pts_num=[indx[pt][1],indy[pt][1]]
                     nfmod.nco_extract(metfile_old, metfile_new, \
-                            ['lat','lon'], pts_idx, pts_num,ncksdir=options.ncobinpath)
+                            dim_names, pts_idx, pts_num,ncksdir=options.ncobinpath)
 
         # in subdirectory of metdata directory
         elif(os.path.isdir(metdir+'/'+dirfile)): # subdirectories
@@ -393,15 +431,21 @@ if (not options.metdir.strip()==''):
                             [alllats, vdim, vattr]=nfmod.getvar(metfile_old,['LATIXY'])
                             alllats = list(alllats.values())[0] # dict --> list
                             [alllons, vdim, vattr]=nfmod.getvar(metfile_old,['LONGXY'])
-                            alllons = list(alllons.values())[0]    
+                            alllons = list(alllons.values())[0]
+                            dim_names = list(vdim['LONGXY']) # must be same for 'LATIXY' and 'LONGXY'
                             #indx/indy: 2-D array with paired [startindex, numpts]
-                            [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat)            
+                            is2d=False
+                            if(len(alllons.shape)==2 or len(alllats.shape)==2):
+                                is2d=True
+                                alllons=alllons[0,:]
+                                alllats=alllats[:,0]
+                            [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat, is2d)            
                         
                         for pt in range(len(indx)):
                             pts_idx=[indx[pt][0],indy[pt][0]]
                             pts_num=[indx[pt][1],indy[pt][1]]
                             nfmod.nco_extract(metfile_old, metfile_new, \
-                                    ['lat','lon'], pts_idx, pts_num,ncksdir=options.ncobinpath)
+                                    dim_names, pts_idx, pts_num,ncksdir=options.ncobinpath)
 
 #------------END of pointCLM_data -----------------------------------------------------------------------
     
