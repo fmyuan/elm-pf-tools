@@ -27,8 +27,16 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
     if(varname in ['SNOW','RAIN']):         
         varname=varname+' (mm/d)'
         sdata = sdata*86400.0
-    if(varname == 'SNOW_DEPTH'):         
-        varname=varname+' (m)'
+    if(varname in ['SNOW_DEPTH','SNOWDP']):         
+        sdata = sdata*100.0
+        varname=varname+' (cm)'
+
+    if(varname in ['TBOTd']):         
+        varname=varname+' (K)'
+    if(varname in ['PRCPd']):         
+        varname=varname+' (mm/d)'
+    if(varname in ['SNWDd']):         
+        varname=varname+' (cm)'
 
     
     gridtext = []
@@ -40,12 +48,14 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
     if(len(sdata.shape)>1):
         for igrd in range(sdata.shape[1]):
             gridtext.append(("GRID "+str(igrd)))
+            #gridtext.append("Station")
             plt.plot(t, sdata[:,igrd])
     else:
         gridtext.append(("GRID "+str(0)))
         plt.plot(t, sdata)
         
-    gridtext.append('GRID')#['Station']#["Climate-Grid"]
+    #gridtext.append('GRID')#["Climate-Grid"]
+    #gridtext.append('['Station']
     plt.legend((gridtext), loc=0, fontsize=12)
     
     plt.xlabel(t_unit, fontsize=12, fontweight='bold')    
@@ -58,6 +68,7 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
     ly = 0.90
     #plot_title = ''
     plot_title = 'Alert, CANADA' #plotlabel
+    #plot_title = 'VanKarem, RUSSIA' #plotlabel
     plt.text(lx, ly, plot_title, transform=ax.transAxes,fontsize=14, fontweight='bold')
 
 #-------------------Parse options-----------------------------------------------

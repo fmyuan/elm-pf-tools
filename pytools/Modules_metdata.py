@@ -423,6 +423,8 @@ def clm_metdata_cplbypass_read(filedir,fileheader, met_type, lon, lat, vars):
         for v in vars:
             if('v1' in met_type):
                 file=filedir+'/GSWP3_'+v+'_1901-2010_z'+str(int(zone[0])).zfill(2)+'.nc'
+            if('daymet' in met_type):
+                file=filedir+'/GSWP3_Daymet3_'+v+'_1980-2010_z'+str(int(zone[0])).zfill(2)+'.nc'
             else:
                 file=filedir+'/GSWP3_'+v+'_1901-2014_z'+str(int(zone[0])).zfill(2)+'.nc'
 
@@ -449,6 +451,20 @@ def clm_metdata_cplbypass_read(filedir,fileheader, met_type, lon, lat, vars):
                         t0=str(tunit).strip('days since')
                         t0=datetime.strptime(t0,'%Y-%m-%d %X')
                         met['t0_datetime']=t0
+                
+            #correct 'DTIME' (when do this modify fnc to be 'r+')
+            try:
+                dt=np.diff(met['DTIME'])
+                idx=np.where(dt!=0.125)
+                if len(idx)>1:
+                    dt[idx]=0.125
+                    dt=np.insert(dt, 0, met['DTIME'][0])
+                    dt=np.add.accumulate(dt)
+                    met['DTIME']=dt
+                    daysnum = fnc.variables['DTIME']
+                    daysnum[:] = dt
+            except:
+                print('NC file not writable')
 
             if(v in fnc.variables.keys()): 
                 d=np.asarray(fnc.variables[v])[line[0]-1,:]
@@ -456,9 +472,11 @@ def clm_metdata_cplbypass_read(filedir,fileheader, met_type, lon, lat, vars):
                 if(v not in vdims.keys()):
                     vdims[v] = fnc.variables[v].dimensions
 
-
+            # when done ncfile, close it.
+            fnc.close()
+            
         # all vars done
-
+        
     #because extraction going to do for zone/line, the grid is orderly cleared
     ix=np.asarray(range(len(ix))) 
     iy=np.asarray(range(len(iy))) 
