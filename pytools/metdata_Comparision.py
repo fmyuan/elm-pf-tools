@@ -193,7 +193,7 @@ if (options.clmncheader != '' and options.met_type == 'ELM'):
 if (options.met_type=='cplbypass' or options.met_type=='CPL'):
     cplbypass_dir=options.met_idir+'/cpl_bypass_full'
     cplbypass_fileheader=''
-    cplbypass_mettype='GSWP3'
+    cplbypass_mettype='GSWP3_daymet'
     lon = float(options.lon)
     lat = float(options.lat)
 
