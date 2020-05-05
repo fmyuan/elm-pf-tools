@@ -75,11 +75,11 @@ yrstart = ncfiles[0].split('.')[-2]
 yrend = ncfiles[-1].split('.')[-2]
 
 varlist = [] # this actually will concatentate all variables, except for 'excl_vars'
-if(options.varlisttxt<>''):  # varlist txt file is checked first, so over-ride 'options.varlist'
+if(options.varlisttxt!=''):  # varlist txt file is checked first, so over-ride 'options.varlist'
     ftxt = open(options.varlisttxt,'r')
     varlist = ftxt.read().splitlines()
     ftxt.close()    
-elif(options.varlist<>''):
+elif(options.varlist!=''):
     varlist = re.split('[:,;]',options.varlist)
     
 #------------extract all vars one by one as needed -----------------------------------
@@ -140,7 +140,7 @@ for nf in ncfiles:
             # NOTE: 'time' is the day numbers since starting yyyy-mm-dd-time
             #       which are hard to know what real time is. Then better to use 'mcdate'
             if(nf==ncfiles[-1]):
-                if(options.t_type <> 'time'):
+                if(options.t_type != 'time'):
                     os.system(ncopath+'ncrename -O -h -v time,dtime '+outfile_new+ \
                               ' -o '+outfile_new)
                     os.system(ncopath+'ncrename -O -h -v mcdate,time '+outfile_new+ \

@@ -5,231 +5,43 @@ import glob
 import re
 import numpy as np
 from datetime import datetime, date
-from matplotlib.dates import date2num
+from matplotlib.dates import date2num, num2date
 
 from optparse import OptionParser
 
 import Modules_nic_ims as nicims
 from numpy import long, int16
-import netCDF4
+from netCDF4 import Dataset
 from copy import deepcopy
 
-#-------------------Parse options-----------------------------------------------
+from Modules_CLMoutput_nc4 import CLM_NcRead_1simulation
+from Modules_CLMoutput_nc4 import CLMvar_1Dtseries
 
-parser = OptionParser()
-
-parser.add_option("--workdir", dest="workdir", default="./", \
-                  help = "data work directory (default = ./, i.e., under current dir)")
-parser.add_option("--fileheader", dest="fileheader", default="", \
-                  help = "NIC-IMS file header without .asc or .tif ")
-parser.add_option("--filetype", dest="ftype", default="ascii", \
-                  help = " ascii ('ascii') or geotiff file ('tiff'), default 'ascii' ")
-parser.add_option("--res", dest="res", default="4km", \
-                  help = " 1km, 4km or 24km, default '4km' ")
-parser.add_option("--ptxy", dest="ptxy", default=None, \
-                  help = "one point's x/y or lon/lat pair, in [x,y] format, to extract data \
-                          default 'None' ")
-parser.add_option("--file2nc", dest="file2nc", default=False, \
-                  help = " convert an ascii/geotiff file to Netcdf4 file, default: FALSE ", action="store_true")
-parser.add_option("--lookup_snowfreeseason", dest="lookup_snowfreeseason", default=False, \
-                  help = " lookup snow ending/starting doy in a year and write a Netcdf4 file, default: FALSE ", action="store_true")
-parser.add_option("--days_smoothing", dest="smoothingdays", default=7, \
-                  help = "smoothing window-size of time, default: 7 days ")
-
-(options, args) = parser.parse_args()
-
-#
-if (options.workdir == './'):
-    print('data directory is the current')
-else:
-    print('data directory: '+ options.workdir)
-cwdir = options.workdir
-
-if (options.fileheader == ''):
-    print('MUST input file name header by " --fileheader=??? "')
-    sys.exit()
-
-# 
-if options.ptxy is not None:
-    ptxy = re.split(',|:|;| ',options.ptxy)
-    ptxy = np.asarray(ptxy,dtype=np.float)
-else:
-    ptxy = []
-##
-
-if not cwdir.endswith('/'): cwdir = cwdir+'/'
-fileheader = cwdir+'/'+ options.fileheader
-dataformat = options.ftype
-
-if dataformat == 'ascii':
-    ftype = 'asc.gz'
-elif dataformat == 'geotiff':
-    ftype = 'tiff'
-
-res = options.res
-varname = 'snowcov'
-lonlat2xy = True
-minlat = 22.5#None#30.0 # min. latitude to truncate the grids/dataset
-
-alldirfiles = sorted(glob.glob("%s*.%s" % (fileheader, ftype)))
-if(len(alldirfiles)<=0):
-    sys.exit("No file exists - %s*.*.%s IN %s" %(fileheader, ftype, cwdir))
-else:
-    print('Total Files: '+str(len(alldirfiles)))
-
-    # convert to geo-referenced NC, with 1 ncfile for each year, without smoothing
-if options.file2nc and not options.lookup_snowfreeseason:
-    # grids
-    if minlat==None:
-        imsx,imsy = \
-            nicims.Prep_ims_grid(res, minlat, lonlat2xy=lonlat2xy)
-
-    else:
-        xind, yind, imsx, imsy = \
-            nicims.Prep_ims_grid(res, minlat, lonlat2xy=lonlat2xy)
-    
-    # daily files
-    year_prv = -9999
-    for ifile in alldirfiles:
-
-        try: 
-            mid_day, year, doy, snowdata = \
-                nicims.Prep_ims_snowcov(ifile, fileheader, varname, alldata={})
-        except:
-            print (ifile + 'reading Error!')
-            continue
-        
-        if minlat!=None:
-            snowdata[varname] = snowdata[varname][:,xind,:]
-            snowdata[varname] = snowdata[varname][:,:,yind]
-            
-        snowdata['date'] = mid_day
-        if lonlat2xy:
-            snowdata['geox']  = deepcopy(imsx)
-            snowdata['geoy']  = deepcopy(imsy)
-        else:
-            snowdata['lon']  = deepcopy(imsx)
-            snowdata['lat']  = deepcopy(imsy)
-
-        # write NC file(s)
-        ncfname = fileheader.split('/')[-1] # remove directory name if any
-        ncfname = './'+ncfname+'_'+res+'_yr'+str(year)+'.nc'
-        if os.path.isfile(ncfname) and (year==year_prv): 
-            nicims.Write1GeoNc([varname], snowdata, ptxy=[], ncfname=ncfname, newnc=False)                    
-        else:
-            nicims.Write1GeoNc([varname], snowdata, ptxy=[], ncfname=ncfname, newnc=True)
-
-        # save previous year counter
-        year_prv = year
-
-        # end of 1 file reading/processing (normally for 1 day here)
-        print('DONE with data from: '+ifile)
-#done with 'file2nc'
-
-# convert to geo-referenced NC, with 1 ncfile for each year
-# processing 1 variable only at daily but for multiple year-doy, 
-# e.g. here for snow-free seasons (DOYs for snow melted fully and snow starts)
-snow_yearly = {}
-if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='tif'): 
-
-    # after sorting data, looking-up for DOYs with 'daily snow coverage' < 25% for a year
+#------------------------------------------------------------------------------------------------------------------
+# after sorting data, looking-up for DOYs with 'daily snow coverage' < 25% for a year
+def seeking_YRLYsnowfreeseason(daynums, snowcov, no_leap=False, snow_yearly={}):
     crit_snowfree = 0.25 # 0 - 1
-    crit_days = int(options.smoothingdays)
-    snowcov_days = []
-    
-    # grids
-    if minlat==None:
-        imsx,imsy = \
-            nicims.Prep_ims_grid(res, minlat, lonlat2xy=lonlat2xy)
 
-    else:
-        xind, yind, imsx, imsy = \
-            nicims.Prep_ims_grid(res, minlat, lonlat2xy=lonlat2xy)
-    
-    # daily files
+    # timely-ordered data ('snowcov')
     year_prv = -9999
-    for ifile in alldirfiles:
-        print('Processing data from: '+ifile+' ......')
-
-        try: 
-            mid_day, year, doy, snowcov = \
-                nicims.Prep_ims_snowcov(ifile, fileheader, varname, alldata={})
-
-        except:
-            print ('FILE: '+ifile + ' reading Error! Skipped')
-            continue
-
-        snowcov = np.squeeze(snowcov[varname])
-        if minlat!=None:
-            snowcov = snowcov[xind,:]
-            snowcov = snowcov[:,yind]
-
-        #------------------------------------------------------------------------------------------------
-        # if have to do moving-window smoothing, prapare a few days' data
-        if ifile==alldirfiles[0]:
-            snowcov_days = np.full((crit_days,)+snowcov.shape,np.float(-99))
-            snowcov_days[0:crit_days,] = snowcov[:,:]
-        snowcov_days = np.delete(snowcov_days,0,0)  # remove [0,], i.e. oldest
-        snowcov_days = np.vstack((snowcov_days, np.reshape(snowcov,(1,)+snowcov.shape))) # append the newest
-
-        # smoothing, upon previous day's coverage ('temp_snowcov_prv')
-        if ifile==alldirfiles[0]:
-            temp_snowcov     = snowcov.astype(float)
-            temp_snowcov_prv = snowcov.astype(float)
+    for it in range(len(daynums)):
+        if no_leap:
+            year = int(daynums[it]/365.0)
+            doy  = daynums[it] - year*365.0 + 1.0
         else:
-            #
-            ij = np.where(snowcov_days<0)
-            if len(snowcov_days[ij])>1: 
-                snowcov_days[ij]=np.nan # excluding non-snow-extent data
-                
-                # in general, taking max. snow coverage in moving-window
-                n_prv = np.int(crit_days/2)
-                temp_snowcov = np.nanmax(snowcov_days,0)
-                
-                # previously non-snowed cells, re-assign mean value in them so that smoothing occasional outliers
-                prv1 = np.nanmean(snowcov_days[0:n_prv,],0)
-                prv2 = np.nanmean(snowcov_days[n_prv+1:,],0)
-                #ij = np.where( ((prv1-prv2)>=0) | 
-                #              ((prv1<crit_snowfree) & (prv2<crit_snowfree)) )
-                ij = np.where(prv2<crit_snowfree)
-                if len(temp_snowcov[ij])>0: 
-                    temp_snowcov[ij] = np.nanmin(snowcov_days,0)[ij]
+            mid_day = num2date(daynums[it]).date()
+            year = mid_day.year
+            doy  = daynums[it] - date2num(date(year,1,1)) + 1
 
-                # since 'np.nanxxx' operations with 'snowcov_days', need to reassign those missing values
-                # otherwise '0' would be assigned to those cells, which causes fake values for 'nights'
-                ij = np.where(np.isnan(temp_snowcov))
-                if len(temp_snowcov[ij])>0: 
-                    temp_snowcov[ij] = temp_snowcov_prv[ij]
-                    
-        #------------------------------------------------------------------------------------------------
-        
-        # write smoothed 'temp_snowcov' to NC
-        if options.file2nc:
-            ncdata = {}
-            ncdata['date'] = mid_day
-            if lonlat2xy:
-                ncdata['geox']  = deepcopy(imsx)
-                ncdata['geoy']  = deepcopy(imsy)
-            else:
-                ncdata['lon']  = deepcopy(imsx)
-                ncdata['lat']  = deepcopy(imsy)
-            ncdata[varname] = deepcopy(temp_snowcov)
+        temp_snowcov = snowcov[it,]
 
-            # write NC file(s)
-            ncfname = fileheader.split('/')[-1] # remove directory name if any
-            ncfname = './'+ncfname+'_'+res+'_yr'+str(year)+'.nc'
-            if os.path.isfile(ncfname) and (year==year_prv): 
-                nicims.Write1GeoNc([varname], ncdata, ptxy=[], ncfname=ncfname, newnc=False)                    
-            else:
-                nicims.Write1GeoNc([varname], ncdata, ptxy=[], ncfname=ncfname, newnc=True)
-            
         #------------------------------------------------------------------------------------------------
          
-        if ifile==alldirfiles[0]:
-            snow_start = np.full(snowcov.shape,np.int16(-99))
-            snow_end   = np.full(snowcov.shape,np.int16(-99))
+        if it==0:
+            snow_start = np.full(temp_snowcov.shape,np.int16(-99))
+            snow_end   = np.full(temp_snowcov.shape,np.int16(-99))
             year_prv   = year
-            snow_free  = np.full(snowcov.shape,np.int16(0))
+            snow_free  = np.full(temp_snowcov.shape,np.int16(0))
             totdays_yr = 0
         
         #------------------------------------------------------------------------------------------------
@@ -249,43 +61,37 @@ if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='
                 
                 # never-snow cells
                 temp = snow_free - totdays_yr
-                ij = np.where((temp>=temp_crit) & (snow_end>0))
+                ij = np.where((temp>=temp_crit))
                 if len(snow_end[ij])>0: snow_end[ij] = 0
-                ij = np.where((temp>=temp_crit) & (snow_start>0))
+                ij = np.where((temp>=temp_crit))
                 if len(snow_start[ij])>0: snow_start[ij] = 0
                 ij = np.where((temp>=temp_crit))
                 if len(snow_free[ij])>0: snow_free[ij] = 365
                 
                  # never-snowfree cells
-                ij = np.where((snow_free<-temp_crit)  & (snow_end>0))
-                if len(snow_end[ij])>0: snow_end[ij] = 213
-                ij = np.where((snow_free<-temp_crit)  & (snow_start>0))
+                ij = np.where((snow_free<-temp_crit))
+                if len(snow_end[ij])>0: snow_end[ij] = 365
+                ij = np.where((snow_free<-temp_crit))
                 if len(snow_start[ij])>0: snow_start[ij] = 1
                 ij = np.where((snow_free<-temp_crit)  & (snow_free>0))
                 if len(snow_free[ij])>0: snow_free[ij] = 0
                 
                 # sea/out-of-bound cells
                 ij = np.where((temp_snowcov==-1)) # sea-iced
-                if len(snow_end[ij])>0: snow_end[ij] = -10
-                if len(snow_start[ij])>0: snow_start[ij] = -10
-                if len(snow_free[ij])>0: snow_free[ij] = -10
+                if len(snow_end[ij])>0: snow_end[ij] = -22
+                if len(snow_start[ij])>0: snow_start[ij] = -22
+                if len(snow_free[ij])>0: snow_free[ij] = -22
                 ij = np.where((temp_snowcov==-2)) # sea-iced
-                if len(snow_end[ij])>0: snow_end[ij] = -20
-                if len(snow_start[ij])>0: snow_start[ij] = -20
-                if len(snow_free[ij])>0: snow_free[ij] = -20
+                if len(snow_end[ij])>0: snow_end[ij] = -55
+                if len(snow_start[ij])>0: snow_start[ij] = -55
+                if len(snow_free[ij])>0: snow_free[ij] = -55
                 ij = np.where((temp_snowcov==-99))#out-of-bounds
-                if len(snow_end[ij])>0: snow_end[ij] = temp_snowcov[ij]
-                if len(snow_start[ij])>0: snow_start[ij] = temp_snowcov[ij]
-                if len(snow_free[ij])>0: snow_free[ij] = temp_snowcov[ij]
+                if len(snow_end[ij])>0: snow_end[ij] = -99
+                if len(snow_start[ij])>0: snow_start[ij] = -99
+                if len(snow_free[ij])>0: snow_free[ij] = -99
                  
             # save yearly data
             if (len(snow_yearly)<=0):
-                if lonlat2xy:
-                    snow_yearly['geox']  = deepcopy(imsx)
-                    snow_yearly['geoy']  = deepcopy(imsy)
-                else:
-                    snow_yearly['lon']  = deepcopy(imsx)
-                    snow_yearly['lat']  = deepcopy(imsy)
                 snow_yearly['Year'] = np.empty(1)
                 snow_yearly['Snow_ending']   = np.empty((1,)+snow_end.shape)
                 snow_yearly['Snow_starting'] = np.empty((1,)+snow_start.shape)
@@ -317,7 +123,7 @@ if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='
         
 
         # snow-melting ends
-        if ifile==alldirfiles[0]:
+        if it==0:
             ij = np.where( (temp_snowcov<=crit_snowfree) & (temp_snowcov>=0) )        #snow-free non-water cells
         else:
             ij = np.where( ((temp_snowcov<=crit_snowfree) & (temp_snowcov>=0)) &      #snow-free non-water cells
@@ -328,7 +134,7 @@ if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='
 
         
         # snow-covering starts
-        if ifile==alldirfiles[0]:
+        if it==0:
             ij = np.where( (temp_snowcov>=crit_snowfree) & (temp_snowcov>=0) )            #snow-covered cells
         else:
             ij = np.where( ((temp_snowcov>=crit_snowfree) & (temp_snowcov>=0)) &          #snow-covered cells
@@ -345,7 +151,7 @@ if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='
 
          #------------------------------------------------------------------------------------------------
         # save data at ending of time-steps, otherwise at a new-year starts (see above)
-        if ifile==alldirfiles[-1]: 
+        if it==len(daynums)-1: 
                 
             # replace '-xx' with those same cells from snowcov (indicating water bodies or missings)
             ij = np.where((snow_end<0) & (temp_snowcov<0))
@@ -360,43 +166,37 @@ if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='
                     
                 # never-snow cells
                 temp = snow_free - totdays_yr
-                ij = np.where((temp>=temp_crit) & (snow_end>0))
+                ij = np.where((temp>=temp_crit))
                 if len(snow_end[ij])>0: snow_end[ij] = 0
-                ij = np.where((temp>=temp_crit) & (snow_start>0))
+                ij = np.where((temp>=temp_crit))
                 if len(snow_start[ij])>0: snow_start[ij] = 0
                 ij = np.where((temp>=temp_crit))
                 if len(snow_free[ij])>0: snow_free[ij] = 365
                 
                  # never-snowfree cells
-                ij = np.where((snow_free<-temp_crit)  & (snow_end>0))
-                if len(snow_end[ij])>0: snow_end[ij] = 213
-                ij = np.where((snow_free<-temp_crit)  & (snow_start>0))
+                ij = np.where((snow_free<-temp_crit))
+                if len(snow_end[ij])>0: snow_end[ij] = 365
+                ij = np.where((snow_free<-temp_crit))
                 if len(snow_start[ij])>0: snow_start[ij] = 1
                 ij = np.where((snow_free<-temp_crit)  & (snow_free>0))
                 if len(snow_free[ij])>0: snow_free[ij] = 0
                 
                 # sea/out-of-bound cells
                 ij = np.where((temp_snowcov==-1)) # sea-iced
-                if len(snow_end[ij])>0: snow_end[ij] = -10
-                if len(snow_start[ij])>0: snow_start[ij] = -10
-                if len(snow_free[ij])>0: snow_free[ij] = -10
+                if len(snow_end[ij])>0: snow_end[ij] = -22
+                if len(snow_start[ij])>0: snow_start[ij] = -22
+                if len(snow_free[ij])>0: snow_free[ij] = -22
                 ij = np.where((temp_snowcov==-2)) # sea
-                if len(snow_end[ij])>0: snow_end[ij] = -20
-                if len(snow_start[ij])>0: snow_start[ij] = -20
-                if len(snow_free[ij])>0: snow_free[ij] = -20
+                if len(snow_end[ij])>0: snow_end[ij] = -55
+                if len(snow_start[ij])>0: snow_start[ij] = -55
+                if len(snow_free[ij])>0: snow_free[ij] = -55
                 ij = np.where((temp_snowcov==-99))#out-of-bounds
-                if len(snow_end[ij])>0: snow_end[ij] = temp_snowcov[ij]
-                if len(snow_start[ij])>0: snow_start[ij] = temp_snowcov[ij]
-                if len(snow_free[ij])>0: snow_free[ij] = temp_snowcov[ij]
+                if len(snow_end[ij])>0: snow_end[ij] = -99
+                if len(snow_start[ij])>0: snow_start[ij] = -99
+                if len(snow_free[ij])>0: snow_free[ij] = -99
  
             # save into yearly-data
             if (len(snow_yearly)<=0):
-                if lonlat2xy:
-                    snow_yearly['geox'] = deepcopy(imsx)
-                    snow_yearly['geoy'] = deepcopy(imsy)
-                else:
-                    snow_yearly['lon']  = deepcopy(imsx)
-                    snow_yearly['lat']  = deepcopy(imsy)
                 snow_yearly['Year'] = np.empty(1)
                 snow_yearly['Snow_ending']   = np.empty((1,)+snow_end.shape)
                 snow_yearly['Snow_starting'] = np.empty((1,)+snow_start.shape)
@@ -426,29 +226,216 @@ if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='
         # save previous day for filling night/missing values at next day
         year_prv = year
         temp_snowcov_prv = deepcopy(temp_snowcov)
-        # end of 1 file reading/processing (normally for 1 day here)
+        # end for 1 day here
         
-    # end of 'for ifile in alldirfiles (i.e. all files)
-#Done with 'lookup_snowfreeseason' option for daily 'ascii' or 'tiff' data
+    # 
+    return snow_yearly
+    # 
+
+#------------------------------------------------------------------------------------------------------------------
+
+#-------------------Parse options-----------------------------------------------
+
+parser = OptionParser()
+
+parser.add_option("--workdir", dest="workdir", default="./", \
+                  help = "data work directory (default = ./, i.e., under current dir)")
+parser.add_option("--imsheader", dest="imsheader", default="", \
+                  help = "NIC-IMS output Netcdf file header with path but no .nc ")
+parser.add_option("--elmheader", dest="elmheader", default="", \
+                  help = "ELM output Netcdf file header with path but no .nc ")
+parser.add_option("--res", dest="res", default="24km", \
+                  help = " 1km, 4km or 24km for IMS dataset, default '24km' ")
+parser.add_option("--ptxy", dest="ptxy", default=None, \
+                  help = "one point's x/y or lon/lat pair, in [x,y] format, to extract data \
+                          default 'None' ")
+parser.add_option("--clmout_timestep", dest="clmout_ts", default="daily", \
+                  help="clm output variable timestep (default = 'daily', other option monthly)")
+parser.add_option("--startyr", dest="startyr", default="1", \
+                  help="clm output starting year to plot (default = 1, i.e. first year of simulation" \
+                   " and can be user-defined)")
+parser.add_option("--endyr", dest="endyr", default="", \
+                  help="clm output ending year to plot (default = none, i.e. end of simulation)")
+parser.add_option("--lookup_snowfreeseason", dest="lookup_snowfreeseason", default=False, \
+                  help = " lookup snow ending/starting doy in a year and write a Netcdf4 file, default: FALSE ", action="store_true")
+
+(options, args) = parser.parse_args()
+
+#
+if (options.workdir == './'):
+    print('data directory is the current')
+else:
+    print('data directory: '+ options.workdir)
+cwdir = options.workdir
+
+if (options.elmheader == '' and options.imsheader == ''):
+    print('MUST input file name header, including fullpath, by " --elmheader=??? or --imsheader"')
+    sys.exit()
+
+# 
+if options.ptxy is not None:
+    ptxy = re.split(',|:|;| ',options.ptxy)
+    ptxy = np.asarray(ptxy,dtype=np.float)
+else:
+    ptxy = []
+##
+
+startdays = (int(options.startyr)-1)*365.0
+if(options.clmout_ts=='daily'): 
+    startdays=startdays+1.0
+elif(options.clmout_ts=='monthly'): 
+    startdays=startdays-1.0
+    
+enddays = -9999
+if(options.endyr !=""): enddays = int(options.endyr)*365.0
+
+
+if not cwdir.endswith('/'): cwdir = cwdir+'/'
+
+res = options.res
+ims_varname = 'snowcov'
+elm_varname = 'FSNO'
+
+ftype = 'nc'
+
+#------------------------------------------------------------------------------
+snow_yearly = {}
+# ELM snow coverages reading
+if (options.elmheader != ""):
+    elmpathfileheader = options.elmheader
+
+    alldirfiles = sorted(glob.glob("%s*.%s" % (elmpathfileheader, ftype)))
+    if(len(alldirfiles)<=0):
+        sys.exit("No file exists - %s*.*.%s IN %s" %(elmpathfileheader, ftype, cwdir))
+    else:
+        print('Total Files: '+str(len(alldirfiles)))
+
+    ncfileheader = elmpathfileheader.split('/')[-1]
+    elm_odir   = elmpathfileheader.replace(ncfileheader,'')
+    if(elm_odir.strip()==''):elm_odir='./'
+    elmfincl = 'h0'
+    if ('.h1.' in alldirfiles[0]): elmfincl='h1'
+    
+    # read-in datasets from 1 simulation
+    ny, nx, nlgrnd, nldcmp, ncolumn, npft, varsdata, varsdims = \
+        CLM_NcRead_1simulation(elm_odir, \
+                           ncfileheader, \
+                           elmfincl, \
+                           False, \
+                           [elm_varname], \
+                           startdays, enddays, \
+                           False)
+
+    if2dgrid = True
+    if(len(varsdata['topo'].shape)==1): if2dgrid = False
+    # names for variable and its time-axis
+    vars_list = list(varsdata.keys())    # var_list is in format of 'h*_varname', in which 'varname' is the real variable names
+    for hv in vars_list:
+        if re.search(elm_varname, hv): 
+            var_h = hv
+            hinc  = hv.replace(elm_varname,'')
+            var_t = '%stime' %hinc
+            break
+    vdata = varsdata[var_h]
+    vdims = varsdims[var_h]
+    tt = varsdata[var_t]   # time unit: days
+    # processing original data
+    t, gdata, sdata, zdim_indx, pdim_indx = \
+        CLMvar_1Dtseries(tt, vdims, vdata, nx, ny, -999, -999, if2dgrid, \
+                    False, False)
+
+    # snow relevant ELM output usually is grid-wised
+    if(if2dgrid):
+        snowcov = np.reshape(gdata,(len(t),ny,nx))
+    else:
+        snowcov = gdata
+    landmask = varsdata['landmask']
+    elmsea_ij = np.where(landmask==0)
+    
+    # time is in unit of days since '1850-01-01 00:00:00', without leap-year (SO CANNOT use date/time functions from python)
+    t0 = 1850*365.0
+    daynums = [x+t0 for x in t]
+    
+    # lon/lat of ELM output
+    lonlat2xy = False
+    elmx = varsdata['lon']
+    elmy = varsdata['lat']
+
+    # looking-up snow-free seasons over years
+    if (options.lookup_snowfreeseason):
+        snow_yearly = \
+          seeking_YRLYsnowfreeseason(daynums, snowcov, no_leap=True)
+    for it in range(len(snow_yearly['Year'])):
+        snow_yearly['Snow_freedays'][it][elmsea_ij]=-55
+        snow_yearly['Snow_starting'][it][elmsea_ij]=-55
+        snow_yearly['Snow_ending'][it][elmsea_ij]=-55
+    
+# NIC-IMS snow coverages reading from daily NC snowcov dataset
+if (options.imsheader != ""):
+    imspathfileheader = options.imsheader
+
+    alldirfiles = sorted(glob.glob("%s*.%s" % (imspathfileheader, ftype)))
+    if(len(alldirfiles)<=0):
+        sys.exit("No file exists - %s*.*.%s IN %s" %(imspathfileheader, ftype, cwdir))
+    else:
+        print('Total Files: '+str(len(alldirfiles)))
+
+    ncfileheader = imspathfileheader.split('/')[-1]
+    ims_odir   = imspathfileheader.replace(ncfileheader,'')
+    if(ims_odir.strip()==''):ims_odir='./'
+
+    for ncfile in alldirfiles:
+        f = Dataset(ncfile,'r')
+        
+        if ncfile == alldirfiles[0]:
+            imsx = np.asarray(f.variables['geox'])
+            imsy = np.asarray(f.variables['geoy'])
+            lonlat2xy = True
+        
+        # read-in datasets from one or multiple nc file 
+        tt = np.asarray(f.variables['daysnum']) #units - days since date/time 0000-00-00 00:00:00
+        vdata = np.asarray(f.variables[ims_varname])
+        vdata = np.flip(vdata,1) # weired that have to flip data (TODO checking)
+        vdata = np.flip(vdata,2)
+
+        # 
+        if ncfile == alldirfiles[0]:
+            daynums = deepcopy(tt)
+            snowcov = deepcopy(vdata)
+        else:
+            daynums = np.hstack((daynums, tt))
+            snowcov = np.vstack((snowcov, vdata))
+    # done with all nc files
+
+    # looking-up snow-free seasons over years
+    if (options.lookup_snowfreeseason):
+        snow_yearly = \
+          seeking_YRLYsnowfreeseason(daynums, snowcov)
+
 
 #------------------------------------------------------------------------------------------------
     
 
 # write yearly snow-free season data into 1 NC file
 if len(snow_yearly)>0:
-    
-    del snow_end
-    del snow_start
-    del snowcov
-    del snowcov_days
-    del temp_snowcov
-    del temp_snowcov_prv
 
+    if lonlat2xy:
+        snow_yearly['geox'] = deepcopy(imsx)
+        snow_yearly['geoy'] = deepcopy(imsy)
+    else:
+        snow_yearly['lon']  = deepcopy(elmx)
+        snow_yearly['lat']  = deepcopy(elmy)
+
+    
     #-----------------------------------------------------------
     # write all snow_yearly data to NC file
-    ncfname = 'NSIDC_yearly_snowfree.nc'
+    if(options.imsheader != "" and options.elmheader==""):
+        ncfname = 'NSIDC_yearly_snowfree.nc'
+    elif(options.elmheader != "" and options.imsheader==""):
+        ncfname = 'ELM20181101_N60_yearly_snowfree.nc'
+
     if os.path.isfile(ncfname): os.system('rm -rf '+ncfname)
-    ncfile = netCDF4.Dataset(ncfname, mode='w',format='NETCDF4') 
+    ncfile = Dataset(ncfname, mode='w',format='NETCDF4') 
     print('Create and Write NC file: '+ncfname)
 
     yr_dim  = ncfile.createDimension('time', None)
@@ -489,7 +476,7 @@ if len(snow_yearly)>0:
         vdoy_end = ncfile.createVariable('Doy_snowmelted', np.int16, ('time','geoy','geox'))
     vdoy_end.units = 'doy'
     vdoy_end.long_name = 'day of year when snow fully melted on ground'
-    vdoy_end.Key = "0-365 = land with/without snow, -10 = sea with ice, -20 = sea, -99 = beyond map coverage" ;
+    vdoy_end.Key = "0-365 = land with/without snow, -22 = sea with ice, -55 = sea, -99 = beyond map coverage" ;
     vdata = snow_yearly['Snow_ending']
     if len(vdata.shape)<3: vdata = np.reshape(vdata,(1,)+vdata.shape) # in case that data only 1 time-step
     vdoy_end[:,:,:] = vdata
@@ -500,7 +487,7 @@ if len(snow_yearly)>0:
         vdoy_start = ncfile.createVariable('Doy_snowcovered', np.int16, ('time','geoy','geox'))
     vdoy_start.units = 'doy'
     vdoy_start.long_name = 'day of year when snow starts covered on ground'
-    vdoy_start.Key = "0-365 = land with/without snow, -10 = sea with ice, -20 = sea, -99 = beyond map coverage" ;
+    vdoy_start.Key = "0-365 = land with/without snow, -22 = sea with ice, -55 = sea, -99 = beyond map coverage" ;
     vdata = snow_yearly['Snow_starting']
     if len(vdata.shape)<3: vdata = np.reshape(vdata,(1,)+vdata.shape) # in case that data only 1 time-step
     vdoy_start[:,:,:] = vdata
@@ -511,31 +498,38 @@ if len(snow_yearly)>0:
         vdays_free = ncfile.createVariable('Days_snowfree', np.int16, ('time','geoy','geox'))
     vdays_free.units = 'days'
     vdays_free.long_name = 'days in year from snow ends  to starts covered on ground'
-    vdays_free.Key = "0-365 = land with/without snow, -10 = sea with ice, -20 = sea, -99 = beyond map coverage" ;
+    vdays_free.Key = "0-365 = land with/without snow, -22 = sea with ice, -55 = sea, -99 = beyond map coverage" ;
     vdata = snow_yearly['Snow_freedays']
     if len(vdata.shape)<3: vdata = np.reshape(vdata,(1,)+vdata.shape) # in case that data only 1 time-step
     vdays_free[:,:,:] = vdata
             
+    #
     #global attributes
-    #global attributes
-    if (res=='1km'):
-        ncfile.description = 'Northern Hemisphere yearly snow-cover gone/start day and snowfree length @1km resolution '
-    elif (res=='24km'):
-        ncfile.description = 'Northern Hemisphere daily snow-cover gone/start day and snowfree length  @24km resolution '
-    elif (res=='4km'):
-        ncfile.description = 'Northern Hemisphere daily snow-cover  gone/start day and snowfree length @4km resolution '
-
-    ncfile.data_source = ('US National Ice Center (USNIC), ' +
+    if(options.elmheader !=""):
+        ncfile.description = 'ELM simulated No60 and above Northern High-latitude Region yearly snow-cover gone/start day and snowfree length @0.5deg resolution '
+        ncfile.data_source = ('Offline E3SM Land Model, ' +
+        'forced by GSWP3 v2, half-degree, over >=N60, fully CNP coupled' +
+        'Master @ 2018-11-01 ')
+        ncfile.history = '2020-05-06: calculated from  daily snow coverage FSNO simulations.'
+        
+    if(options.imsheader!=""):
+        if (res=='1km'):
+            ncfile.description = 'Northern Hemisphere yearly snow-cover gone/start day and snowfree length @1km resolution '
+        elif (res=='24km'):
+            ncfile.description = 'Northern Hemisphere daily snow-cover gone/start day and snowfree length  @24km resolution '
+        elif (res=='4km'):
+            ncfile.description = 'Northern Hemisphere daily snow-cover  gone/start day and snowfree length @4km resolution '
+        ncfile.data_source = ('US National Ice Center (USNIC), ' +
         'Interactive Multsensor Snow and Ice Mapping Service (IMS),' +
         'Version 1.2 ')
-    ncfile.data_citation = ('U.S. National Ice Center. 2008. Updated daily. ' +
+        ncfile.data_citation = ('U.S. National Ice Center. 2008. Updated daily. ' +
         'IMS Daily Northern Hemisphere Snow and Ice Analysis at 1 km, 4 km, and 24 km Resolutions, Version 1.2 [4km data].' +
         'Boulder, Colorado USA. '+
         'NSIDC: National Snow and Ice Data Center. '+
         'doi: https://doi.org/10.7265/N52R3PMC. '+
         '2020-03-24.')
+        ncfile.history = '2020-04-14: conversion from ASCII format.'
     
-    ncfile.history = '2020-04-14: conversion from ASCII format.'
     ncfile.contact = 'F.-M. Yuan, CCSI/ESD-ORNL. yuanf@ornl.gov'
  
     ncfile.close()

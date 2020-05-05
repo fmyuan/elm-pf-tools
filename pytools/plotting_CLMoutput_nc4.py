@@ -9,6 +9,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from Modules_CLMoutput_nc4 import CLM_NcRead_1simulation
+from Modules_CLMoutput_nc4 import CLMvar_1Dtseries
+
 
 # ---------------------------------------------------------------
 # Plot soil data with layers for ONE specific grid
@@ -253,7 +255,7 @@ ix=int(options.xindex);
 iy=int(options.yindex);
 
 # read-in datasets from 1 simulation
-nx, ny, nlgrnd, nldcmp, ncolumn, npft, varsdata, varsdims = \
+ny, nx, nlgrnd, nldcmp, ncolumn, npft, varsdata, varsdims = \
     CLM_NcRead_1simulation(options.clm_odir, \
                            options.ncfileheader, \
                            options.ncfincl, \
@@ -267,18 +269,16 @@ if (options.varnames_print): sys.exit('Variable Names Printing DONE!')
 # 
 vars_list = list(varsdata.keys())    # var_list is in format of 'h*_varname', in which 'varname' is the real variable names
 
-# dimension max.
-if2dgrid = True
-if(len(varsdata['topo'].shape)==1): if2dgrid = False
-nxy = nx*ny
-nl = max(nlgrnd, nldcmp)
-
 # plotting
 nrow = 1   # sub-plot vertically arranged number (row no.)
 ncol = 1   # sub-plot horizontally arranged number (column no.)
 if(nvars==2): ncol = 2
 if(nvars==3): ncol = 3
 if(nvars==4): nrow=2; ncol=2
+
+# dimension max.
+if2dgrid = True
+if(len(varsdata['topo'].shape)==1): if2dgrid = False
 
 ivar = 0
 for var in varnames:
@@ -299,10 +299,6 @@ for var in varnames:
     vdims = varsdims[var_h]
     
     tt = varsdata[var_t]   # time unit: days
-    t  = sorted(tt)
-    it = sorted(range(len(tt)), key=lambda k: tt[k])
-    nt = len(tt)
-
     
     #time dimension
     dim_tt = -999
@@ -312,192 +308,11 @@ for var in varnames:
     else:
         continue
     
-    # Does have vertical dimension?  
-    zdim_indx = -999
-    if('levgrnd' in vdims): 
-        zdim_indx = vdims.index('levgrnd')
-        nl = vdata.shape[zdim_indx]
-    elif('levdcmp' in vdims): 
-        zdim_indx = vdims.index('levdcmp')
-        nl = vdata.shape[zdim_indx]
-    elif('levsno' in vdims): 
-        zdim_indx = vdims.index('levsno')
-        nl = vdata.shape[zdim_indx]
-
-    # pft dim, if existed
-    pdim_indx = -999
-    if('pft' in vdims):
-        pdim_indx = vdims.index('pft')
-        npft = vdata.shape[pdim_indx] # this actually is nxy*npft
-        pwt1cell = varsdata['pfts1d_wtgcell']
-        pft1vidx = varsdata['pfts1d_itype_veg']
-        pft1active = varsdata['pfts1d_active']
-
-        if(nxy>1):
-            npft = npft/nxy
-            if(if2dgrid): 
-                vdata = vdata.reshape(-1,ny,nx,npft)
-                pwt1cell = pwt1cell.reshape(ny,nx,npft)
-                pft1vidx = pft1vidx.reshape(ny,nx,npft)
-                pft1active = pft1active.reshape(ny,nx,npft)
-                pdim_indx = pdim_indx + 2 # 
-            else:
-                vdata = vdata.reshape(-1, nxy,npft)
-                pwt1cell = pwt1cell.reshape(nxy,npft)
-                pft1vidx = pft1vidx.reshape(nxy,npft)
-                pft1active = pft1active.reshape(nxy,npft)
-                pdim_indx = pdim_indx + 1 # 
-            
-            if(len(pft_index)==1 and pft_index[0]<0): 
-                # when NOT output specific PFT(s) for all grid, sum all pfts
-                if(ix<0 and iy<0):
-                    vdata = np.sum(vdata*pwt1cell,axis=pdim_indx)
-                    pdim_indx = -999 # because weighted-sum, pft-dimension is removed (no more 3-D data)
-
-            if(ix>=0 and iy>=0):
-                # when output for a specific grid, need to extract that grid's pft info
-                # (BUT don't do so for 'vdata', which will do so when passing to 'sdata' 
-                if(if2dgrid): 
-                    pwt1cell = pwt1cell[iy,ix,:]
-                    pft1vidx = pft1vidx[iy,ix,:]
-                    pft1active = pft1active[iy,ix,:]
-                else:
-                    pwt1cell = pwt1cell[max(iy,ix),:]
-                    pft1vidx = pft1vidx[max(iy,ix),:]
-                    pft1active = pft1active[max(iy,ix),:]
-            elif(ix<0 and iy<0):
-                if (pft_index[0]<0 and npft>1):
-                    # for all grid, must specify a PFT (that is to say: not yet support 4-D plotting)
-                    print ('must specify a PFT index for grid-wised plotting')
-                    system.exit()
-                else:
-                    if(if2dgrid): 
-                        vdata = vdata[:,:,:,pft_index[0]]
-                        pwt1cell = pwt1cell[:,:,pft_index[0]]
-                        pft1vidx = pft1vidx[:,:,pft_index[0]]
-                        pft1active = pft1active[:,:,pft_index[0]]
-                    else:
-                        vdata = vdata[:,:,pft_index[0]]
-                        pwt1cell = pwt1cell[:,pft_index[0]]
-                        pft1vidx = pft1vidx[:,pft_index[0]]
-                        pft1active = pft1active[:,pft_index[0]]
-                    pdim_indx = -999 # 
-
-
-    # column dim, if existed
-    cdim_indx = -999
-    if('column' in vdims):
-        cdim_indx = vdims.index('column')  
-        ncolumn = vdata.shape[cdim_indx] # this actually is nxy*ncolumn
-        colwt1cell = varsdata['cols1d_wtgcell']
-        col1active = varsdata['cols1d_active']
-
-        if(nxy>1):
-            ncolumn = ncolumn/nxy
-            if(if2dgrid): 
-                vdata = vdata.reshape(-1,ny,nx,ncolumn)
-                colwt1cell = colwt1cell.reshape(ny,nx,ncolumn)
-                col1active = col1active.reshape(ny,nx,ncolumn)
-                cdim_indx = cdim_indx + 2 # 
-            else:
-                vdata = vdata.reshape(-1, nxy,ncolumn)
-                colwt1cell = colwt1cell.reshape(nxy,ncolumn)
-                col1active = col1active.reshape(nxy,ncolumn)
-                cdim_indx = cdim_indx + 1 # 
-        
-        if(len(col_index)==1):
-            if(col_index[0]<0): # when NOT output specific COLUMN(s), sum all cols
-                vdata = np.sum(vdata*colwt1cell,axis=cdim_indx)
-                cdim_indx = -999 # because weighted-sum, column-dimension is removed (no more 3-D data)
-        
-    # data series
-    gdata=[]
-    sdata=[]
-    if(zdim_indx<0 and pdim_indx<0):# 2-D grid data
-        gdata = np.zeros((nt,nx*ny))    #temporary data holder in 2-D (tt, grids)
-    elif(zdim_indx>0):        
-        sdata = np.zeros((nt,nl*nx*ny)) #temporary data holder in 2-D (tt, layers*grids)
-    elif(pdim_indx>0):        
-        if(iy>=0 and ix>=0): #[ix,iy] is location of 2-D grids, starting from 0
-            sdata = np.zeros((nt,npft))      #temporary data holder in 2-D (tt, pfts*1 grid)
-        if(iy>=0):
-            sdata = np.zeros((nt,npft*nx))   #temporary data holder in 2-D (tt, pfts*nx grid)
-        if(ix>=0):
-            sdata = np.zeros((nt,npft*ny))   #temporary data holder in 2-D (tt, pfts*ny grid)
-        else:
-            sdata = np.zeros((nt,npft*nx*ny)) #temporary data holder in 2-D (tt, pfts*grids)
-    
-    else:
-        exit("Variable to be plotted has 4-D dimension - NOT YET supported!")
-    
-    for i in range(len(tt)):
-                
-        if(zdim_indx<0 and pdim_indx<0):# 2-D grid data
-            if((ix>=0 or iy>=0) and nxy>1):
-                if(if2dgrid): 
-                    if(ix<0):
-                        gdata[i,:] = vdata[it[i]][iy,:]
-                    elif(iy<0):
-                        gdata[i,:] = vdata[it[i]][:,ix]
-                    else:
-                        gdata[i,:] = vdata[it[i]][iy,ix]
-                else:
-                    gdata[i,:] = vdata[it[i]][max(iy,ix)]
-
-            else: # all grids or only 1 grid
-                gdata[i,:] = vdata[it[i]].reshape(nx*ny)
-        
-        
-        else:
-                       
-            if(zdim_indx == 1 or pdim_indx==1): # 3-D soil/pft data, z_dim/p_dim in 1 
-                if(if2dgrid): 
-                    sdata[i,:] = vdata[it[i]][:,iy,ix]
-                else:
-                    if(len(vdata[it[i]].shape)>1):
-                        sdata[i,:] = vdata[it[i]][:,max(iy,ix)]
-                    else:
-                        sdata[i,:] = vdata[it[i]][:]
-                        
-                
-            elif(zdim_indx >= 2 or pdim_indx>=2): # 3-D soil/pft data, z_dim/p_dim in 2 or 3 (likely x/y dims before z) 
-                if(if2dgrid): 
-                    sdata[i,:] = vdata[it[i]][:,iy,ix,]
-                else:
-                    sdata[i,:] = vdata[it[i]][max(iy,ix),]
-
-    if(options.seasonally):
-        t=np.asarray(t)/365.0
-        dim_yr=int(math.ceil(max(t))-math.floor(min(t)))
-        t=(t-np.floor(t))*365.0 # still in days
-        t=t.reshape(dim_yr,-1)
-        t=np.mean(t,axis=0)
-        t=np.where(t==0,365.0,t)  # day 0 shall be day 365, otherwise plotting X axis not good
-        
-        if(len(gdata)>0):
-            shp=np.hstack(([dim_yr,-1],gdata.shape[1:]))
-            gdata=gdata.reshape(shp)
-            gdata=np.mean(gdata,axis=0)
-        elif(len(sdata)>0):
-            shp=np.hstack(([dim_yr,-1],sdata.shape[1:]))
-            sdata=sdata.reshape(shp)
-            sdata=np.mean(sdata,axis=0)
-    elif(options.annually):
-        t=np.asarray(t)/365.0
-        dim_yr=int(math.ceil(max(t))-math.floor(min(t)))
-        t=np.floor(t)*365.0 # still in days
-        t=t.reshape(dim_yr,-1)
-        dim_season = t.shape[1]
-        t=np.mean(t,axis=1)
-        
-        if(len(gdata)>0):
-            shp=np.hstack(([-1, dim_season],gdata.shape[1:]))
-            gdata=gdata.reshape(shp)
-            gdata=np.mean(gdata,axis=1)
-        elif(len(sdata)>0):
-            shp=np.hstack(([-1, dim_season],sdata.shape[1:]))
-            sdata=sdata.reshape(shp)
-            sdata=np.mean(sdata,axis=1)
+    # processing original data, if needed
+    t, gdata, sdata, zdim_indx, pdim_indx = \
+        CLMvar_1Dtseries(tt, vdims, vdata, nx, ny, ix, iy, if2dgrid, \
+                    annually=options.annually, \
+                    seasonally=options.seasonally)
 
     #plotting
     vname = varnames[varnames.index(var)]
