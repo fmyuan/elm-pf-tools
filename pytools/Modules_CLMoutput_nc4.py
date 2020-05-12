@@ -66,7 +66,8 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
                      startdays, enddays, adspinup, vars_all):
     odata  = {}
     odata_dims = {}
-
+    odata_tunits = ''
+    
     try:
         startdays = float(startdays)
     except ValueError:
@@ -116,13 +117,14 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
         # timing option - we do checking thereafter
         # because we want to have those CONSTANTs read-out, some of which ONLY available in the first CLM nc file.
         tt   = np.asarray(f.variables['time'])# days since model simulation starting time
+        if(odata_tunits==''): odata_tunits = f.variables['time'].units
         tdays1 = min(tt)
         tdays2 = max(tt)
         if(startdays>=0):
             if(startdays>tdays2): 
                 odata = {}
                 odata_dims = {}
-                return odata, odata_dims
+                return odata, odata_dims, odata_tunits
             else:
                 s_index = int(bisect_left(tt, startdays))
                 odata[key] = odata[key][s_index:,]
@@ -131,7 +133,7 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
             if(enddays<tdays1): 
                 odata = {}
                 odata_dims = {}
-                return odata, odata_dims
+                return odata, odata_dims, odata_tunits
             else:
                 e_index = int(bisect_right(tt, enddays))
                 odata[key] = odata[key][:e_index,]
@@ -227,7 +229,7 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
         
         
     # out datasets
-    return odata, odata_dims
+    return odata, odata_dims, odata_tunits
 
 
 
@@ -407,19 +409,24 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
             if(finc not in chunkdata):
                 chunkdata[finc]  = {}
                 chunkdata_dims[finc] = {}
+                
         
             print ('Processing - ', filename)
-            chunkdatai,chunkdatai_dims = \
+            chunkdatai,chunkdatai_dims, vars_tunits = \
                 CLM_NcRead_1file(filename, varnames_print, keep, chunkdata[finc].keys(), \
                                  startdays, enddays, adspinup, VARS_ALL)
             
             # the following are constant and shall be same for all files (i.e. only need once)
-            if (nx<=0 and 'topo' in chunkdatai):
-                nx = chunkdatai['topo'].shape[0]
-                if (len(chunkdatai['topo'].shape)==1):
-                    ny = 1
-                elif(len(chunkdatai['topo'].shape)==2):
-                    ny = chunkdatai['topo'].shape[1]
+            if (nx<=0):
+                if('topo' in chunkdatai):
+                    ny = chunkdatai['topo'].shape[0]
+                    if (len(chunkdatai['topo'].shape)==1):
+                        nx = 1
+                    elif(len(chunkdatai['topo'].shape)==2):
+                        nx = chunkdatai['topo'].shape[1]
+                elif('lat' in chunkdatai and 'lon' in chunkdatai):
+                    nx = chunkdatai['lon'].size
+                    ny = chunkdatai['lat'].size
                 
             if (nlgrnd<=0 and 'levgrnd' in chunkdatai):
                 nlgrnd = len(chunkdatai['levgrnd'])
@@ -440,7 +447,7 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
 
             if (ncol<=0):
                 if('column' in chunkdatai ):
-                    ncol = len(chunkdatai['pft'])
+                    ncol = len(chunkdatai['column'])
                 if('cols1d_wtgcell' in chunkdatai ):
                     ncol = len(chunkdatai['cols1d_wtgcell'])
                     global cols1d_wtgcell
@@ -510,7 +517,7 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
     #--------------------------------------------------------------------------------------
 #   
     # data-sets output
-    return nx, ny, nlgrnd, nldcmp, ncol, npft, varsdata, varsdims
+    return nx, ny, nlgrnd, nldcmp, ncol, npft, varsdata, varsdims, vars_tunits
 
 #----------------------------------------------------------------
 # processing originally-readin CLM data (1,2,3D) into t-series 1D collpased dataset

@@ -43,7 +43,7 @@ def Prep_ims_grid(res, minlat=None, lonlat2xy=False):
     if res in ['1km','4km','24km']:
         imslons = np.fromfile(file_imslons,dtype=np.float32) # flat binary 4-byte floating-point
         imslats = np.fromfile(file_imslats,dtype=np.float32)
-        # the grids are actually in square, with centroid in North-Polar point
+        # the grids are actually in square, with centroid in North-Polar point nearby (-80/90)
         n = np.int(np.sqrt(imslats.size))
         if n!=np.sqrt(imslats.size):
             print('NOT a squared grid-domain: x, y - ', n, np.sqrt(imslats.size))
@@ -101,7 +101,7 @@ def Prep_ims_grid(res, minlat=None, lonlat2xy=False):
     else:
         
         if minlat!=None:
-            return ix, iy, x
+            return ix, iy, imslon, imslats
         else:
             return imslon, imslats  # this is in 2-D, and fully paired  lon/lat for each cells, But NOT evenly longitude-interval along latitudal-axis
 
@@ -139,7 +139,7 @@ def Prep_ims_snowcov(ifile, fileheader, varname, alldata={}):
                             break # out of for loop
                 if len(data)>0:
                     data = re.split('\W+|\bt',data.strip())
-                    data = np.asarray(data,dtype=np.int16)
+                    data = np.asarray(data,dtype=np.float32)
                     n = np.int(np.sqrt(len(data)))
                     if n==np.sqrt(len(data)):
                         data = np.reshape(data,(n,n))
@@ -159,12 +159,12 @@ def Prep_ims_snowcov(ifile, fileheader, varname, alldata={}):
         
 
         # data re-grouping as follows, so that it can be read in Visit using blue-scale :
-        # 0 outside the coverage area  ==> none (-99)
+        # 0 outside the coverage area  ==> none (-0.5)
         # 1 sea                        ==> water-body (-2)
         # 2 land without snow          ==> snow-free land (0)
         # 3 Sea ice                    ==> water-body (-1), 164 for unpacked format data
         # 4 land covered with snow     ==> snow-covered land (1), 165 for unpacked format data
-        data[data == 0] = -99 # when plot in Visit, negative could be blocked as continuing of non-snow
+        data[data == 0] = -0.5 # when plot in Visit, negative could be blocked as continuing of non-snow
         data[data == 1] = -2
         data[(data == 3) | (data == 164)] = -1
         data[data == 2] = 0
@@ -187,6 +187,100 @@ def Prep_ims_snowcov(ifile, fileheader, varname, alldata={}):
     del data
     
     return mid_day, year, doy, alldata
+
+#--------------------------------------------------------------------------------
+
+def IMS_ELM_gridmatching(Grid1_Xdim, Grid1_Ydim, Grid2_x, Grid2_y, \
+                         Grid1ifxy=False, Grid2ifxy=True, Grid1_cells=()):
+    
+    # Match Grid2 within each Grid1, so return Grid2-xy index for each Grid1 cell
+    # by default, (1) Grid1 (parent) in lon/lat (aka ifxy=False), Grid2 in geox/y (aka ifxy=True)
+    #             (2) Grid1 XY is grid-mesh-nodes, Grid2xy is grid-centroids. Then is good for searching Grid2 in Grid1
+    #             (3) all cells in Grid1 are assigned Grid2's cell-index - maybe only those indiced in 'Grid1_cells'
+    
+    # it's supposed that: Grid1 X/Y are in 1-D regularly-intervaled (may not evenly) nodes along axis
+    # while, Grid2 might be either like Grid2 or in 2-D mesh.
+    if (len(Grid2_x.shape)<2): 
+        # Grid2 must be converted to 2D paired x/y mesh, if not
+        Grid2_xx, Grid2_yy = np.meshgrid(Grid2_x, Grid2_y) # mid-points of grid
+    elif (len(Grid2_x.shape)==2):
+        # Grid2 grid-centroids are in paired x/y for each grid
+        Grid2_xx = Grid2_x
+        Grid2_yy = Grid2_y
+        
+    if (len(Grid1_Xdim.shape)==1): #  Grid1 mesh in TWO 1-D dimensional nodes
+        Grid1_x = Grid1_Xdim
+        Grid1_y = Grid1_Ydim
+        Grid1_xx, Grid1_yy = np.meshgrid(Grid1_Xdim, Grid1_Ydim) # nodes of grid-mesh
+    else:
+        #Grid1 mesh in 2-D for X/Y axis 
+        print ('TODO - matching range-Grid1 in 2D mesh')
+        sys.exit()
+    
+    # For projection conversion
+    # Polar stereographic ellipsoidal projection with WGS-84 ellipsoid
+    #Proj4: +proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs
+    geoxy_proj_str = "+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs"
+    geoxyProj = CRS.from_proj4(geoxy_proj_str)
+
+    # EPSG: 4326
+    # Proj4: +proj=longlat +datum=WGS84 +no_defs
+    lonlatProj = CRS.from_epsg(4326) # in lon/lat coordinates
+    
+    # only if 2 grids are in different projections, do tansformation
+    if (Grid2ifxy and not Grid1ifxy):
+        Txy2lonlat = Transformer.from_proj(geoxyProj, lonlatProj, always_xy=True)
+        Grid2_gxx,Grid2_gyy = Txy2lonlat.transform(Grid2_xx,Grid2_yy)
+        
+        ij=np.where(Grid2_gxx<0.0)
+        if(len(ij[0])>0): Grid2_gxx[ij]=Grid2_gxx[ij]+360.0 # for convenience, longitude from 0~360
+        ij=np.where(Grid1_x<0.0)
+        if(len(ij[0])>0): Grid1_x[ij]=Grid1_x[ij]+360.0 # for convenience, longitude from 0~360
+
+    elif (not Grid2ifxy and Grid1ifxy):
+        Tlonlat2xy = Transformer.from_proj(lonlatProj, geoxyProj, always_xy=True)
+        Grid2_gxx,Grid2_gyy = Tlonlat2xy.transform(Grid2_xx,Grid2_yy)
+    
+    else:
+        Grid2_gxx = Grid2_xx
+        Grid2_gyy = Grid2_yy
+
+    # IMS grids' index (Grid2) included in each ELM land-grid (Grid1)
+    Grid2in1_indx = {}
+    if (len(Grid1_cells)<=0): 
+        Grid1_ij = np.where(~np.isnan(Grid1_xx[:-1,:-1])) # cell-index rather than mesh-line index
+    else:
+        Grid1_ij = Grid1_cells
+        
+    for indx in range(len(Grid1_ij[0])): # Grid1 grid-cell no.
+        j = Grid1_ij[0][indx]  # ELM output data is in (t,elmy,elmx) dimensional-order
+        i = Grid1_ij[1][indx]
+        
+        iwst = np.min(Grid1_x[i:i+2])
+        iest = np.max(Grid1_x[i:i+2])
+        jsth = np.min(Grid1_y[j:j+2])
+        jnth = np.max(Grid1_y[j:j+2])
+        ij = np.where( ((Grid2_gxx<=iest) & (Grid2_gxx>iwst)) & \
+                       ((Grid2_gyy<=jnth) & (Grid2_gyy>jsth)) )
+        Grid2in1_indx[str(indx)] = deepcopy(ij)
+            
+        if(len(ij[0])<1):
+             # none of IMS cell centroid inside a ELM grid, find the close one instead
+            closej  = np.where((Grid2_gyy<=jnth) & (Grid2_gyy>jsth)) # do lat/y first, due to evenly-intervaled along lat/y
+            if closej[0].size<=0:
+                closei  = np.where((Grid2_gxx<=iest) & (Grid2_gxx>iwst)) # do lon/x first
+                if(closei[0].size>0):
+                    closeiy = np.argmin(abs(Grid2_gyy[closei]-(jnth+jsth)/2.0))
+                    closeij = (np.asarray(closei[0][closeiy]),np.asarray(closei[1][closeiy]))
+                else:
+                    closeij = deepcopy(closei)
+            else:
+                closejx  = np.argmin(abs(Grid2_gxx[closej]-(iwst+iest)/2.0))
+                closeij = (np.asarray(closej[0][closejx]),np.asarray(closej[1][closejx]))
+            Grid2in1_indx[str(indx)] = deepcopy(closeij)
+    
+    # done with all grids
+    return Grid2in1_indx, Grid2_gxx, Grid2_gyy
    
 #-------------------Writing submodule-----------------------------------------------
 # Write to geo-referenced CF compliant nc file, if filename given
@@ -213,6 +307,12 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
 
     # mid of day
     mid_day = vardatas['date']
+    daynums = np.asarray([date2num(x) for x in mid_day])
+    year    = np.asarray([x.year for x in mid_day])
+    doy0    = np.asarray([date2num(date(x,1,1)) for x in year])
+    doy     = daynums-doy0+1
+    YEARLY  = False
+    if(np.min(doy) == np.max(doy)): YEARLY = True
     try:
         nt = len(date2num(mid_day))
     except:
@@ -258,20 +358,20 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
                 time_dim= ncfile.createDimension('time', None)
 
                 if PROJECTED:
-                    lon_dim = ncfile.createDimension('geox',  len(lon))
-                    lat_dim = ncfile.createDimension('geoy',  len(lat))
+                    lon_dim = ncfile.createDimension('geox',  lon.size)
+                    lat_dim = ncfile.createDimension('geoy',  lat.size)
 
-                    vlat = ncfile.createVariable('geox', np.float32, ('geox',))
+                    vlat = ncfile.createVariable('geoy', np.float32, ('geoy',))
                     vlat.units = 'meters'
                     vlat.long_name = 'Northing (Polar stereographic ellipsoidal projection)'
                 
-                    vlon = ncfile.createVariable('geoy', np.float32, ('geoy',))
+                    vlon = ncfile.createVariable('geox', np.float32, ('geox',))
                     vlon.units = 'meters'
                     vlon.long_name = 'Easting (Polar stereographic ellipsoidal projection)'
 
                 else:
-                    lon_dim = ncfile.createDimension('lon',  len(lon))
-                    lat_dim = ncfile.createDimension('lat',  len(lat))
+                    lon_dim = ncfile.createDimension('lon',  lon.size)
+                    lat_dim = ncfile.createDimension('lat',  lat.size)
                     vlat = ncfile.createVariable('lat', np.float32, ('lat',))
                     vlat.units = 'degrees_north'
                     vlat.long_name = 'latitude'
@@ -301,10 +401,15 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
                 vyear.long_name = 'year in format yyyy'
 
                 # when using VISIT, it shows 'time' as cycle of multiple time-series
-                # DOY is much useful info in this case
                 vtime = ncfile.createVariable('time', np.int16, ('time',))
-                vtime.units = 'doy'
-                vtime.long_name = 'day of year'
+                if YEARLY:
+                    vtime.units = 'year'
+                    vtime.long_name = 'year in format yyyy'
+                    
+                else:
+                    # DOY is much useful info in this case
+                    vtime.units = 'doy'
+                    vtime.long_name = 'day of year'
 
             
                 #global attributes
@@ -317,13 +422,23 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
                 ncfile.data_source = ('US National Ice Center (USNIC), ' +
                     'Interactive Multsensor Snow and Ice Mapping Service (IMS),' +
                     'Version 1.2 ')
+                if ('ELM' in ncfname):
+                    ncfile.data_source2 = ('E3SM v1.1 Land Model offline simulations for No60 and above, ' +
+                                           'For NGEE-Arctic Project sponsored by DOE Office of Science')
+
                 ncfile.data_citation = ('U.S. National Ice Center. 2008. Updated daily. ' +
                     'IMS Daily Northern Hemisphere Snow and Ice Analysis at 1 km, 4 km, and 24 km Resolutions, Version 1.2 [4km data].' +
                     'Boulder, Colorado USA. '+
                     'NSIDC: National Snow and Ice Data Center. '+
                     'doi: https://doi.org/10.7265/N52R3PMC. '+
                     '2020-03-24.')
-                ncfile.history = '2020-04-14: conversion from ASCII format.'
+                if ('ELM' in ncfname):
+                    ncfile.history = ('2020-04-14: IMS snow data conversion from ASCII format. ' +
+                                     '2020-05-15: IMS data either aggrated into ELM land-cell, OR, ' +
+                                     ' ELM data assinged for each IMS grid-cell, upon which griding-system adopted')
+                else:
+                    ncfile.history = '2020-04-14: conversion from ASCII format.'
+                    
                 ncfile.contact = 'F.-M. Yuan, CCSI/ESD-ORNL. yuanf@ornl.gov'
             # done if ncfname !='':
             
@@ -332,34 +447,38 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
         # write time
             
         if not DONE_time:
-            daynums = date2num(mid_day)
-            year    = mid_day.year
-            doy0    = date(year,1,1)
-            doy     = daynums-date2num(doy0)+1
+            
             
             if ncfname !='':
                 if newnc:
-                    vdaysnum[0] = daynums
-                    vdate[0] = np.unicode_(mid_day)
-                    vdoy[0]  = doy
-                    vyear[0] = year
-                    vtime[0] = doy
+                    vdaysnum[0:nt] = daynums
+                    vdate[0:nt] = np.asarray([np.unicode_(x) for x in mid_day])
+                    vdoy[0:nt]  = doy
+                    vyear[0:nt] = year
+                    if YEARLY:
+                        vtime[0:nt] = year
+                    else:
+                        vtime[0:nt] = doy
+                        
                 else:
                     vdaysnum = ncfile.variables['daysnum']
                     prv_nt = len(vdaysnum)
-                    vdaysnum[prv_nt] = daynums
+                    vdaysnum[prv_nt:prv_nt+nt] = daynums
                 
                     vdate = ncfile.variables['date']
-                    vdate[prv_nt] = np.unicode_(mid_day)
+                    vdate[prv_nt:prv_nt+nt] = np.asarray([np.unicode_(x) for x in mid_day])
                 
                     vdoy = ncfile.variables['doy']
-                    vdoy[prv_nt] = doy
+                    vdoy[prv_nt:prv_nt+nt] = doy
 
                     vyear = ncfile.variables['year']
-                    vyear[prv_nt] = year
+                    vyear[prv_nt:prv_nt+nt] = year
 
                     vtime = ncfile.variables['time']
-                    vtime[prv_nt] = doy
+                    if YEARLY:
+                        vtime[prv_nt:prv_nt+nt] = year
+                    else:
+                        vtime[prv_nt:prv_nt+nt] = doy
 
             # done write to nc (if ncfname !='':)
             
@@ -368,29 +487,39 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
         # 
         # appears vardatas are in S-N/E-W ordered, so must be flip over
         data = vardatas[varname]
-        data = np.int16(data) # data type is 'uint8', convert to short (othwise cannot be read by Visit)
+        data = np.float32(data) # data type is 'uint8', convert to short (othwise cannot be read by Visit)
         
         if ncfname !='':
             if newnc:
                 if PROJECTED:
-                    vtemp = ncfile.createVariable(varname, np.int16, ('time','geoy','geox')) # note: unlimited dimension is leftmost
+                    vtemp = ncfile.createVariable(varname, np.float32, ('time','geoy','geox')) # note: unlimited dimension is leftmost
                 else:
-                    vtemp = ncfile.createVariable(varname, np.int16, ('time','lat','lon')) # note: unlimited dimension is leftmost
+                    vtemp = ncfile.createVariable(varname, np.float32, ('time','lat','lon')) # note: unlimited dimension is leftmost
                 
                 vtemp.units = ''
                 vtemp.standard_name = varname.strip() # this is a CF standard name
-                if '1km' in ncfname:
-                    vtemp.long_name =  varname.strip()+' at 1km resolution'
+                if '24km' in ncfname:
+                    vtemp.long_name =  varname.strip()+' at 24km resolution'
                 elif '4km' in ncfname:
                     vtemp.long_name =  varname.strip()+' at 4km resolution'
-                elif '24km' in ncfname:
-                    vtemp.long_name =  varname.strip()+' at 24km resolution'
-                vtemp.Key = "0 = land without snow, 1 = land with snow, -1 = sea with ice, -2 = sea, -99 = beyond map coverage" ;
-        
-                vtemp[0,:,:] = data.astype(np.int16)
+                elif '1km' in ncfname:
+                    vtemp.long_name =  varname.strip()+' at 1km resolution'
+                if ('ELM' in ncfname):
+                    if ('Day' in varname or 'Doy' in varname): 
+                        vtemp.Key = "0~365 = days or doy for land with snow, -22 = sea ice (if any), -55 = sea, -11 = beyond map coverage" ;
+                    else:
+                        vtemp.Key = "0 = land without snow, 0~1.0 = land with snow fraction, -2 = sea, -1 = beyond map coverage" ;
+                else:
+                    if ('Day' in varname or 'Doy' in varname): 
+                        vtemp.Key = "0~365 = days or doy for land with snow, -22 = sea ice (if any), -55 = sea, -11 = beyond map coverage" ;
+                    else:
+                        vtemp.Key = "0 = land without snow, 0~1 = land with snow, -1 = sea with ice, -2 = sea, -0.50 = beyond map coverage" ;
+                    
+                vtemp[0:nt,:,:] = data.astype(np.float32)
             else:
                 vtemp = ncfile.variables[varname]
-                vtemp[prv_nt,:,:] = data.astype(np.int16)
+                vtemp[prv_nt:prv_nt+nt,:,:] = data.astype(np.float32)
+    # done with 'for varname in vars'
     
     # end of for varname in vars:
     if ncfname !='': ncfile.close()
