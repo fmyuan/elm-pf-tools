@@ -85,7 +85,7 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
         varname=varname+' (kgC/m2)'
         sdata = sdata/1000.0
 
-    if(varname == 'SNOW'):         
+    if(varname == 'SNOW' or varname == 'RAIN'):         
         varname=varname+' (mm/d)'
         sdata = sdata*86400.0
     if(varname in ['SNOW_DEPTH','SNOWDP']):         
@@ -255,7 +255,7 @@ ix=int(options.xindex);
 iy=int(options.yindex);
 
 # read-in datasets from 1 simulation
-nx, ny, nlgrnd, nldcmp, ncolumn, npft, varsdata, varsdims = \
+nx, ny, nlgrnd, nldcmp, ncolumn, npft, varsdata, varsdims, ttunits = \
     CLM_NcRead_1simulation(options.clm_odir, \
                            options.ncfileheader, \
                            options.ncfincl, \
@@ -263,6 +263,7 @@ nx, ny, nlgrnd, nldcmp, ncolumn, npft, varsdata, varsdims = \
                            varnames, \
                            startdays, enddays, \
                            options.adspinup)
+
 
 if (options.varnames_print): sys.exit('Variable Names Printing DONE!')
 #--------------------------------------------------------------------------------------

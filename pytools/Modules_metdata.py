@@ -7,8 +7,9 @@ from netCDF4 import Dataset
 from pip._vendor.distlib.util import CSVReader
 from calendar import isleap
 from numpy import intersect1d
+from matplotlib.pyplot import axis
 
-
+ncopath = '/usr/local/nco/bin/'
 #####################################################################################################
 #
 # ------- GSWP3 met forcing data extraction for site or sites ------------------------------------
@@ -171,6 +172,178 @@ def clm_metdata_extraction(metdomainfile, metfiles, sites):
         
     print('DONE!')
 
+####################################################################################################
+#
+# -------Read a subset of DAYMET data, in NC4 original format ----------------
+#
+
+def subsetDaymetRead1NCfile(ncfile, lat_range=[], lon_range=[],SUBSETNC=False):
+#dimensions:
+#    x = 7814 ;
+#    y = 8075 ;
+#    time = UNLIMITED ; // (365 currently)
+#    nv = 2 ;
+#variables:
+#    float x(x) ;
+#        x:units = "m" ;
+#        x:long_name = "x coordinate of projection" ;
+#        x:standard_name = "projection_x_coordinate" ;
+#    float y(y) ;
+#        y:units = "m" ;
+#        y:long_name = "y coordinate of projection" ;
+#        y:standard_name = "projection_y_coordinate" ;
+#    float lat(y, x) ;
+#        lat:units = "degrees_north" ;
+#        lat:long_name = "latitude coordinate" ;
+#        lat:standard_name = "latitude" ;
+#    float lon(y, x) ;
+#        lon:units = "degrees_east" ;
+#        lon:long_name = "longitude coordinate" ;
+#        lon:standard_name = "longitude" ;
+#    float time(time) ;
+#        time:long_name = "time" ;
+#        time:calendar = "standard" ;
+#        time:units = "days since 1980-01-01 00:00:00 UTC" ;
+#        time:bounds = "time_bnds" ;
+#    short yearday(time) ;
+#        yearday:long_name = "yearday" ;
+#    float time_bnds(time, nv) ;
+#    short lambert_conformal_conic ;
+#        lambert_conformal_conic:grid_mapping_name = "lambert_conformal_conic" ;
+#        lambert_conformal_conic:longitude_of_central_meridian = -100. ;
+#        lambert_conformal_conic:latitude_of_projection_origin = 42.5 ;
+#        lambert_conformal_conic:false_easting = 0. ;
+#        lambert_conformal_conic:false_northing = 0. ;
+#        lambert_conformal_conic:standard_parallel = 25., 60. ;
+#        lambert_conformal_conic:semi_major_axis = 6378137. ;
+#        lambert_conformal_conic:inverse_flattening = 298.257223563 ;
+#    float prcp(time, y, x) ;
+#        prcp:_FillValue = -9999.f ;
+#        prcp:long_name = "daily total precipitation" ;
+#        prcp:units = "mm/day" ;
+#        prcp:missing_value = -9999.f ;
+#        prcp:coordinates = "lat lon" ;
+#        prcp:grid_mapping = "lambert_conformal_conic" ;
+#        prcp:cell_methods = "area: mean time: sum" ;
+#
+#// global attributes:
+#        :start_year = 1980s ;
+#        :source = "Daymet Software Version 3.0" ;
+#        :Version_software = "Daymet Software Version 3.0" ;
+#        :Version_data = "Daymet Data Version 3.0" ;
+#        :Conventions = "CF-1.6" ;
+#        :citation = "Please see http://daymet.ornl.gov/ for current Daymet data citation information" ;
+#        :references = "Please see http://daymet.ornl.gov/ for current information on Daymet references" ;
+#}
+    
+    daymet_vars = ['tmax', 'tmin', 'prcp', 'srad', 'vp','swe','dayl']
+    #
+    try:
+        f0 = Dataset(ncfile,'r')
+        print('\n read nc FILE: '+ncfile+' ------- ')
+        
+    except:
+        print('\n Error in READING File: '+ncfile)
+
+    for ivar in f0.variables.keys():
+        if ivar in daymet_vars:
+            data_varname = ivar
+            break
+
+    geox = np.asarray(f0.variables['x'])
+    geoy = np.asarray(f0.variables['y'])
+    
+    alllons = np.asarray(f0.variables['lon'])
+    i=np.where(alllons<0.0)
+    if(i[0].size>0): alllons[i]=alllons[i]+360.0
+    alllats = np.asarray(f0.variables['lat'])
+    
+    if not SUBSETNC:
+        alldata = np.asarray(f0.variables[data_varname])
+
+    data = {}
+    # timing
+    data['time'] = np.asarray(f0.variables['time'])
+    data['yearday'] = np.asarray(f0.variables['yearday'])
+    t_indx = np.asarray(range(0,data['time'].size))
+
+    #truncating spatially, if any
+    lon_range = np.asarray(lon_range)
+    lat_range = np.asarray(lat_range)
+    if (len(lon_range)>0 and len(lat_range)<=0):
+        lon_range[np.where(lon_range<0.0)]=lon_range[np.where(lon_range<0.0)]+360.0
+        ij_indx = np.where( (alllons<=np.max(lon_range)) &
+                            (alllons>=np.min(lon_range)) )
+   
+    elif (len(lat_range)>0 and len(lon_range)<=0):
+        ij_indx = np.where( (alllats<=np.max(lat_range)) &
+                            (alllats>=np.min(lat_range)) )
+
+    elif (len(lon_range)>0 and len(lat_range)>0):
+        lon_range[np.where(lon_range<0.0)]=lon_range[np.where(lon_range<0.0)]+360.0
+        ij_indx = np.where( (alllons<=np.max(lon_range)) &
+                            (alllons<=np.max(lon_range)) &
+                            (alllats>=np.min(lat_range)) &
+                            (alllats>=np.min(lat_range)) )
+    else:
+        ij_indx = []
+   
+    if len(ij_indx)>0: 
+        #ij_indx is paired tuple for y/x, if not empty
+        if len(ij_indx[0])>0:
+            # but for x/y, they must be dimensionally continuous
+            i_indx = np.asarray(range(np.min(ij_indx[1]), np.max(ij_indx[1])))
+            j_indx = np.asarray(range(np.min(ij_indx[0]), np.max(ij_indx[0])))
+        
+        
+            # subsetting NC file, if option on
+            if SUBSETNC:
+                x1=np.int(np.min(alllons[ij_indx]))
+                x2=np.int(np.max(alllons[ij_indx]))
+                y1=np.int(np.min(alllats[ij_indx]))
+                y2=np.int(np.max(alllats[ij_indx]))
+                
+                ncfilename = ncfile.split('/')[-1]
+                if ncfilename.startswith('subset'): # re-subsetting already subsetted data
+                    oldhead = ncfilename.split('_')[0]+'_'+ncfilename.split('_')[1]
+                    newhead = 'subsetX'+str(x1)+'-'+str(x2)+'_Y'+str(y1)+'-'+str(y2)
+                    subncfile = ncfilename.replace(oldhead, newhead)
+                else:
+                    subncfile = 'subsetX'+str(x1)+'-'+str(x2)+'_Y'+str(y1)+'-'+str(y2)+'_' \
+                        +ncfile.split('/')[-1]
+                if (os.path.isfile(subncfile)):
+                    print('Warning:  Overwriting existing subset ncfile '+subncfile)
+                    os.system('rm -rf '+subncfile)
+                else:
+                    print('Warning:  Creating subset ncfile '+subncfile)
+                    
+                os.system(ncopath+'ncks -d x,'+str(np.min(i_indx))+','+str(np.max(i_indx))+ \
+                                      ' -d y,'+str(np.min(j_indx))+','+str(np.max(j_indx))+ \
+                        ' '+ncfile+' '+subncfile)
+
+            
+            else:
+                data['geox'] = geox[i_indx]
+                data['geoy'] = geoy[j_indx]
+        
+                data['lon']  = alllons[j_indx,][:,i_indx]
+                data['lat']  = alllats[j_indx,][:,i_indx]
+
+                data[data_varname]  = alldata[t_indx,][:,j_indx,][:,:,i_indx]
+
+
+    elif not SUBSETNC:
+        
+        # all data
+        data['geox'] = geox
+        data['geoy'] = geoy
+        
+        data['lon']  = alllons
+        data['lat']  = alllats
+        data[data_varname]  = alldata
+    
+    return data
+    
 ####################################################################################################
 #
 # -------Read multiple location DAYMET data, *.csv one by one ----------------
@@ -622,9 +795,12 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
 
 #clm_metdata_extraction()
 
+#odata = \
+#    subsetDaymetReadNCfile('daymet_v3_prcp_1980_na.nc', lon_range=[-170.0,-141.0], lat_range=[60.0, 90.0], SUBSETNC=True)
+
+
 #site,odata_header,odata = \
 #    singleDaymetReadCsvfile('daymet_kougarok-NGEE00.csv')
-
 
 # read-in metdata from CPL_BYPASS_FULL
 #cplbypass_dir='./cpl_bypass_full'
