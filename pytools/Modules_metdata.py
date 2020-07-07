@@ -9,12 +9,12 @@ from calendar import isleap
 from numpy import intersect1d
 from matplotlib.pyplot import axis
 
-ncopath = '/usr/local/nco/bin/'
+#ncopath = '/usr/local/nco/bin/'
 #####################################################################################################
 #
 # ------- GSWP3 met forcing data extraction for site or sites ------------------------------------
 #
-def clm_metdata_extraction(metdomainfile, metfiles, sites):
+def clm_metdata_extraction(metdomainfile, metfiles, sites, ncopath=''):
     # ---- sites
     if (sites.len<2):
         print('sites must have paired location points: x/y or longitude/latidue')
@@ -177,7 +177,7 @@ def clm_metdata_extraction(metdomainfile, metfiles, sites):
 # -------Read a subset of DAYMET data, in NC4 original format ----------------
 #
 
-def subsetDaymetRead1NCfile(ncfile, lat_range=[], lon_range=[],SUBSETNC=False):
+def subsetDaymetRead1NCfile(ncfile, lat_range=[], lon_range=[],SUBSETNC=False, ncopath=''):
 #dimensions:
 #    x = 7814 ;
 #    y = 8075 ;

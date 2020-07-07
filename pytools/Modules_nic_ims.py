@@ -285,7 +285,7 @@ def IMS_ELM_gridmatching(Grid1_Xdim, Grid1_Ydim, Grid2_x, Grid2_y, \
 #-------------------Writing submodule-----------------------------------------------
 # Write to geo-referenced CF compliant nc file, if filename given
 
-def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
+def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True, FillValue=None):
     # INPUTS: vars      - variable names, separated by ','. if 'all' means every var-key in 'vardatas'
     #         vardatas  - python np list, with dicts/data
     #    (optional) ptxy    - paired lon/lat (x/y), in [x/lon,y/lat] (only 1 point)
@@ -388,9 +388,9 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
                 vdaysnum.units = 'days'
                 vdaysnum.long_name = 'days since 0000-01-01 UTC + 1'
 
-                vdate = ncfile.createVariable('date', np.unicode_, ('time',))
+                vdate = ncfile.createVariable('date', np.int32, ('time',))
                 vdate.units = ''
-                vdate.long_name = 'date in standard python-datetime calendar'
+                vdate.long_name = 'date in format of yyyymmdd'
 
                 vdoy = ncfile.createVariable('doy', np.int16, ('time',))
                 vdoy.units = 'doy'
@@ -448,11 +448,12 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
             
         if not DONE_time:
             
+            yyyymmdd = [str(x).replace('-','') for x in mid_day ]
             
             if ncfname !='':
                 if newnc:
                     vdaysnum[0:nt] = daynums
-                    vdate[0:nt] = np.asarray([np.unicode_(x) for x in mid_day])
+                    vdate[0:nt] = np.asarray([np.int32(x) for x in yyyymmdd])
                     vdoy[0:nt]  = doy
                     vyear[0:nt] = year
                     if YEARLY:
@@ -466,7 +467,7 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
                     vdaysnum[prv_nt:prv_nt+nt] = daynums
                 
                     vdate = ncfile.variables['date']
-                    vdate[prv_nt:prv_nt+nt] = np.asarray([np.unicode_(x) for x in mid_day])
+                    vdate[prv_nt:prv_nt+nt] = np.asarray([np.int32(x) for x in yyyymmdd])
                 
                     vdoy = ncfile.variables['doy']
                     vdoy[prv_nt:prv_nt+nt] = doy
@@ -492,9 +493,13 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
         if ncfname !='':
             if newnc:
                 if PROJECTED:
-                    vtemp = ncfile.createVariable(varname, np.float32, ('time','geoy','geox')) # note: unlimited dimension is leftmost
+                    vtemp = ncfile.createVariable(varname, np.float32, \
+                                            dimensions=('time','geoy','geox'), \
+                                            zlib=True, fill_value=FillValue) # note: unlimited dimension is leftmost
                 else:
-                    vtemp = ncfile.createVariable(varname, np.float32, ('time','lat','lon')) # note: unlimited dimension is leftmost
+                    vtemp = ncfile.createVariable(varname, np.float32, \
+                                            dimensios=('time','lat','lon'), \
+                                            zlib=True, fill_value=FillValue) # note: unlimited dimension is leftmost
                 
                 vtemp.units = ''
                 vtemp.standard_name = varname.strip() # this is a CF standard name
@@ -506,14 +511,14 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
                     vtemp.long_name =  varname.strip()+' at 1km resolution'
                 if ('ELM' in ncfname):
                     if ('Day' in varname or 'Doy' in varname): 
-                        vtemp.Key = "0~365 = days or doy for land with snow, -22 = sea ice (if any), -55 = sea, -11 = beyond map coverage" ;
+                        vtemp.Key = "0~365 = days or doy for land with snow, -22 = sea ice (if any), -55/nan = sea, -11 = beyond map coverage" ;
                     else:
-                        vtemp.Key = "0 = land without snow, 0~1.0 = land with snow fraction, -2 = sea, -1 = beyond map coverage" ;
+                        vtemp.Key = "0 = land without snow, 0~1.0 = land with snow fraction, -2/nan = sea, -1 = beyond map coverage" ;
                 else:
                     if ('Day' in varname or 'Doy' in varname): 
-                        vtemp.Key = "0~365 = days or doy for land with snow, -22 = sea ice (if any), -55 = sea, -11 = beyond map coverage" ;
+                        vtemp.Key = "0~365 = days or doy for land with snow, -22 = sea ice (if any), -55/nan = sea, -11 = beyond map coverage" ;
                     else:
-                        vtemp.Key = "0 = land without snow, 0~1 = land with snow, -1 = sea with ice, -2 = sea, -0.50 = beyond map coverage" ;
+                        vtemp.Key = "0 = land without snow, 0~1 = land with snow, -1 = sea with ice, -2/nan = sea, -0.50 = beyond map coverage" ;
                     
                 vtemp[0:nt,:,:] = data.astype(np.float32)
             else:

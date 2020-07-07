@@ -604,11 +604,17 @@ if (options.imsheader != ""):
                 ij = np.where( (ncdata[varname]<0)  | \
                                (np.isnan(ncdata[varname])) | (np.isinf(ncdata[varname])) )
                 temp[ij] = 0.0
+                # for best visual effect, mask sea-cell  of either dataset
+                ij = np.where( (ncdata[elm_varname]==FillValue_SEA)  | \
+                               (ncdata[varname]==FillValue_SEA) )
+                temp[ij] = FillValue_SEA
                 ncdata[elm_varname+'_diff'] = temp
 
                 ncfname = ncfile.split('/')[-1] # remove directory name if any
                 ncfname = './ELM_obs_from_'+ncfname
-                nicims.Write1GeoNc([elm_varname, elm_varname+'_diff', varname,varname+'_std'], ncdata, ptxy=[], ncfname=ncfname, newnc=True)
+                nicims.Write1GeoNc([elm_varname, elm_varname+'_diff', varname,varname+'_std'], \
+                                   ncdata, ptxy=[], ncfname=ncfname, newnc=True, \
+                                   FillValue=FillValue_SEA)
                  
             if (len(daynums_from_elm)>0): # ELM simulation assigned into IMS grids
                 varname = ims_varname+'_elm'
@@ -655,12 +661,18 @@ if (options.imsheader != ""):
                 ij = np.where( (ncdata[varname]<0) | \
                                (np.isnan(ncdata[varname])) | (np.isinf(ncdata[varname])) )
                 temp[ij] = 0.0 
+                # for best visual effect, mask sea-cell  of either dataset
+                ij = np.where( (ncdata[elm_varname]==FillValue_SEA)  | \
+                               (ncdata[varname]==FillValue_SEA) )
+                temp[ij] = FillValue_SEA
                 ncdata[ims_varname+'_diff'] = temp
 
                 # write NC file(s)
                 ncfname = ncfile.split('/')[-1] # remove directory name if any
                 ncfname = './ELM_sim_for_'+ncfname
-                nicims.Write1GeoNc([ims_varname, ims_varname+'_diff', varname], ncdata, ptxy=[], ncfname=ncfname, newnc=True)
+                nicims.Write1GeoNc([ims_varname, ims_varname+'_diff', varname], \
+                                   ncdata, ptxy=[], ncfname=ncfname, newnc=True, \
+                                   FillValue=FillValue_SEA)
         
         # ---------------------------------------------------------------------
         

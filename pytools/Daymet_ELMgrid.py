@@ -104,7 +104,8 @@ def Daymet_ELM_gridmatching(Grid1_Xdim, Grid1_Ydim, Grid2_x, Grid2_y, \
                        ((Grid2_gyy<=jnth) & (Grid2_gyy>jsth)) )
         Grid2in1_indx[str(indx)] = deepcopy(ij)
             
-        if(len(ij[0])<1):
+        if False: # comment out the following - not correct
+        #if(len(ij[0])<1):
              # none of DAYMET cell centroid inside a ELM grid, find the close one instead
             closej  = np.where((Grid2_gyy<=jnth) & (Grid2_gyy>jsth)) # do lat/y first, due to evenly-intervaled along lat/y
             if closej[0].size<=0:
@@ -117,7 +118,8 @@ def Daymet_ELM_gridmatching(Grid1_Xdim, Grid1_Ydim, Grid2_x, Grid2_y, \
             else:
                 closejx  = np.argmin(abs(Grid2_gxx[closej]-(iwst+iest)/2.0))
                 closeij = (np.asarray(closej[0][closejx]),np.asarray(closej[1][closejx]))
-            Grid2in1_indx[str(indx)] = deepcopy(closeij)
+            if len(closeij[0]>0):
+                Grid2in1_indx[str(indx)] = deepcopy(closeij)
     
     # done with all grids
     return Grid2in1_indx, Grid2_gxx, Grid2_gyy
@@ -128,7 +130,7 @@ def Daymet_ELM_gridmatching(Grid1_Xdim, Grid1_Ydim, Grid2_x, Grid2_y, \
 
 # Write to geo-referenced CF compliant nc file, if filename given
 
-def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
+def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True, FillValue=None):
     # INPUTS: vars      - variable names, separated by ','. if 'all' means every var-key in 'vardatas'
     #         vardatas  - python np list, with dicts/data
     #    (optional) ptxy    - paired lon/lat (x/y), in [x/lon,y/lat] (only 1 point)
@@ -138,13 +140,14 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
     #                     Output year, doy, lon, lat, data for 'vars' in np.array  
     
     if ncfname !='':
+        if ncfname.endswith('.nc4'): ncfname = ncfname.replace('.nc4','.nc')
         if not ncfname.endswith('.nc'): ncfname = ncfname+'.nc'
         if newnc:
             if os.path.isfile(ncfname): os.system('rm -rf '+ncfname)
-            ncfile = netCDF4.Dataset(ncfname, mode='w',format='NETCDF4') 
+            ncfile = netCDF4.Dataset(ncfname, mode='w',format='NETCDF4_CLASSIC') 
             print('Create and Write NC file: '+ncfname)
         else:
-            ncfile = netCDF4.Dataset(ncfname, mode='a',format='NETCDF4') 
+            ncfile = netCDF4.Dataset(ncfname, mode='a',format='NETCDF4_CLASSIC') 
             print('Write NC file: '+ncfname)
 
 
@@ -241,9 +244,9 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
                 vdaysnum.units = 'days'
                 vdaysnum.long_name = 'days since 1980-01-01 UTC + 1'
 
-                vdate = ncfile.createVariable('date', np.unicode_, ('time',))
+                vdate = ncfile.createVariable('date', np.int32, ('time',))
                 vdate.units = ''
-                vdate.long_name = 'date in standard python-datetime calendar'
+                vdate.long_name = 'date in format of yyyymmdd'
 
                 vdoy = ncfile.createVariable('doy', np.int16, ('time',))
                 vdoy.units = 'doy'
@@ -286,11 +289,11 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
             
         if not DONE_time:
             
-            
+            yyyymmdd = [str(x).replace('-','') for x in mid_day ]
             if ncfname !='':
                 if newnc:
                     vdaysnum[0:nt] = daynums
-                    vdate[0:nt] = np.asarray([np.unicode_(x) for x in mid_day])
+                    vdate[0:nt] = np.asarray([np.int32(x) for x in yyyymmdd])
                     vdoy[0:nt]  = doy
                     vyear[0:nt] = year
                     if YEARLY:
@@ -304,7 +307,7 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
                     vdaysnum[prv_nt:prv_nt+nt] = daynums
                 
                     vdate = ncfile.variables['date']
-                    vdate[prv_nt:prv_nt+nt] = np.asarray([np.unicode_(x) for x in mid_day])
+                    vdate[prv_nt:prv_nt+nt] = np.asarray([np.int32(x) for x in yyyymmdd])
                 
                     vdoy = ncfile.variables['doy']
                     vdoy[prv_nt:prv_nt+nt] = doy
@@ -330,20 +333,54 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
         if ncfname !='':
             if newnc:
                 if PROJECTED:
-                    vtemp = ncfile.createVariable(varname, np.float32, ('time','geoy','geox')) # note: unlimited dimension is leftmost
+                    vtemp = ncfile.createVariable(varname, np.float32, \
+                                                  dimensions=('time','geoy','geox'), \
+                                                  zlib=True, fill_value=FillValue) # note: unlimited dimension is leftmost
                 else:
-                    vtemp = ncfile.createVariable(varname, np.float32, ('time','lat','lon')) # note: unlimited dimension is leftmost
+                    vtemp = ncfile.createVariable(varname, np.float32, \
+                                                  dimensions=('time','lat','lon'), \
+                                                  zlib=True, fill_value=FillValue) # note: unlimited dimension is leftmost
                 
                 vtemp.units = ''
                 vtemp.standard_name = varname.strip() # this is a CF standard name
                 
+                pref='daily'
+                if ('acc_' in varname): pref = 'accumulative'
                 if ('prcp' in varname or 'SNOW' in varname or 'RAIN' in varname):
-                    vtemp.long_name = "daily total precipitation/SNOW/RAIN"
-                    vtemp.units = "mm/day"
+                    vtemp.long_name = pref+" precipitation/SNOW/RAIN"
+                    vtemp.units = "mm"
                     vtemp.missing_value = -9999.
                     vtemp.coordinates = "geoy geox"
                     vtemp.grid_mapping = "lambert_conformal_conic"
                     vtemp.cell_methods = "area: mean time: sum"
+                    vtemp.Key = "non-negative = daily/accumulative prcp/rain/snow, -22/nan = sea cell, -11 = land cell beyond data available" ;
+
+                elif ('tmax' in varname):
+                    vtemp.long_name = pref+ " max. temperature"
+                    vtemp.units = "degree C"
+                    vtemp.missing_value = -99.
+                    vtemp.coordinates = "geoy geox"
+                    vtemp.grid_mapping = "lambert_conformal_conic"
+                    vtemp.cell_methods = "area: mean time: sum"
+                    vtemp.Key = "real value = daily/accumulative max, -999/nan = sea cell, -99 = land cell beyond data available" ;
+
+                elif ('tmin' in varname):
+                    vtemp.long_name = pref+" min. temperature"
+                    vtemp.units = "degree C"
+                    vtemp.missing_value = -99.
+                    vtemp.coordinates = "geoy geox"
+                    vtemp.grid_mapping = "lambert_conformal_conic"
+                    vtemp.cell_methods = "area: mean time: sum"
+                    vtemp.Key = "real value = daily/accumulative min., -999/nan = sea cell, -99 = land cell beyond data available" ;
+
+                elif ('tave' in varname):
+                    vtemp.long_name = pref+ " average temperature"
+                    vtemp.units = "degree C"
+                    vtemp.missing_value = -99.
+                    vtemp.coordinates = "geoy geox"
+                    vtemp.grid_mapping = "lambert_conformal_conic"
+                    vtemp.cell_methods = "area: mean time: sum"
+                    vtemp.Key = "real value = daily/accumulative average, -999/nan = sea cell, -99 = land cell beyond data available" ;
                     
                 vtemp[0:nt,:,:] = data.astype(np.float32)
             else:
@@ -365,7 +402,7 @@ parser.add_option("--daymetheader", dest="daymetheader", default="", \
                   help = "DAYMET Netcdf4 file header with path ")
 parser.add_option("--elmheader", dest="elmheader", default="", \
                   help = "ELM output Netcdf file header with path but no .nc ")
-parser.add_option("--daymet_varname", dest="daymet_varname", default="prcp", \
+parser.add_option("--daymet_varname", dest="daymet_varname", default="", \
                   help = "daymet Netcdf file's variable name  to process")
 parser.add_option("--elm_varname", dest="elm_varname", default="", \
                   help = "ELM output Netcdf file's variable name to process")
@@ -382,8 +419,11 @@ parser.add_option("--startyr", dest="startyr", default="1", \
                    " and can be user-defined)")
 parser.add_option("--endyr", dest="endyr", default="", \
                   help="clm output ending year to plot (default = none, i.e. end of simulation)")
-parser.add_option("--lookup_snowfreeseason", dest="lookup_snowfreeseason", default=False, \
-                  help = " lookup snow ending/starting doy in a year and write a Netcdf4 file, default: FALSE ", action="store_true")
+parser.add_option("--annual_acc", dest="acc_VARS", default=False, \
+                  help = " do annually accumulative of variables, default: FALSE ", \
+                  action="store_true")
+parser.add_option("--annual_acc_tzero", dest="acc_tzero", default='1', \
+                  help = " doy to start/end annually accumulative of variables, default: day 1 ")
 
 (options, args) = parser.parse_args()
 
@@ -413,7 +453,7 @@ else:
 
 startdays = (int(options.startyr)-1)*365.0
 if(options.clmout_ts=='daily'): 
-    startdays=startdays+1.0
+    startdays=startdays
 elif(options.clmout_ts=='monthly'): 
     startdays=startdays-1.0
     
@@ -428,12 +468,15 @@ elm_varname = options.elm_varname #'Days_snowfree'#'FSNO'
 
 # sea cell constant
 FillValue_SEA = -999.0
-FillValue_LND = 0.0
+FillValue_LND = -99.0
+if options.acc_VARS: 
+    FillValue_SEA = -9999.0
+    FillValue_LND = -999.0
 
-if('prcp' in daymet_varname or 'SNOW' in elm_varname): 
-    # for better numerical range, set sea-cell filled value to -55
-    FillValue_SEA = -22.0
-    FillValue_LND = -11.0
+if('prcp' in daymet_varname or 'SNOW' in elm_varname or 'RAIN' in elm_varname): 
+    # for better numerical range, set land-cell missing/filling value properly
+    FillValue_LND = -22.0
+    if options.acc_VARS: FillValue_LND = -2222.0
 
 #------------------------------------------------------------------------------
 
@@ -472,6 +515,10 @@ if (options.elmheader != ""):
                            startdays, enddays, \
                            False)
 
+    if len(varsdata)<=0:
+        print('NO ELM output data read-in! Please check data file name and its time period')
+        sys.exit()
+
     if2dgrid = True
     if('topo' in varsdata.keys()):
         if(len(varsdata['topo'].shape)==1): if2dgrid = False
@@ -501,6 +548,9 @@ if (options.elmheader != ""):
     if(elm_varname == 'SNOW' or elm_varname == 'RAIN'):         
         ij=np.where(~np.isnan(elm_vdata))
         elm_vdata[ij] = elm_vdata[ij]*86400.0 # -> mm/day
+    if(elm_varname == 'TBOT'):         
+        ij=np.where(~np.isnan(elm_vdata))
+        elm_vdata[ij] = elm_vdata[ij]-273.15 # -> oC
     
     # lon/lat of ELM output
     elmx = varsdata['lon']
@@ -564,8 +614,12 @@ if (options.elmheader != ""):
 if (options.daymetheader != ""):
     daymetpathfileheader = options.daymetheader
 
+    ftype = 'nc'
     alldirfiles = sorted(glob.glob("%s*.%s" % (daymetpathfileheader, ftype)))
     if(len(alldirfiles)<=0):
+        alldirfiles = sorted(glob.glob("%s*.%s" % (daymetpathfileheader, 'nc4')))
+    
+    if (len(alldirfiles)<=0):
         sys.exit("No file exists - %s*.%s IN %s" %(daymetpathfileheader, ftype, cwdir))
     else:
         print('Total Files of DAYMET NC datasets: '+str(len(alldirfiles)))
@@ -617,8 +671,6 @@ if (options.daymetheader != ""):
             if(ncfile==alldirfiles[0]): #only need to do once
 
                 # the DAYMET grid centroids in lon/lat mesh
-                daymet_gx = daymet_lon # mid-points of grid
-                daymet_gy = daymet_lat
                 
                 # ELM grid-mesh nodes: elmx/y are grid-centroids
                 if elmx.size>1:
@@ -637,29 +689,55 @@ if (options.daymetheader != ""):
                     elmnodey = np.asarray([elmy[0]-halfy, elmy[0]+halfy])
                 
                 # truncating ELM space (may save some computing time)
-                daymet_lonmax=np.max(np.max(daymet_lon,0))
-                daymet_lonmin=np.min(np.min(daymet_lon,0))
+                daymet_lonmax=np.max(np.max(daymet_lon,0))+1.0
+                daymet_lonmin=np.min(np.min(daymet_lon,0))-1.0
                 i = np.asarray(np.where((elmnodex>=daymet_lonmin) & (elmnodex<=daymet_lonmax)))[0]
-                elmnodex  = elmnodex[i] #1-D
-                elmx      = elmx[i[:-1]] # mid-point less 1 element
-                landmask  = landmask[:,i[:-1]] # 2-D
-                elm_vdata = elm_vdata[:,:,i[:-1]] #2-D
+                if i.size < elmnodex.size:
+                    elmnodex  = elmnodex[i] #1-D
+                    elmx      = elmx[i[:-1]] # mid-point less 1 element
+                    landmask  = landmask[:,i[:-1]] # 2-D
+                    elm_vdata = elm_vdata[:,:,i[:-1]] #2-D
 
                 daymet_latmax=np.max(np.max(daymet_lat,0))+1.0
-                daymet_latmin=np.min(np.min(daymet_lat,0))
+                daymet_latmin=np.min(np.min(daymet_lat,0))-1.0
                 j = np.asarray(np.where((elmnodey>=daymet_latmin) & (elmnodey<=daymet_latmax)))[0]
-                elmnodey  = np.asarray(elmnodey[j]) #1-D
-                elmy      = elmy[j[:-1]] # mid-point less 1 element
-                landmask  = landmask[j[:-1],:] #2-D
-                elm_vdata = elm_vdata[:,j[:-1],:] #2-D
+                if j.size < elmnodey.size:
+                    elmnodey  = np.asarray(elmnodey[j]) #1-D
+                    elmy      = elmy[j[:-1]] # mid-point less 1 element
+                    landmask  = landmask[j[:-1],:] #2-D
+                    elm_vdata = elm_vdata[:,j[:-1],:] #2-D
 
                 elm_seaij = np.where(landmask==0)
                 elm_lndij = np.where(landmask==1)
 
+                # truncating DAYMET space (may save some computing time)
+                elm_lonmax=np.max(elmx,0)+1.0
+                elm_lonmin=np.min(elmx,0)-1.0
+                elm_latmax=np.max(elmy,0)+1.0
+                elm_latmin=np.min(elmy,0)-1.0
+                ij = np.asarray(np.where((daymet_lon>=elm_lonmin) & \
+                                         (daymet_lon<=elm_lonmax) & \
+                                         (daymet_lat>=elm_latmin) & \
+                                         (daymet_lat<=elm_latmax)) )
+                # ij from aove may be continuous, but i,j have to
+                j = range(np.min(ij[0]), np.max(ij[0])+1)
+                i = range(np.min(ij[1]), np.max(ij[1])+1)
+                if np.asarray(i).size < daymetx.size:# the following slicing is expensive, so only do so when have to
+                    daymetx = daymetx[i]
+                    daymet_lon = daymet_lon[:,i]
+                    daymet_lat = daymet_lat[:,i]
+                    vdata = vdata[:,:,i]
+                if np.asarray(j).size < daymety.size:
+                    daymety = daymety[j]
+                    daymet_lon = daymet_lon[j,:]
+                    daymet_lat = daymet_lat[j,:]
+                    vdata = vdata[:,j,:]
+
+
                 # matching daymet grid-centroids within ELM grid-mesh
-                daymetinelm_indx, daymet_lon, daymet_lat = \
+                daymetinelm_indx, daymet_lonx, daymet_laty = \
                     Daymet_ELM_gridmatching(elmnodex, elmnodey, \
-                                                daymet_gx, daymet_gy, \
+                                                daymet_lon, daymet_lat, \
                                                 Grid1ifxy=True, Grid2ifxy=True, \
                                                 Grid1_cells=elm_lndij)
 
@@ -673,24 +751,27 @@ if (options.daymetheader != ""):
                 # match YEAR/DOY btw 'vdata' and 'elm_vdata' (NOT date/time due to no_leap in ELM time)
                 # note: Daymet uses leap_year system, but remove doy of 366 data to keep same length of days in a yearr
                 print ('Time for '+ncfile+' : '+str(daymet_it))
-                day_tt = num2date(tt[daymet_it]).date()
-                yr_tt  = day_tt.year
+                date_tt = num2date(tt[daymet_it]).date()
+                yr_tt  = date_tt.year
                 doy_tt = np.floor(tt[daymet_it] - date2num(date(yr_tt,1,1)) + 1)
                 elm_it = np.squeeze(np.where((yr_elm==yr_tt) & (doy_elm==doy_tt)))
                 if(elm_it.size>0):
                     elm_it_all    = np.hstack((elm_it_all,elm_it))         # timer count 
-                    daymet_it_all = np.hstack((daymet_it_all,daymet_it))          # timer count 
-                    daynums_all   = np.hstack((daynums_all,tt[daymet_it])) # timer
+                daymet_it_all = np.hstack((daymet_it_all,daymet_it))       # timer count 
+                daynums_all   = np.hstack((daynums_all,tt[daymet_it]))     # timer
                 
                 # data in DAYMET grid-cells
                 vdata_it = np.float32(vdata[daymet_it,])
+                daymetlndmask = ~np.isnan(vdata_it) # mask land-cells (or, nc variable._FillValue)
+                daymetseamask = np.isnan(vdata_it) # mask land-cells
+
                 vdata_fromelm=np.full(np.shape(vdata_it),np.float32(FillValue_SEA)) # to hold from one-time ELM data (pre-filled as sea) in DAYMET cells
                 vdata_fromelm[np.where(~np.isnan(vdata_it))] = np.float32(FillValue_LND) # pre-filling DAYMET land cell with LND fillingvalue (aka beyond data coverage)
 
                 # data in ELM grid-cells
-                vdata_1delmcell = np.full((len(elm_lndij[0])),np.float32(FillValue_LND)) # to hold 1-D aggregated DAYMET 'vdata' by ELM lnd-grid
-                vdata_std_1delmcell = np.full((len(elm_lndij[0])),np.float32(FillValue_LND)) # to hold 1-D aggregated DAYMET 'vdata' by ELM lnd-grid
-                vdata_n_1delmcell = np.full((len(elm_lndij[0])),np.float32(FillValue_LND)) # to hold 1-D aggregated DAYMET 'vdata' by ELM lnd-grid
+                vdata_toelm1d = np.full((len(elm_lndij[0])),np.float32(FillValue_LND)) # to hold 1-D aggregated DAYMET 'vdata' by ELM lnd-grid
+                vdata_std_toelm1d = np.full((len(elm_lndij[0])),np.float32(FillValue_LND)) # to hold 1-D aggregated DAYMET 'vdata' by ELM lnd-grid
+                vdata_n_toelm1d = np.full((len(elm_lndij[0])),np.float32(FillValue_LND)) # to hold 1-D aggregated DAYMET 'vdata' by ELM lnd-grid
                 for idx in range(len(elm_lndij[0])):
                     ij = daymetinelm_indx[str(idx)] #  paired-tuple index of daymet cells in ONE elm-grid
                     # assign DAYMET averaged to elm land-cell
@@ -698,41 +779,69 @@ if (options.daymetheader != ""):
                         i = daymetinelm_indx[str(idx)][0]
                         j = daymetinelm_indx[str(idx)][1]
                         if (vdata_it[ij].size>0):
-                            vdata_1delmcell[idx] = np.nanmean(vdata_it[ij]) # DAYMET ==> ELM
-                            vdata_std_1delmcell[idx] = np.nanstd(vdata_it[ij]) # DAYMET ==> ELM
-                            vdata_n_1delmcell[idx] = np.count_nonzero(~np.isnan(vdata_it[ij])) # DAYMET ==> ELM
-                            #vdata_1delmcell[idx] = np.mean(daymet_lon[ij]) # DAYMET ==> ELM, for testing if daymetx/y correctly mapped into ELM grid
-                            #vdata_1delmcell[idx] = np.mean(daymety[j]) # DAYMET ==> ELM. for test if daymetx/y correctly mapped into ELM grid
+                            vdata_toelm1d[idx] = np.nanmean(vdata_it[ij]) # DAYMET ==> ELM
+                            vdata_std_toelm1d[idx] = np.nanstd(vdata_it[ij]) # DAYMET ==> ELM
+                            vdata_n_toelm1d[idx] = np.count_nonzero(~np.isnan(vdata_it[ij])) # DAYMET ==> ELM
+                            #vdata_toelm1d[idx] = np.mean(daymet_lon[ij]) # DAYMET ==> ELM, for testing if daymetx/y correctly mapped into ELM grid
+                            #vdata_toelm1d[idx] = np.mean(daymety[j]) # DAYMET ==> ELM. for test if daymetx/y correctly mapped into ELM grid
 
                     # assign ELM output to DAYMET' land grids, if time matches
                     if(elm_it.size>0):
-                        temp = elm_vdata[elm_it]
+                        elmvdata_it = elm_vdata[elm_it]
                         #if(elm_it.size)>1: temp = np.mean(temp,axis=0) # in-case 'daymet_it' contains multiple 'elm_it (e.g. sub-daily')
                         j = elm_lndij[0][idx]  # ELM output data is in (t,elmy,elmx) dimensional-order
                         i = elm_lndij[1][idx]
-                        daymetlnd = np.where(~np.isnan(vdata_it[ij]))[0] # extract sub-set of DAYMET land-cells and to be filled in them below
-                        if daymetlnd.size>0:
+                        subset_ij = np.where(~np.isnan(vdata_it[ij]))[0] # extract sub-set of DAYMET land-cells and to be filled in them below
+                        if subset_ij.size>0:
                             if ij[0].size<=1:
-                                vdata_fromelm[(ij[0],ij[1])] = temp[(j,i)] # ELM ==> DAYMET
+                                vdata_fromelm[(ij[0],ij[1])] = elmvdata_it[(j,i)] # ELM ==> DAYMET
                             else:
-                                vdata_fromelm[(ij[0][daymetlnd],ij[1][daymetlnd])] = temp[(j,i)] # ELM ==> DAYMET
+                                vdata_fromelm[(ij[0][subset_ij],ij[1][subset_ij])] = elmvdata_it[(j,i)] # ELM ==> DAYMET
                             #vdata_fromelm[ij] = elmy[j] # ELM ==> DAYMET, for testing if latitude from ELM mapping to DAYMET grids
                             #vdata_fromelm[ij] = elmx[i] # ELM ==> DAYMET, for testing if longitude from ELM mapping to DAYMET grids
+                    
+
                 # done with all elm landcells 
                 
                 # when all elm land-grids are done 
-                # reshape vdata_1delmcell according to ELM grids
+                # accumulative, if required
+                if options.acc_VARS:
+                    
+                    if (abs(doy_tt-int(options.acc_tzero))<1 or \
+                        (ncfile == alldirfiles[0] and tt[daymet_it]==tt[0])):
+                        acc_vdata_toelm1d = vdata_toelm1d
+                        if elm_it.size>0: 
+                            acc_elmvdata_it = elmvdata_it
+                        acc_vdata_fromelm = vdata_fromelm
+                        acc_vdata_it = vdata_it
+
+                    else:
+                        acc_vdata_toelm1d = acc_vdata_toelm1d + vdata_toelm1d # already all are land cells
+                        # only do math on non-filling value cells (i.e. land cells)
+                        ij = np.where((daymetlndmask) & \
+                                      (vdata_fromelm!=FillValue_SEA) & \
+                                      (vdata_fromelm!=FillValue_LND) )
+                        if elm_it.size>0: 
+                            acc_elmvdata_it[elm_lndij] = acc_elmvdata_it[elm_lndij] \
+                                                        + elmvdata_it[elm_lndij]
+                        acc_vdata_fromelm[ij] = acc_vdata_fromelm[ij] + vdata_fromelm[ij]
+                        acc_vdata_it[ij] = acc_vdata_it[ij] + vdata_it[ij]
+
+                # reshape vdata_toelm1d according to ELM grids
                 temp = np.full((elmy.size,elmx.size),np.float32(FillValue_SEA))
-                temp[elm_lndij] = vdata_1delmcell
-                vdata_2delmcell = deepcopy(temp)
+                if options.acc_VARS:
+                    temp[elm_lndij] = acc_vdata_toelm1d
+                else:
+                    temp[elm_lndij] = vdata_toelm1d
+                vdata_toelm2d = deepcopy(temp)
                 
                 temp = np.full((elmy.size,elmx.size),np.float32(FillValue_SEA))
-                temp[elm_lndij] = vdata_std_1delmcell
-                vdata_std_2delmcell = deepcopy(temp)
+                temp[elm_lndij] = vdata_std_toelm1d
+                vdata_std_toelm2d = deepcopy(temp)
                 
                 temp = np.full((elmy.size,elmx.size),np.float32(FillValue_SEA))
-                temp[elm_lndij] = vdata_n_1delmcell
-                vdata_n_2delmcell = deepcopy(temp)
+                temp[elm_lndij] = vdata_n_toelm1d
+                vdata_n_toelm2d = deepcopy(temp)
                 
                 #----------------------------------------------------------------------------
                 
@@ -741,67 +850,76 @@ if (options.daymetheader != ""):
                 # into ELM grid system
                 if (elm_it.size>0):
                     # DAYMET data aggregated into ELM cells, if sucessfully calculated
-                    varname = elm_varname+'_daymet'
+                    varname1 = elm_varname
+                    if options.acc_VARS: varname1 = 'acc_'+elm_varname
+                    varname2 = varname1+'_daymet'
                     ncdata = {}
-                    ncdata['date'] = [num2date(tt[daymet_it]).date()]
+                    ncdata['date'] = [date_tt]
                     ncdata['lon']  = deepcopy(elmx)
                     ncdata['lat']  = deepcopy(elmy)
 
-                    lndij = np.where(vdata_n_2delmcell>=0) #  ELM-land cell
-                    ij = np.where(vdata_n_2delmcell>0) # cell numbers from DAYMET in a ELM-grid
+                    lndij = np.where(vdata_n_toelm2d>=0) #  ELM-land cell
+                    ij = np.where(vdata_n_toelm2d>0) # cell numbers from DAYMET in a ELM-grid
 
-                    ncdata[elm_varname] = np.full(vdata_2delmcell.shape,np.float32(FillValue_SEA))
-                    ncdata[elm_varname][lndij] = FillValue_LND
-                    ncdata[elm_varname][ij] = deepcopy(elm_vdata[elm_it][ij])
+                    ncdata[varname1] = np.full(vdata_toelm2d.shape,np.float32(FillValue_SEA))
+                    ncdata[varname1][lndij] = FillValue_LND
+                    if options.acc_VARS:
+                        ncdata[varname1][ij] = deepcopy(acc_elmvdata_it[ij])
+                    else:
+                        ncdata[varname1][ij] = deepcopy(elmvdata_it[ij])
                     
-                    ncdata[varname] = np.full(vdata_2delmcell.shape,np.float32(FillValue_SEA))
-                    ncdata[varname][lndij] = FillValue_LND
-                    ncdata[varname][ij] = deepcopy(vdata_2delmcell[ij])
+                    ncdata[varname2] = np.full(vdata_toelm2d.shape,np.float32(FillValue_SEA))
+                    ncdata[varname2][lndij] = FillValue_LND
+                    ncdata[varname2][ij] = deepcopy(vdata_toelm2d[ij])
 
-                    ncdata[varname+'_std'] = np.full(vdata_2delmcell.shape,np.float32(FillValue_SEA))
-                    ncdata[varname+'_std'][lndij] = FillValue_LND
-                    ncdata[varname+'_std'][ij] = deepcopy(vdata_std_2delmcell[ij])
+                    ncdata[varname2+'_std'] = np.full(vdata_std_toelm2d.shape,np.float32(FillValue_SEA))
+                    ncdata[varname2+'_std'][lndij] = FillValue_LND
+                    ncdata[varname2+'_std'][ij] = deepcopy(vdata_std_toelm2d[ij])
                     
-                    ncdata[varname+'_n'] = np.full(vdata_2delmcell.shape,np.float32(FillValue_SEA))
-                    ncdata[varname+'_n'][lndij] = FillValue_LND
-                    ncdata[varname+'_n'][ij] = deepcopy(vdata_n_2delmcell[ij])
+                    ncdata[varname2+'_n'] = np.full(vdata_toelm2d.shape,np.float32(FillValue_SEA))
+                    ncdata[varname2+'_n'][lndij] = FillValue_LND
+                    ncdata[varname2+'_n'][ij] = deepcopy(vdata_n_toelm2d[ij])
 
                     # difference btw ELM and DAYMET
-                    temp = np.full(vdata_2delmcell.shape,np.float32(FillValue_SEA)) # shape as DAYMET data, but will be filled with data from ELM next-line
-                    temp = ncdata[elm_varname] - ncdata[varname] # ELM-DAYMET
+                    temp = np.full(vdata_toelm2d.shape,np.float32(FillValue_SEA)) # shape as DAYMET data, but will be filled with data from ELM next-line
+                    temp = ncdata[varname1] - ncdata[varname2] # ELM-DAYMET
                     # since 'diff' could be negative, better to mark value-filled-land in either dataset as ZERO
-                    ij = np.where( (ncdata[elm_varname]==FillValue_LND)  | \
-                                   (np.isnan(ncdata[elm_varname])) | \
-                                   (np.isinf(ncdata[elm_varname])) )
+                    ij = np.where( (ncdata[varname1]==FillValue_LND)  | \
+                                   (np.isnan(ncdata[varname1])) | \
+                                   (np.isinf(ncdata[varname1])) )
                     temp[ij] = 0.0 
-                    ij = np.where( (ncdata[varname]==FillValue_LND)  | \
-                                   (np.isnan(ncdata[varname])) | \
-                                   (np.isinf(ncdata[varname])) )
+                    ij = np.where( (ncdata[varname2]==FillValue_LND)  | \
+                                   (np.isnan(ncdata[varname2])) | \
+                                   (np.isinf(ncdata[varname2])) )
                     temp[ij] = 0.0
-                    # for best visual effect, mask sea-cell as nan
-                    ij = np.where( (ncdata[elm_varname]==FillValue_SEA)  | \
-                                   (ncdata[varname]==FillValue_SEA) )
-                    temp[ij] = np.nan
-                    ncdata[elm_varname+'_diff'] = temp
+                    # for best visual effect, mask sea-cell of either dataset
+                    ij = np.where( (ncdata[varname1]==FillValue_SEA)  | \
+                                   (ncdata[varname2]==FillValue_SEA) )
+                    temp[ij] = FillValue_SEA
+                    ncdata[varname1+'_diff'] = temp
 
                     ncfname = ncfile.split('/')[-1] # remove directory name if any
                     ncfname = './ELM_forcing_from_'+ncfname
                     newfile = True
-                    if(elm_it!=daymet_it_all[0]): newfile = False
-                    Write1GeoNc([elm_varname, elm_varname+'_diff', varname, varname+'_std', varname+'_n'], \
-                            ncdata, ptxy=[], ncfname=ncfname, newnc=newfile)
-                
+                    if(elm_it!=elm_it_all[0]): newfile = False
+                    Write1GeoNc([varname1, varname1+'_diff', varname2, varname2+'_std', varname2+'_n'], \
+                            ncdata, ptxy=[], ncfname=ncfname, newnc=newfile, \
+                            FillValue=FillValue_SEA)
+
                 # into DAYMET grid system
-                if (len(elm_it_all)>0): 
+                #if (len(daymet_it_all)>0): # will output only for both daymet and ELM matchted time-steps
+                if True: # will output for each DAYMET time-step
                     # ELM simulation assigned into DAYMET grids
-                    varname = daymet_varname+'_elm'
+                    varname1 = daymet_varname
+                    if options.acc_VARS: varname1 = 'acc_'+daymet_varname
+                    varname2 = varname1+'_elm'
                     ncdata = {}
-                    ncdata['date'] = [num2date(tt[daymet_it]).date()]
+                    ncdata['date']  = [date_tt]
                     ncdata['geox']  = deepcopy(daymetx)
                     ncdata['geoy']  = deepcopy(daymety)
-                    vdata_ij = deepcopy(vdata[daymet_it,])
-                    daymetlndmask = ~np.isnan(vdata_ij) # mask land-cells
-                    vdata_ij[np.where(np.isnan(vdata_ij))] = FillValue_SEA # fill sea-cell value
+                    vdata_ij = deepcopy(vdata_it)
+                    if options.acc_VARS: vdata_ij = deepcopy(acc_vdata_it)
+                    vdata_ij[np.where(daymetseamask)] = FillValue_SEA # fill sea-cell value
                 
                     # mask daymet data beyond ELM boundary
                     ijout = np.where( ((daymet_lon<np.min(elmnodex)) | (daymet_lon>np.max(elmnodex)) |
@@ -809,34 +927,37 @@ if (options.daymetheader != ""):
                                       (daymetlndmask) ) # land-cells only
                     vdata_ij[ijout] = np.float32(FillValue_LND)
                 
-                    ncdata[daymet_varname] = deepcopy(vdata_ij) 
-                    ncdata[varname] = deepcopy(vdata_fromelm)
+                    ncdata[varname1] = deepcopy(vdata_ij) 
+                    ncdata[varname2] = deepcopy(vdata_fromelm)
+                    if options.acc_VARS: ncdata[varname2] = deepcopy(acc_vdata_fromelm)
 
                     # difference btw ELM and DAYMET
-                    temp = np.full(ncdata[daymet_varname].shape,np.float32(FillValue_SEA)) # shape as Daymet data, but filled with data from ELM next-line
-                    temp = ncdata[varname] - ncdata[daymet_varname] # ELM - DAYMET
+                    temp = np.full(ncdata[varname1].shape,np.float32(FillValue_SEA)) # shape as Daymet data, but filled with data from ELM next-line
+                    temp = ncdata[varname2] - ncdata[varname1] # ELM - DAYMET
                     # since 'diff' could be negative, better to mark value-filled-land in either dataset as ZERO
-                    ij = np.where( (ncdata[daymet_varname]==FillValue_LND) | \
-                                   (np.isnan(ncdata[daymet_varname])) | \
-                                   (np.isinf(ncdata[daymet_varname])) )
+                    ij = np.where( (ncdata[varname1]==FillValue_LND) | \
+                                   (np.isnan(ncdata[varname1])) | \
+                                   (np.isinf(ncdata[varname1])) )
                     temp[ij] = 0.0 
-                    ij = np.where( (ncdata[varname]==FillValue_LND) | \
-                                   (np.isnan(ncdata[varname])) | \
-                                   (np.isinf(ncdata[varname])) )
+                    ij = np.where( (ncdata[varname2]==FillValue_LND) | \
+                                   (np.isnan(ncdata[varname2])) | \
+                                   (np.isinf(ncdata[varname2])) )
                     temp[ij] = 0.0
-                    # for best visual effect, mask sea-cell as nan
-                    ij = np.where( (ncdata[daymet_varname]==FillValue_SEA)  | \
-                                   (ncdata[varname]==FillValue_SEA) )
-                    temp[ij] = np.nan
-                    ncdata[daymet_varname+'_diff'] = temp
+                    # for best visual effect, mask sea-cell  of either dataset
+                    ij = np.where( (ncdata[varname1]==FillValue_SEA)  | \
+                                   (ncdata[varname2]==FillValue_SEA) )
+                    temp[ij] = FillValue_SEA
+                    ncdata[varname1+'_diff'] = temp
 
                     # write NC file(s)
                     newfile = True
-                    if(elm_it!=daymet_it_all[0]): newfile = False
+                    if(daymet_it!=daymet_it_all[0]): newfile = False
                     ncfname = ncfile.split('/')[-1] # remove directory name if any
                     ncfname = './ELM_forcing_for_'+ncfname
-                    Write1GeoNc([daymet_varname, daymet_varname+'_diff', varname], \
-                                ncdata, ptxy=[], ncfname=ncfname, newnc=newfile)
+                    Write1GeoNc([varname1, varname1+'_diff', varname2], \
+                                ncdata, ptxy=[], ncfname=ncfname, newnc=newfile, \
+                                FillValue=FillValue_SEA)
+                    # mask sea-cell as fill_value in NC file may sav a lot of disk space
                 
             # done with 'for it in range(tt[0:].size):'
         # done with 'if (options.elmheader !=""):'

@@ -75,7 +75,7 @@ if(options.daymetdir!=""):# daymet single variable directory
         daymet_var = ''
 
     vardir = daymet_input+'/'+daymet_var
-    dirfiles = os.listdir(vardir)
+    dirfiles = sorted(os.listdir(vardir))
     filecounter = 0
     for dirfile in dirfiles:        
         filehead = options.daymetfilehead
@@ -88,7 +88,8 @@ if(options.daymetdir!=""):# daymet single variable directory
                 # single-point .csv daymet data
                 if daymetfile.endswith('.csv'):
                     site,odata_header,odata = \
-                        singleDaymetReadCsvfile('daymet_kougarok-NGEE00.csv')
+                        singleDaymetReadCsvfile(daymetfile)
+                        #singleDaymetReadCsvfile('daymet_kougarok-NGEE00.csv')
 
                 # multiple gridded daymet nc4 dataset
                 if daymetfile.endswith('.nc4') or daymetfile.endswith('.nc'):
@@ -109,7 +110,7 @@ if(options.daymetdir!=""):# daymet single variable directory
                         print ('subsetting Latitude Range: ', box_lat)
                     if (len(box_lon)>0 or len(box_lat)>0):
                         odata = \
-                            subsetDaymetRead1NCfile(daymetfile, lon_range=box_lon, lat_range=box_lat, SUBSETNC=True)
+                            subsetDaymetRead1NCfile(daymetfile, lon_range=box_lon, lat_range=box_lat, SUBSETNC=True, ncopath=ncopath)
                 
                     # split precipitation into rain or snow
                     if options.split_prcp:
