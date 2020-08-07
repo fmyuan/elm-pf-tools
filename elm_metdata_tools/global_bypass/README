@@ -1,0 +1,10 @@
+To complile on CADES:
+mpif90 makezones_reanalysis.f90 -I$NETCDF_PATH/include -L$NETCDF_PATH/lib -lnetcdff -lnetcdf
+
+To run:
+sbatch makezone.pbs
+
+You may need to change the directory in the pbs script.
+Also, you will need to create the following directory: 
+/lustre/or-hydra/cades-ccsi/proj-shared/project_acme/ACME_inputdata/atm/datm7/$FORCDIR/cpl_bypass_full
+where $FORCDIR is the path containing the datm files you want to convert.

@@ -1,0 +1,14 @@
+To complile on CADES:
+make all
+
+To run:
+sbatch makezone.pbs
+
+(1)You may need to change the directory in the pbs script.
+
+(2) you will need to create the following directory: 
+/lustre/or-hydra/cades-ccsi/proj-shared/project_acme/ACME_inputdata/atm/datm7/$FORCDIR/cpl_bypass_full
+where $FORCDIR is the path containing the datm files you want to convert.
+
+(3) prior to compile, make sure you have needed metdata and its domain file under $FORCDIR.
+AND ALSO modify those in source code 'makezones_reanalysis.f90'.
