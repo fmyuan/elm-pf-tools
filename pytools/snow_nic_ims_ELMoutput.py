@@ -586,16 +586,39 @@ if (options.imsheader != ""):
             if (vdata_2delmcell.shape[0]>0):  # IMS data aggregated into ELM cells, if sucessfully calculated
                 varname = elm_varname+'_ims'
                 ncdata = {}
-                ncdata['date'] = [num2date(it).date() for it in tt[0:]]
+
                 ncdata['lon']  = deepcopy(elmx)
                 ncdata['lat']  = deepcopy(elmy)
-                ncdata[elm_varname] = np.full(vdata_2delmcell.shape,np.float32(FillValue_SEA)) # shape as IMS data, but filled with data from ELM next-line
-                ncdata[elm_varname][ims_it_all,] = deepcopy(elm_vdata[elm_it_all])
-                ncdata[varname] = deepcopy(vdata_2delmcell)
-                ncdata[varname+'_std'] = deepcopy(vdata_std_2delmcell)
 
-                # difference btw ELM and IMS
-                temp = np.full(vdata_2delmcell.shape,0.0) # shape as IMS data, but will be filled with data from ELM next-line
+                #
+                if(elm_it_all[0]==elm_it and elm_it>0): # matching-time is NOT the first one
+                    # may need to write non-matched ELM data, assuming ELM time is in-order
+                    for iy in yr_elm[:elm_it]:
+                        for idx in range(len(elm_lndij[0])):
+                            ij = imsinelm_indx[str(idx)] #  paired-tuple index
+
+                            # assign ELM output to IMS' grids
+                            temp = elm_vdata[elm_it]
+                            j = elm_lndij[0][idx]  # ELM output data is in (t,elmy,elmx) dimensional-order
+                            i = elm_lndij[1][idx]
+                            imslnd = np.where(vdata_it[ij]>=0.0)[0] # extract sub-set's IMS land-cell
+                            if imslnd.size>0:
+                                if ij[0].size<=1:
+                                    vdata_fromelm[(ij[0],ij[1])] = temp[(j,i)] # ELM ==> IMS (Note: here ELM ji flipped to match with IMS)
+                                else:
+                                    vdata_fromelm[(ij[0][imslnd],ij[1][imslnd])] = temp[(j,i)] # ELM ==> IMS (Note: here ELM ji flipped to match with IMS)
+
+                        
+                else:
+                    ncdata['date'] = [num2date(it).date() for it in tt[0:]]
+                    ncdata[elm_varname] = np.full(vdata_2delmcell.shape,np.float32(FillValue_SEA)) # shape as IMS data, but filled with data from ELM next-line
+                    ncdata[elm_varname][ims_it_all,] = deepcopy(elm_vdata[elm_it_all])
+                    ncdata[varname] = deepcopy(vdata_2delmcell)
+                    ncdata[varname+'_std'] = deepcopy(vdata_std_2delmcell)
+
+                    # difference btw ELM and IMS
+                    temp = np.full(vdata_2delmcell.shape,0.0) # shape as IMS data, but will be filled with data from ELM next-line
+                
                 temp = ncdata[elm_varname] - ncdata[varname]
                 # since 'diff' could be negative, better to mark non-land in either dataset as ZERO
                 ij = np.where( (ncdata[elm_varname]<0)  | \
@@ -615,7 +638,9 @@ if (options.imsheader != ""):
                 nicims.Write1GeoNc([elm_varname, elm_varname+'_diff', varname,varname+'_std'], \
                                    ncdata, ptxy=[], ncfname=ncfname, newnc=True, \
                                    FillValue=FillValue_SEA)
-                 
+                
+                
+                
             if (len(daynums_from_elm)>0): # ELM simulation assigned into IMS grids
                 varname = ims_varname+'_elm'
                 ncdata = {}
