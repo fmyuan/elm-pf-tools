@@ -23,13 +23,16 @@ character(len=200) met_prefix
 character(len=20) met_type
 
 integer ierr, ncid, varid, dimid1
-! met data
+! met data zoning parameters
 integer, parameter:: nzx = 24, nzgx = 30 ! max. zones, max. longitudal grids in a N-S zone
 integer ng, nz, nzg                      ! actual grid numbers, zone numbers, E-W grids in a N-S zone
+integer nzr                              ! when nz*nzg /= E-W grids, there is a robin-round residue grid number (non-positive)
+integer zoffset                          ! when processing multiple Daymet Tiles, it's setting an offset so that zone numbering is continuous
 
 real, pointer :: data_in(:,:,:)      !248
 integer, pointer :: data_zone(:,:)   !2920
 integer, pointer :: temp_zone(:,:)   !248
+logical :: NEW_NC
 real, pointer ::  longxy(:,:), latixy(:,:)
 real, pointer ::  longxy_out(:,:), latixy_out(:,:)
 integer, pointer ::  count_zone(:), ncid_out(:)
@@ -41,6 +44,8 @@ integer starti(3), counti(3), dimid(2), starti_out, starti_out_year
 ! domain/mask
 integer ni, nj, nv
 integer, pointer:: mask(:,:)
+integer, pointer:: zstarti(:), zcounti(:)
+character(len=150) fstmetfile, mask_varname
 double precision, pointer :: xc(:,:), xc1d(:), yc(:,:), yc1d(:), xv(:,:,:), yv(:,:,:)
 double precision :: xmin, xmax, ymin, ymax
 
@@ -64,30 +69,35 @@ call MPI_Comm_size(MPI_COMM_WORLD, np, ierr)
 ! -------------------------------------------------------------
 ! USER-SPECIFIED forcing data input directory, file header, domain, and period
 
-met_type = 'GSWP3'! 'CRUJRA' ! 'CRU-NCEP'
+met_type = 'GSWP3_daymet4'!'GSWP3'! 'CRUJRA' ! 'CRU-NCEP'
 
 !Set the input data path
 !forcdir = '/lustre/or-hydra/cades-ccsi/proj-shared/project_acme/ACME_inputdata/atm/datm7/atm_forcing.datm7.CRUJRA.0.5d.v1.c190604'
-forcdir = '/lustre/or-hydra/cades-ccsi/proj-shared/project_acme/cesminput_ngee/atm/datm7' // &
-           '/atm_forcing.datm7.GSWP3_daymet.56x24pt_kougarok-GRID'
-!forcdir = '/Users/f9y/clm4_5_inputdata/atm/datm7' // &
-!            '/atm_forcing.datm7.GSWP3_daymet.56x24pt_kougarok-GRID'
+!forcdir = '/lustre/or-hydra/cades-ccsi/proj-shared/project_acme/cesminput_ngee/atm/datm7' // &
+!           '/atm_forcing.datm7.GSWP3_daymet.56x24pt_kougarok-GRID'
+forcdir = '/nfs/data/ccsi/f9y/GSWP3_daymet' // &
+            '/TILE13867'
+zoffset = 0  ! zone index counting previously generated data set (e.g. DAYMET tile already processed)
 
 !Set the file header of the forcing, excluding 'clmforc.'
 !myforcing = 'cruncep.V8.c2017'
 !myforcing = 'CRUJRAV1.1.c2019.0.5x0.5'
-myforcing = 'GSWP3_daymet.56x24pt_kougarok-GRID'
+!myforcing = 'GSWP3_daymet.56x24pt_kougarok-GRID'
+myforcing = 'Daymet4.1km'
 
 
 ! domain/mask
-mydomain = 'domain.lnd.GSWP3_daymet.56x24pt_kougarok-GRID'
+!mydomain = 'domain.lnd.GSWP3_daymet.56x24pt_kougarok-GRID'
+mydomain = ' '
+fstmetfile = 'Precip3Hrly/clmforc.Daymet4.1km.Prec.1980-01.nc' ! have to get info on grid no. and their centroids
+mask_varname = 'PRECTmms'
 
 !Set the date range and time resolution
 !startyear = 1901
 !endyear   = 2017
 !res       = 6      !Timestep in hours
 startyear = 1980
-endyear   = 2010
+endyear   = 2014
 res       = 3      !Timestep in hours
 
 !!-----------------------------------------------------------------
@@ -112,31 +122,31 @@ do v=1,7
    scale_factors(v) = (data_ranges(v,2)-data_ranges(v,1))*1.1/2**15
 end do
 
-!if (myid == 0) then ! need to read in data for each rank, when np=7, i.e for individual of 7 vars on each rank
+if (trim(mydomain) /= '') then
     fname = trim(forcdir) // '/' // trim(mydomain) // '.nc'
     ierr = nf90_open(trim(fname), NF90_NOWRITE, ncid)
-    if (myid==0) print*, 'domain: ', trim(fname), ierr
+    if (myid==0) print*, 'domain: ', trim(fname), trim(nf90_strerror(ierr))
     ierr = nf90_inq_dimid(ncid, "ni", dimid1)
     ierr = nf90_inquire_dimension(ncid, dimid1, len = ni)
     if (ierr /= 0) then
-       print *, 'error in dimension ni', ierr
+       print *, 'error in dimension ni - ', trim(nf90_strerror(ierr))
        stop
     endif
     ierr = nf90_inq_dimid(ncid, "nj", dimid1)
     ierr = nf90_inquire_dimension(ncid, dimid1, len = nj)
     if (ierr /= 0) then
-       print *, 'error in dimension nj', ierr
+       print *, 'error in dimension nj - ', trim(nf90_strerror(ierr))
        stop
     endif
     ierr = nf90_inq_dimid(ncid, "nv", dimid1)
     ierr = nf90_inquire_dimension(ncid, dimid1, len = nv)
     if (ierr /= 0) then
-       print *, 'error in dimension nv', ierr
+       print *, 'error in dimension nv', trim(nf90_strerror(ierr))
        stop
     endif
 
     ng = ni*nj
-    if (myid==0) print *, 'ni, nj, nj, ng', ni, nj, nv, ng
+    if (myid==0) print *, 'ni, nj, nv, ng', ni, nj, nv, ng
 
     allocate(xc(ni,nj))
     allocate(yc(ni,nj))
@@ -167,15 +177,88 @@ end do
     if (myid==0) print *, 'range of xc: ', xmin, xmax
     if (myid==0) print *, 'range of yc: ', ymin, ymax
 
-!endif
+! NO domain file, so have to build one from the first metdata
+elseif(trim(fstmetfile) /= '') then
+    fname = trim(forcdir) // '/' // trim(fstmetfile)
+    ierr = nf90_open(trim(fname), NF90_NOWRITE, ncid)
+    if (myid==0) print*, 'domain: ', trim(fname), trim(nf90_strerror(ierr))
+    ierr = nf90_inq_dimid(ncid, "x", dimid1)
+    ierr = nf90_inquire_dimension(ncid, dimid1, len = ni)
+    if (ierr /= 0) then
+       print *, 'error in dimension ni', trim(nf90_strerror(ierr))
+       stop
+    endif
+    ierr = nf90_inq_dimid(ncid, "y", dimid1)
+    ierr = nf90_inquire_dimension(ncid, dimid1, len = nj)
+    if (ierr /= 0) then
+       print *, 'error in dimension nj', trim(nf90_strerror(ierr))
+       stop
+    endif
+
+    ng = ni*nj
+    if (myid==0) print *, ' domain info - ni, nj, ng', ni, nj, ng
 
 
-print*, 'myid', myid
+    allocate(xc(ni,nj))
+    allocate(yc(ni,nj))
+    allocate(xc1d(ng))   ! 1D full-list of gridcells
+    allocate(yc1d(ng))
+    allocate(mask(ni,nj))
+    ierr = nf90_inq_varid(ncid, 'lon', varid)
+    ierr = nf90_get_var(ncid, varid, xc)
+    ierr = nf90_inq_varid(ncid, 'lat', varid)
+    ierr = nf90_get_var(ncid, varid, yc)
+
+    ! mask based on if metvar values are filled or NaN
+    ierr = nf90_inq_varid(ncid, trim(mask_varname), varid)
+    starti(1:3)  = 1
+    counti(1)    = ni
+    counti(2)    = nj
+    counti(3)    = 1 ! only needs 1 count of time
+    allocate(data_in(ni,nj,1))
+    ierr = nf90_get_var(ncid, varid, data_in, starti, counti)
+    !data_in = merge(1,0,data_in<=1e9)
+    !mask = reshape(data_in, shape(mask))
+    ! the above seems ok with gnu 9, but not with gnu 6 on CADES,
+    ! so the following is good for all compilers
+    do i=1,ni
+      do j=1,nj
+        if ( (data_in(i,j,1) .le. 1e9) .or. &
+             (.not.(data_in(i,j,1) /= data_in(i,j,1)) ) ) then
+          mask(i,j) = 1
+        else
+          mask(i,j) = 0
+        endif
+      enddo
+    enddo
+    deallocate(data_in)
+
+    ierr = nf90_close(ncid)
+
+    xc1d = RESHAPE(xc, shape(xc1d))
+    yc1d = RESHAPE(yc, shape(yc1d))
+
+endif
+
 if (myid .eq. 0) open(unit=8, file=trim(forcdir) // '/cpl_bypass_full/zone_mappings.txt')
 
 nz  = min(nzx, (ni-1)/nzgx+1)
 nzg = min(nzgx, (ni-1)/nz+1)
-print *, 'zones, zone grids', nz, nzg
+nzr = ni-nz*nzg  ! should be non-positive integer
+if (myid .eq. 0) print *, 'ZONING: zones, zone grids, res. grids', nz, nzg, nzr
+! do zoning at first
+allocate(zstarti(nz))               ! zone starting index along x/lon dimension
+allocate(zcounti(nz))               ! zone grid count number along x/lon dimension
+zstarti(1) = 1
+do z=1,nz
+   if (z>1) zstarti(z)  = zstarti(z-1)+zcounti(z-1)
+   zcounti(z)  = nzg                ! regular zone grid number
+   if (nzr<0 .and. z>nz+nzr) then   ! let the last '-nzr' zone to be 1 grid less
+     zcounti(z) = zcounti(z) - 1
+     nzr = nzr + 1 !
+   endif
+   if (myid==0) print *, 'zone, starti, endi, counts: ', z, zstarti(z), zstarti(z)+zcounti(z)-1, zcounti(z)
+enddo
 
 nty = (NHRSY-1)/res+1               ! ntime in a year
 ntd = 23/res+1                      ! ntime in a day
@@ -193,9 +276,12 @@ allocate(varids_out(nz,10))         ! 10 variables at the most
 allocate(dtime(nty))
 
 do v=myid+1,7,np
- print*, v
+ nzr = ni-nz*nzg  ! should be non-positive integer, and reset after each 'v' because it's changing below
  do z=1,nz
-   mask(:,:)=0
+   NEW_NC = .True.
+   ! the following may change masked gridcell from variable/time to variable/time
+   ! when 'mask(i,j)' upon variable's filling values later
+   !mask(:,:)=0
    if (v .eq. 1) metvars='PRECTmms'
    if (v .eq. 2) metvars='FSDS'
    if (v .eq. 3) metvars='TBOT'
@@ -208,7 +294,7 @@ do v=myid+1,7,np
    myres = trim(rst) // 'Hrly'
  
    ! GSWP3
-   if(trim(met_type) == 'GSWP3') then
+   if(trim(met_type) == 'GSWP3' .or. trim(met_type(1:12)) == 'GSWP3_daymet') then
      if (v .eq. 1) met_prefix = trim(forcdir) // '/Precip' // trim(myres) // &
          '/clmforc.' // trim(myforcing) // '.Prec.'
      if (v .eq. 2) met_prefix = trim(forcdir) // '/Solar' // trim(myres) // &
@@ -246,62 +332,106 @@ do v=myid+1,7,np
       starti_out_year = 1
       do m=1,12
          write(mst,'(I4)') 1000+m
-         print*, trim(metvars), y, m
+         print*, ' '
+         print*, trim(metvars), y, m, z, 'on RANK ', myid
          count_zone(:)=0
          write(yst,'(I4)') y
          fname = trim(met_prefix) // yst // '-' // mst(3:4) // '.nc'
          ierr = nf90_open(trim(fname), NF90_NOWRITE, ncid)
-         print*, trim(fname), ierr, v
+         if(ierr/=0) then
+           print*, 'Error in open: ', trim(fname), ' ', trim(nf90_strerror(ierr))
+           stop
+         endif
+
          ierr = nf90_inq_varid(ncid, 'LONGXY', varid)
+         if (ierr/=0) then
+           ierr = nf90_inq_varid(ncid, 'lon', varid)
+           if(ierr/=0) then
+             print *, "invalid variable 'LONGXY' or 'lon' ",trim(nf90_strerror(ierr))
+             stop
+           endif
+         endif
          ierr = nf90_get_var(ncid, varid, longxy)
          ierr = nf90_inq_varid(ncid, 'LATIXY', varid)
+         if (ierr/=0) then
+           ierr = nf90_inq_varid(ncid, 'lat', varid)
+           if(ierr/=0) then
+             print *, "invalid variable 'LATIXY' or 'lat' ",trim(nf90_strerror(ierr))
+             stop
+           endif
+         endif
          ierr = nf90_get_var(ncid, varid, latixy)
          ierr = nf90_inq_varid(ncid, trim(metvars), varid)
-         starti(1:3)  = 1
-         starti(1)    = (z-1)*nzg+1
-         counti(1)  = nzg
-         counti(2)  = nj
-         counti(3)  = ndaysm(m)*(ntd)
+         starti(1:3) = 1
+         starti(1)   = zstarti(z)
+         counti(1)   = zcounti(z)
+         counti(2)   = nj
+         counti(3)   = ndaysm(m)*(ntd)
    
          ierr = nf90_get_var(ncid, varid, data_in(1:counti(1),1:counti(2),1:counti(3)), starti, counti)
-         print*, 'READ', ierr
+         if(ierr /= 0) then
+           print*, 'error: ', ierr, trim(nf90_strerror(ierr)), &
+                   ' In reading file: ',fname, 'on rank:', myid
+
+           stop
+         else
+           print*, 'Successfully READ file: ', fname
+         endif
          ierr = nf90_close(ncid)
-         do i=1,nzg
+
+         do i=1,counti(1)
+
             do j=1,nj
-               if (data_in(i,j,1) .le. 1e9) mask(i,j)=1
-               if (mask(i,j) == 1) then 
+               ! the following may change masked gridcell from variable/time to variable/time
+               !if ( (data_in(i,j,1) .le. 1e9) .or. &
+               !     (.not.(data_in(i,j,1) /= data_in(i,j,1))) ) mask(i,j)=1
+
+               if (mask(starti(1)+i-1,j) == 1) then
 
                   count_zone(z)=count_zone(z)+1
-                  if (y .eq. startyear .and. m .eq. 1) then
+                  !if (y .eq. startyear .and. m .eq. 1) then
+                  if (NEW_NC) then
 
                      if (myid .eq. 0) then 
                         !if (longxy((z-1)*nzg+i,j) .ge. 0.25) then
-                           write(8,'(f12.5,1x,f12.6,1x,2(I5,1x))') longxy((z-1)*nzg+i,j), latixy((z-1)*nzg+i,j), &
-                                z, count_zone(z)
+                           write(8,'(f12.5,1x,f12.6,1x,2(I5,1x))') longxy(starti(1)+i,j), &
+                                latixy(starti(1)+i,j), &
+                                z+zoffset, count_zone(z)
                         !else
-                        !   write(8,'(2(f10.3,1x),2(I5,1x))') xmax, latixy((z-1)*nzg+i,j), &
-                        !        z, count_zone(z)
+                        !   write(8,'(2(f10.3,1x),2(I5,1x))') xmax, latixy(starti(1)+i,j), &
+                        !        z+zoffset, count_zone(z)
                         !end if
                      end if
-                     longxy_out(z, count_zone(z)) = longxy((z-1)*nzg+i,j)
-                     latixy_out(z, count_zone(z)) = latixy((z-1)*nzg+i,j)
+                     longxy_out(z, count_zone(z)) = longxy(starti(1)+i,j)
+                     latixy_out(z, count_zone(z)) = latixy(starti(1)+i,j)
                   end if
-                  !print*, i,j,z, count_zone(z) 
+
                   temp_zone(1:ndaysm(m)*ntd,count_zone(z)) = &
                        nint((data_in(i,j,1:ndaysm(m)*ntd)-add_offsets(v))/scale_factors(v))
+
                end if
             end do
          end do
-         print*, 'ZONE', z, count_zone(z)
-         !if (y .eq. startyear .and. m .eq. 1 .and. myid .eq. 0) close(8)  
-         
+         ! infos
+         if (myid == 0 .and. NEW_NC .and. v==1) then
+            print *, 'Total valid grids - ', count_zone(z), ' OF ', counti(1)*nj,' In zone - ', z
+         endif
+
          
          !do z=mod(myid,24)+1,24,np
-            write(zst,'(I4)') 1000+z
-            if (y .eq. startyear .and. m .eq. 1) then 
-               fname = trim(forcdir) // '/cpl_bypass_full/' // trim(myforcing) &
+            write(zst,'(I4)') 1000+z+zoffset
+            !if (y .eq. startyear .and. m .eq. 1) then
+            if (NEW_NC) then
+               if(trim(met_type(1:12)) == 'GSWP3_daymet') then
+                 fname = trim(forcdir) // '/cpl_bypass_full/' // trim(met_type) &
                       // '_' // trim(metvars) // '_' // startyrst // '-' // endyrst // '_z' // &
                     zst(3:4) // '.nc'
+               else
+                 fname = trim(forcdir) // '/cpl_bypass_full/' // trim(myforcing) &
+                      // '_' // trim(metvars) // '_' // startyrst // '-' // endyrst // '_z' // &
+                    zst(3:4) // '.nc'
+               endif
+
                ierr = nf90_create(trim(fname),cmode=or(nf90_clobber,nf90_64bit_offset),ncid=ncid_out(z))
                ierr = nf90_def_dim(ncid_out(z), 'n', count_zone(z), dimid(2))
                ierr = nf90_def_dim(ncid_out(z), 'DTIME', (endyear-startyear+1)*(NHRSY/res), dimid(1))
@@ -326,6 +456,8 @@ do v=myid+1,7,np
                     longxy_out(z, 1:count_zone(z)))
                ierr = nf90_put_var(ncid_out(z), varids_out(z,3), &
                     latixy_out(z, 1:count_zone(z)))
+
+               NEW_NC = .False.
             end if
             do i=1,ndaysm(m)*(24/res)
                dtime(i) = (starti_out+i-1)/(24/res*1.0)-(res/24)*0.5
@@ -339,22 +471,27 @@ do v=myid+1,7,np
 
             data_zone(starti_out_year:(starti_out_year+counti(1)-1),starti(2):(starti(2) &
                  +counti(2)-1)) = temp_zone(1:counti(1),1:counti(2))
-            !ierr = nf90_put_var(ncid_out(z), varids_out(z,4), &
-            !     temp_zone(1:counti(1), 1:count_zone(z)), starti(1:2), counti(1:2))
-            !print*,'WRITEVAR', ierr
          !end do  !Zone loop
          starti_out_year = starti_out_year+ndaysm(m)*(24/res)
          starti_out = starti_out+ndaysm(m)*(24/res)
-         !print*, starti_out
+         !
       end do    !month loop
+
       starti(1) = (y-startyear)*(8760/res)+1
       starti(2) = 1
       counti(1) = 8760/res
       counti(2) = count_zone(z)
-      print*, y, z, v, starti(1:2)
-      print*, z, counti(1:2)
       ierr = nf90_put_var(ncid_out(z), varids_out(z,4), &
                    data_zone(1:counti(1), 1:counti(2)), starti(1:2), counti(1:2))
+      if (ierr/=0) then
+        print*, 'Variable writing status:', ierr, trim(nf90_strerror(ierr))
+        print*, 'yr:',y, 'zone:',z, 'var:',trim(metvars), counti(1:2), starti(1:2)
+        print*, 'file: ', trim(fname)
+        stop
+      else
+        print*, 'Writing - ', trim(nf90_strerror(ierr)), ' : ',trim(metvars), ' ',trim(fname)
+      endif
+
    end do       !year loop
    ierr = nf90_close(ncid_out(z))
  end do  !zone loop
@@ -365,8 +502,8 @@ deallocate(xc)
 deallocate(xc1d)
 deallocate(yc)
 deallocate(yc1d)
-deallocate(xv)
-deallocate(yv)
+if(associated(xv)) deallocate(xv)
+if(associated(yv)) deallocate(yv)
 deallocate(mask)
 
 deallocate(longxy)
@@ -380,6 +517,8 @@ deallocate(count_zone)
 deallocate(ncid_out)
 deallocate(varids_out)
 deallocate(dtime)
+deallocate(zstarti)
+deallocate(zcounti)
 
 call MPI_Finalize(ierr)
 
