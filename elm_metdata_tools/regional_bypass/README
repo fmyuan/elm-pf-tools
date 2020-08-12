@@ -1,14 +1,86 @@
-To complile on CADES:
+INSTRUCTIONS
+
+0. BASH scripts, for generating ELM offline metdata (CPL_BYPASSs option) from GSWP3v2/daymet4 products.
+
+makezones.sbatch
+mv_years_daymetfiles.sh
+untar_daymetfiles.sbatch
+
+NOTE: Scripts can be run as pure bash script, if NO batch scheduler available (necessary editing may be needed).
+
+
+1. DOWNLOAD intended tarball(s) of Dr. Shih-Chieh Kao's (kaos@ornl.gov) GSWP3-v2/Daymet4 data in HPSS in OLCF. 
+
+Files list as following (SEE 'Tiles_DaymetV3.png' for daymet tile index) (note that each one contains a W-S band of 2x2 tiles,  with first 2-3 digits as same in title index):
+
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_94XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_95XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_97XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_99XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_101XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_102XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_103XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_104XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_106XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_108XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_110XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_111XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_112XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_113XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_115XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_117XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_119XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_120XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_121XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_122XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_123XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_124XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_126XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_127XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_128XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_129XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_130XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_131XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_132XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_133XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_135XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_136XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_137XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_138XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_139XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_140XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_141XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_142XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_144XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_145XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_146XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_147XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_148XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_149XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_151XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_153XX.tar;
+/home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_155XX.tar;
+
+
+2. UNTAR 1 or more *.tar, as specified, in 'untar_daymetfiles.sbatch'
+
+3. MOVE multipe year data files into TILExxxxx/, for specified TITLE index, in 'mv_years_daymetfiles.sh', as following:
+
+$>bash mv_years_daymetfiles.sh 13867
+
+
+4. CONVERT data format into ELM offline forcing format, required by CPL_BYPASS option
+(1) 
+prior to compile, make sure you have needed metdata and its domain file under $FORCDIR.
+AND ALSO modify those in source code 'makezones_reanalysis.f90'. 
+
+(2)
+To complile the fortran converter, './makezones', on CADES (in other system, edit 'Makefile' for correct compilers and libs):
 make all
 
+(3)
 To run:
-sbatch makezone.pbs
+sbatch makezones.sbatch
 
-(1)You may need to change the directory in the pbs script.
+NOTE: You may need: to change the directory in this bash script; to create a directory 'cpl_bypass_full', under $FORCDIR, which is the path containing data files, e.g. those from STEP 3, you want to convert.
 
-(2) you will need to create the following directory: 
-/lustre/or-hydra/cades-ccsi/proj-shared/project_acme/ACME_inputdata/atm/datm7/$FORCDIR/cpl_bypass_full
-where $FORCDIR is the path containing the datm files you want to convert.
-
-(3) prior to compile, make sure you have needed metdata and its domain file under $FORCDIR.
-AND ALSO modify those in source code 'makezones_reanalysis.f90'.

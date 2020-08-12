@@ -12,7 +12,14 @@
 #SBATCH -n 7
 #SBATCH -c 1
 
-mpirun -np 7 ./makezones
+cd ./
 
-echo 'DONE!'
+if mpirun -np 7 ./makezones
+then
+  wait
+  echo 'successfully DONE!'
+
+else
+  exit &?
+fi
 
