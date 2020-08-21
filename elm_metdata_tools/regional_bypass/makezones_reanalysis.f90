@@ -24,9 +24,10 @@ character(len=20) met_type
 
 integer ierr, ncid, varid, dimid1
 ! met data zoning parameters
-integer, parameter:: nzx = 24, nzgx = 30 ! max. zones, max. longitudal grids in a N-S zone
-integer ng, nz, nzg                      ! actual grid numbers, zone numbers, E-W grids in a N-S zone
-integer nzr                              ! when nz*nzg /= E-W grids, there is a robin-round residue grid number (non-positive)
+integer, parameter:: ngzx = 12000           ! max. grids in a N-S strip (i.e. zone)
+integer nzx, nz, ng                         ! min. and actual numbers of zones (N-S strips), total masked grids
+integer, pointer :: ngi(:), zng(:)          ! actual masked grids in each x/longitude interval and each zone
+integer nzg                                 ! max. zone i-axis intervals
 integer zoffset                          ! when processing multiple Daymet Tiles, it's setting an offset so that zone numbering is continuous
 
 real, pointer :: data_in(:,:,:)      !248
@@ -89,8 +90,8 @@ myforcing = 'Daymet4.1km'
 ! domain/mask
 !mydomain = 'domain.lnd.GSWP3_daymet.56x24pt_kougarok-GRID'
 mydomain = ' '
-fstmetfile = 'Precip3Hrly/clmforc.Daymet4.1km.Prec.1980-01.nc' ! have to get info on grid no. and their centroids
-mask_varname = 'PRECTmms'
+fstmetfile = 'TPHWL3Hrly/clmforc.Daymet4.1km.TPQWL.1980-01.nc' ! have to get info on grid no. and their centroids
+mask_varname = 'TBOT'
 
 !Set the date range and time resolution
 !startyear = 1901
@@ -145,8 +146,7 @@ if (trim(mydomain) /= '') then
        stop
     endif
 
-    ng = ni*nj
-    if (myid==0) print *, 'ni, nj, nv, ng', ni, nj, nv, ng
+    if (myid==0) print *, 'ni, nj, nv, ng', ni, nj, nv, ni*nj
 
     allocate(xc(ni,nj))
     allocate(yc(ni,nj))
@@ -195,14 +195,13 @@ elseif(trim(fstmetfile) /= '') then
        stop
     endif
 
-    ng = ni*nj
-    if (myid==0) print *, ' domain info - ni, nj, ng', ni, nj, ng
+    if (myid==0) print *, ' domain info - ni, nj, ng', ni, nj, ni*nj
 
 
     allocate(xc(ni,nj))
     allocate(yc(ni,nj))
-    allocate(xc1d(ng))   ! 1D full-list of gridcells
-    allocate(yc1d(ng))
+    allocate(xc1d(ni*nj))   ! 1D full-list of gridcells
+    allocate(yc1d(ni*nj))
     allocate(mask(ni,nj))
     ierr = nf90_inq_varid(ncid, 'lon', varid)
     ierr = nf90_get_var(ncid, varid, xc)
@@ -224,6 +223,7 @@ elseif(trim(fstmetfile) /= '') then
     do i=1,ni
       do j=1,nj
         if ( (data_in(i,j,1) .le. 1e9) .or. &
+             (data_in(i,j,1) .gt. huge(data_in(i,j,1))) .or. &
              (.not.(data_in(i,j,1) /= data_in(i,j,1)) ) ) then
           mask(i,j) = 1
         else
@@ -242,24 +242,54 @@ endif
 
 if (myid .eq. 0) open(unit=8, file=trim(forcdir) // '/cpl_bypass_full/zone_mappings.txt')
 
-nz  = min(nzx, (ni-1)/nzgx+1)
-nzg = min(nzgx, (ni-1)/nz+1)
-nzr = ni-nz*nzg  ! should be non-positive integer
-if (myid .eq. 0) print *, 'ZONING: zones, zone grids, res. grids', nz, nzg, nzr
-! do zoning at first
-allocate(zstarti(nz))               ! zone starting index along x/lon dimension
-allocate(zcounti(nz))               ! zone grid count number along x/lon dimension
-zstarti(1) = 1
-do z=1,nz
-   if (z>1) zstarti(z)  = zstarti(z-1)+zcounti(z-1)
-   zcounti(z)  = nzg                ! regular zone grid number
-   if (nzr<0 .and. z>nz+nzr) then   ! let the last '-nzr' zone to be 1 grid less
-     zcounti(z) = zcounti(z) - 1
-     nzr = nzr + 1 !
-   endif
-   if (myid==0) print *, 'zone, starti, endi, counts: ', z, zstarti(z), zstarti(z)+zcounti(z)-1, zcounti(z)
-enddo
+! possible zone number and its grids
+! the following is for regular zones - may have remarkable variations of masked grids among zones
+!nzx  = min(1, (ni-1)/ngzx+1)
+!nzg = min(ngzx, (ni-1)/nzx+1)
+!nzr = ni-nzx*nzg  ! should be non-positive integer
+allocate(ngi(ni))
+ngi = sum(mask,DIM=2)
+ng  = sum(ngi)
+nzx = (ng-1)/(ngzx-nj)+1
+nzg = min(ngzx-nj, (ng-1)/nzx+1)       ! this is temporary (average) number (integer)
 
+allocate(zng(nzx+1))                   ! an extra length just in case
+allocate(zstarti(nzx+1))               ! zone starting index along x/lon dimension
+allocate(zcounti(nzx+1))               ! zone grid count number along x/lon dimension
+zng(:)     = 0
+zstarti(:) = 0
+zcounti(:) = 0
+
+! do zone division
+nz  = 1
+zstarti(1) = 1
+do i=1,ni-1
+  zcounti(nz) = zcounti(nz) + 1
+  zng(nz)     = zng(nz)+ngi(i)
+  if ((zng(nz)+ngi(i+1))>(nzg+nj/2)) then ! a new zone, if adding next count of i-index over (nzg+nj/2)
+    if (myid==0) then
+      print *, 'zone, starti, endi, counti, grids: ', &
+        nz, zstarti(nz), zstarti(nz)+zcounti(nz)-1, zcounti(nz),zng(nz)
+    endif
+    nz = nz + 1
+    zstarti(nz) = i+1
+  endif
+  if(i==ni-1) then  ! do-loop ends at last second i-index
+    zng(nz)=zng(nz)+ngi(i+1)
+    zcounti(nz)=zcounti(nz)+1
+    if (myid==0) then
+      print *, 'zone, starti, endi, counti, grids: ', &
+        nz, zstarti(nz), zstarti(nz)+zcounti(nz)-1, zcounti(nz),zng(nz)
+    endif
+  endif
+enddo
+nzg = maxval(zcounti) ! the max i count for all zones (for max. ni when read in data_in(nzg, nj, ntm)
+if (myid==0) then
+  print *, 'max. counts of ni among all zones, zone number, total masked grids - ', &
+    nzg, nz, ng
+endif
+
+!
 nty = (NHRSY-1)/res+1               ! ntime in a year
 ntd = 23/res+1                      ! ntime in a day
 ntm = ntd*31                        ! ntime in a month(max. days)
@@ -268,15 +298,14 @@ allocate(latixy(ni,nj))
 allocate(data_in(nzg, nj, ntm))     ! monthly data read-in for a N-S zone
 allocate(data_zone(nty,nzg*nj))     ! yearly data for a N-S zone (1D grid)
 allocate(temp_zone(ntm,nzg*nj))     ! monthly data array for a zone (1D grid)
-allocate(longxy_out(nz,15000))      ! ? 15000
-allocate(latixy_out(nz,15000))
+allocate(longxy_out(nz,ngzx))      ! ? 15000
+allocate(latixy_out(nz,ngzx))
 allocate(count_zone(nz))
 allocate(ncid_out(nz))
 allocate(varids_out(nz,10))         ! 10 variables at the most
 allocate(dtime(nty))
 
 do v=myid+1,7,np
- nzr = ni-nz*nzg  ! should be non-positive integer, and reset after each 'v' because it's changing below
  do z=1,nz
    NEW_NC = .True.
    ! the following may change masked gridcell from variable/time to variable/time
@@ -517,6 +546,8 @@ deallocate(count_zone)
 deallocate(ncid_out)
 deallocate(varids_out)
 deallocate(dtime)
+deallocate(ngi)
+deallocate(zng)
 deallocate(zstarti)
 deallocate(zcounti)
 
