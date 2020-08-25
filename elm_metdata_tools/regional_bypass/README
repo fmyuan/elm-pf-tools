@@ -64,6 +64,14 @@ Files list as following (SEE 'Tiles_DaymetV3.png' for daymet tile index) (note t
 
 2. UNTAR 1 or more *.tar, as specified, in 'untar_daymetfiles.sbatch'
 
+FILEs are arranged like following:
+
+1980/13867/Precip3Hrly, Solar3Hrly,TPHWL3Hrly 
+
+1981/13867/...
+
+...
+
 3. MOVE multipe year data files into TILExxxxx/, for specified TITLE index, in 'mv_years_daymetfiles.sh', as following:
 
 $>bash mv_years_daymetfiles.sh 13867
