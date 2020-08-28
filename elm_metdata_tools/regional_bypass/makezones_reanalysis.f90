@@ -28,7 +28,7 @@ integer, parameter:: ngzx = 12000           ! max. grids in a N-S strip (i.e. zo
 integer nzx, nz, ng                         ! min. and actual numbers of zones (N-S strips), total masked grids
 integer, pointer :: ngi(:), zng(:)          ! actual masked grids in each x/longitude interval and each zone
 integer nzg                                 ! max. zone i-axis intervals
-integer zoffset                          ! when processing multiple Daymet Tiles, it's setting an offset so that zone numbering is continuous
+integer zoffset, zoffset_n                  ! when processing multiple Daymet Tiles, it's setting an offset so that zone numbering/counting is continuous
 
 real, pointer :: data_in(:,:,:)      !248
 integer, pointer :: data_zone(:,:)   !2920
@@ -49,6 +49,7 @@ integer, pointer:: zstarti(:), zcounti(:)
 character(len=150) fstmetfile, mask_varname
 double precision, pointer :: xc(:,:), xc1d(:), yc(:,:), yc1d(:), xv(:,:,:), yv(:,:,:)
 double precision :: xmin, xmax, ymin, ymax
+character(len=20) site
 
 integer nty, ntm, ntd
 integer startyear, endyear
@@ -78,7 +79,8 @@ met_type = 'GSWP3_daymet4'!'GSWP3'! 'CRUJRA' ! 'CRU-NCEP'
 !           '/atm_forcing.datm7.GSWP3_daymet.56x24pt_kougarok-GRID'
 forcdir = '/nfs/data/ccsi/f9y/GSWP3_daymet' // &
             '/TILE13867'
-zoffset = 0  ! zone index counting previously generated data set (e.g. DAYMET tile already processed)
+zoffset = 0   ! zone index counting previously generated data set (e.g. DAYMET tile already processed)
+zoffset_n = 0 ! zone n-index counting previously generated data set
 
 !Set the file header of the forcing, excluding 'clmforc.'
 !myforcing = 'cruncep.V8.c2017'
@@ -92,6 +94,20 @@ myforcing = 'Daymet4.1km'
 mydomain = ' '
 fstmetfile = 'TPHWL3Hrly/clmforc.Daymet4.1km.TPQWL.1980-01.nc' ! have to get info on grid no. and their centroids
 mask_varname = 'TBOT'
+
+! if setting the following as non-'-9999.0' value, mask will cut off by them
+site = ''
+xmin = -9999.0  ! xmin must be in 0~360 format
+xmax = -9999.0  ! xmax must be in 0~360 format
+ymin = -9999.0
+ymax = -9999.0
+! AK SewPenn NGEE sites: 
+!   (1) Kougarok Road m64: -164.845~-164.800/65.175~65.149
+!site = '-KM64'
+xmin = -164.845+360.0
+xmax = -164.800+360.0
+ymin = 65.149
+ymax = 65.175
 
 !Set the date range and time resolution
 !startyear = 1901
@@ -169,13 +185,7 @@ if (trim(mydomain) /= '') then
     ierr = nf90_close(ncid)
 
     xc1d = xc(:,1)
-    xmin = minval(xc1d)
-    xmax = maxval(xc1d)
     yc1d = yc(1,:)
-    ymin = minval(yc1d)
-    ymax = maxval(yc1d)
-    if (myid==0) print *, 'range of xc: ', xmin, xmax
-    if (myid==0) print *, 'range of yc: ', ymin, ymax
 
 ! NO domain file, so have to build one from the first metdata
 elseif(trim(fstmetfile) /= '') then
@@ -226,12 +236,36 @@ elseif(trim(fstmetfile) /= '') then
              (data_in(i,j,1) .gt. huge(data_in(i,j,1))) .or. &
              (.not.(data_in(i,j,1) /= data_in(i,j,1)) ) ) then
           mask(i,j) = 1
+
+          ! cutoff mask, if boxed x/y ranges given
+          if(xmin/=-9999.0) then
+            if(xc(i,j)<0.0 .and. (xc(i,j)+360.0)<xmin) then ! xmin must be in 0~360 format
+              mask(i,j) = 0
+            elseif (xc(i,j)>=0.0 .and. xc(i,j)<xmin) then
+              mask(i,j) = 0
+            endif
+          endif
+          if(xmax/=-9999.0 .and. mask(i,j)==1) then
+            if(xc(i,j)<0.0 .and. (xc(i,j)+360.0)>xmax) then ! xmax must be in 0~360 format
+              mask(i,j) = 0
+            elseif (xc(i,j)>=0.0 .and. xc(i,j)>xmax) then
+              mask(i,j) = 0
+            endif
+          endif
+          if(ymin/=-9999.0 .and. mask(i,j)==1) then
+            if (yc(i,j)<ymin) mask(i,j) = 0
+          endif
+          if(ymax/=-9999.0 .and. mask(i,j)==1) then
+            if (yc(i,j)>ymax) mask(i,j) = 0
+          endif
+
         else
           mask(i,j) = 0
         endif
       enddo
     enddo
     deallocate(data_in)
+
 
     ierr = nf90_close(ncid)
 
@@ -240,7 +274,7 @@ elseif(trim(fstmetfile) /= '') then
 
 endif
 
-if (myid .eq. 0) open(unit=8, file=trim(forcdir) // '/cpl_bypass_full/zone_mappings.txt')
+if (myid .eq. 0) open(unit=8, file=trim(forcdir) // '/cpl_bypass_full' // trim(site) // '/' // 'zone_mappings.txt')
 
 ! possible zone number and its grids
 ! the following is for regular zones - may have remarkable variations of masked grids among zones
@@ -423,16 +457,16 @@ do v=myid+1,7,np
 
                      if (myid .eq. 0) then 
                         !if (longxy((z-1)*nzg+i,j) .ge. 0.25) then
-                           write(8,'(f12.5,1x,f12.6,1x,2(I5,1x))') longxy(starti(1)+i,j), &
-                                latixy(starti(1)+i,j), &
-                                z+zoffset, count_zone(z)
+                           write(8,'(f12.5,1x,f12.6,1x,2(I5,1x))') longxy(starti(1)+i-1,j), &
+                                latixy(starti(1)+i-1,j), &
+                                z+zoffset, count_zone(z)+zoffset_n  ! offset only for writing zone_mappings.txt
                         !else
                         !   write(8,'(2(f10.3,1x),2(I5,1x))') xmax, latixy(starti(1)+i,j), &
-                        !        z+zoffset, count_zone(z)
+                        !        z+zoffset, count_zone(z)+zoffset_n
                         !end if
                      end if
-                     longxy_out(z, count_zone(z)) = longxy(starti(1)+i,j)
-                     latixy_out(z, count_zone(z)) = latixy(starti(1)+i,j)
+                     longxy_out(z, count_zone(z)) = longxy(starti(1)+i-1,j)
+                     latixy_out(z, count_zone(z)) = latixy(starti(1)+i-1,j)
                   end if
 
                   temp_zone(1:ndaysm(m)*ntd,count_zone(z)) = &
@@ -452,11 +486,11 @@ do v=myid+1,7,np
             !if (y .eq. startyear .and. m .eq. 1) then
             if (NEW_NC) then
                if(trim(met_type(1:12)) == 'GSWP3_daymet') then
-                 fname = trim(forcdir) // '/cpl_bypass_full/' // trim(met_type) &
+                 fname = trim(forcdir) // '/cpl_bypass_full' // trim(site) // '/' // trim(met_type) &
                       // '_' // trim(metvars) // '_' // startyrst // '-' // endyrst // '_z' // &
                     zst(3:4) // '.nc'
                else
-                 fname = trim(forcdir) // '/cpl_bypass_full/' // trim(myforcing) &
+                 fname = trim(forcdir) // '/cpl_bypass_full' // trim(site) // '/' // trim(myforcing) &
                       // '_' // trim(metvars) // '_' // startyrst // '-' // endyrst // '_z' // &
                     zst(3:4) // '.nc'
                endif
