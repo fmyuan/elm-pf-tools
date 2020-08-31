@@ -16,25 +16,56 @@ source $MODULESHOME/init/bash
 cwd=$(pwd)
 
 DAYMET_ROOT=/nfs/data/ccsi/f9y/GSWP3_daymet
-DAYMET_SRCFILE=Daymet_ESM_138XX.tar
 ### For AK SP: DAYMET tile index - 13867~13870
-TILE=13867
+###TILE=13870
 
 cd ${cwd}
 
-### extract daymet forcing data from GAO's *.tar files
+### For AK SP: DAYMET tile index - 13867~13870
+
+### For AK above N60: 
+
+#DAYMET_SRCFILE=Daymet_ESM_135XX.tar
+#for TILE in {13507..13520}
+
+#DAYMET_SRCFILE=Daymet_ESM_136XX.tar
+#for TILE in {13685..13699}
+
+#DAYMET_SRCFILE=Daymet_ESM_137XX.tar
+#for TILE in {13700..13700}
+
+DAYMET_SRCFILE=Daymet_ESM_138XX.tar
+for TILE in {13866..13880}
+
+#DAYMET_SRCFILE=Daymet_ESM_140XX.tar
+#for TILE in {14047..14060}
+
+#DAYMET_SRCFILE=Daymet_ESM_142XX.tar
+#for TILE in {14227..14240}
+
+#DAYMET_SRCFILE=Daymet_ESM_144XX.tar
+#for TILE in {14409..14419}
 
 
-if tar -xf ${DAYMET_ROOT}/${DAYMET_SRCFILE} --wildcards --no-anchored "*/${TILE}/*.nc" &
-sleep 10
-then
-  wait
+do
 
-  echo "DONE untaring with TILE ${TILE} !"
+  ### extract 1 tile of daymet forcing data from GAO's *.tar files
 
-else
-  exit &?
-fi
+
+  if tar -xf ${DAYMET_ROOT}/${DAYMET_SRCFILE} --wildcards --no-anchored "*/${TILE}/*.nc" &
+  sleep 10
+  then
+    wait
+
+    echo "DONE untaring with TILE ${TILE} !"
+
+  else
+    echo "ERROR untaring with TILE ${TILE} !"
+    exit &?
+  fi
+
+done
+
 
 cd ${cwd}
 
