@@ -29,6 +29,7 @@ integer nzx, nz, ng                         ! min. and actual numbers of zones (
 integer, pointer :: ngi(:), zng(:)          ! actual masked grids in each x/longitude interval and each zone
 integer nzg                                 ! max. zone i-axis intervals
 integer zoffset, zoffset_n                  ! when processing multiple Daymet Tiles, it's setting an offset so that zone numbering/counting is continuous
+integer xindx, yindx                        ! 2-D daymet x/y index
 
 real, pointer :: data_in(:,:,:)      !248
 integer, pointer :: data_zone(:,:)   !2920
@@ -104,10 +105,10 @@ ymax = -9999.0
 ! AK SewPenn NGEE sites: 
 !   (1) Kougarok Road m64: -164.845~-164.800/65.175~65.149
 !site = '-KM64'
-xmin = -164.845+360.0
-xmax = -164.800+360.0
-ymin = 65.149
-ymax = 65.175
+!xmin = -164.845+360.0
+!xmax = -164.800+360.0
+!ymin = 65.149
+!ymax = 65.175
 
 !Set the date range and time resolution
 !startyear = 1901
@@ -142,7 +143,7 @@ end do
 if (trim(mydomain) /= '') then
     fname = trim(forcdir) // '/' // trim(mydomain) // '.nc'
     ierr = nf90_open(trim(fname), NF90_NOWRITE, ncid)
-    if (myid==0) print*, 'domain: ', trim(fname), trim(nf90_strerror(ierr))
+    if (myid==0) print*, 'domain: ', trim(fname), ' - ', trim(nf90_strerror(ierr))
     ierr = nf90_inq_dimid(ncid, "ni", dimid1)
     ierr = nf90_inquire_dimension(ncid, dimid1, len = ni)
     if (ierr /= 0) then
@@ -158,7 +159,7 @@ if (trim(mydomain) /= '') then
     ierr = nf90_inq_dimid(ncid, "nv", dimid1)
     ierr = nf90_inquire_dimension(ncid, dimid1, len = nv)
     if (ierr /= 0) then
-       print *, 'error in dimension nv', trim(nf90_strerror(ierr))
+       print *, 'error in dimension nv ', trim(nf90_strerror(ierr))
        stop
     endif
 
@@ -191,17 +192,17 @@ if (trim(mydomain) /= '') then
 elseif(trim(fstmetfile) /= '') then
     fname = trim(forcdir) // '/' // trim(fstmetfile)
     ierr = nf90_open(trim(fname), NF90_NOWRITE, ncid)
-    if (myid==0) print*, 'domain: ', trim(fname), trim(nf90_strerror(ierr))
+    if (myid==0) print*, 'domain: ', trim(fname),  ' - ',  trim(nf90_strerror(ierr))
     ierr = nf90_inq_dimid(ncid, "x", dimid1)
     ierr = nf90_inquire_dimension(ncid, dimid1, len = ni)
     if (ierr /= 0) then
-       print *, 'error in dimension ni', trim(nf90_strerror(ierr))
+       print *, 'error in dimension ni -', trim(nf90_strerror(ierr))
        stop
     endif
     ierr = nf90_inq_dimid(ncid, "y", dimid1)
     ierr = nf90_inquire_dimension(ncid, dimid1, len = nj)
     if (ierr /= 0) then
-       print *, 'error in dimension nj', trim(nf90_strerror(ierr))
+       print *, 'error in dimension nj - ', trim(nf90_strerror(ierr))
        stop
     endif
 
@@ -210,13 +211,19 @@ elseif(trim(fstmetfile) /= '') then
 
     allocate(xc(ni,nj))
     allocate(yc(ni,nj))
-    allocate(xc1d(ni*nj))   ! 1D full-list of gridcells
-    allocate(yc1d(ni*nj))
+    allocate(xc1d(ni))
+    allocate(yc1d(nj))
     allocate(mask(ni,nj))
     ierr = nf90_inq_varid(ncid, 'lon', varid)
     ierr = nf90_get_var(ncid, varid, xc)
     ierr = nf90_inq_varid(ncid, 'lat', varid)
     ierr = nf90_get_var(ncid, varid, yc)
+
+    ierr = nf90_inq_varid(ncid, 'x', varid)  ! daymet geox in meters
+    ierr = nf90_get_var(ncid, varid, xc1d)
+
+    ierr = nf90_inq_varid(ncid, 'y', varid)  ! daymet geoy in meters
+    ierr = nf90_get_var(ncid, varid, yc1d)
 
     ! mask based on if metvar values are filled or NaN
     ierr = nf90_inq_varid(ncid, trim(mask_varname), varid)
@@ -269,13 +276,14 @@ elseif(trim(fstmetfile) /= '') then
 
     ierr = nf90_close(ncid)
 
-    xc1d = RESHAPE(xc, shape(xc1d))
-    yc1d = RESHAPE(yc, shape(yc1d))
-
 endif
 
 if (myid .eq. 0) open(unit=8, file=trim(forcdir) // '/cpl_bypass_full' // trim(site) // '/' // 'zone_mappings.txt')
+if (myid .eq. 0) then
+  open(unit=9, file=trim(forcdir) // '/cpl_bypass_full' // trim(site) // '/' // 'daymet_elm_mappings.txt')
+  write(9,*) '     lon          lat           geox            geoy        i     j     g '
 
+endif
 ! possible zone number and its grids
 ! the following is for regular zones - may have remarkable variations of masked grids among zones
 !nzx  = min(1, (ni-1)/ngzx+1)
@@ -340,6 +348,7 @@ allocate(varids_out(nz,10))         ! 10 variables at the most
 allocate(dtime(nty))
 
 do v=myid+1,7,np
+ ng = 0  ! index of all (land-)masked grids
  do z=1,nz
    NEW_NC = .True.
    ! the following may change masked gridcell from variable/time to variable/time
@@ -433,7 +442,7 @@ do v=myid+1,7,np
    
          ierr = nf90_get_var(ncid, varid, data_in(1:counti(1),1:counti(2),1:counti(3)), starti, counti)
          if(ierr /= 0) then
-           print*, 'error: ', ierr, trim(nf90_strerror(ierr)), &
+           print*, 'error: ', ierr,  ' - ', trim(nf90_strerror(ierr)), &
                    ' In reading file: ',fname, 'on rank:', myid
 
            stop
@@ -455,11 +464,25 @@ do v=myid+1,7,np
                   !if (y .eq. startyear .and. m .eq. 1) then
                   if (NEW_NC) then
 
+                     ng = ng + 1
                      if (myid .eq. 0) then 
                         !if (longxy((z-1)*nzg+i,j) .ge. 0.25) then
                            write(8,'(f12.5,1x,f12.6,1x,2(I5,1x))') longxy(starti(1)+i-1,j), &
                                 latixy(starti(1)+i-1,j), &
                                 z+zoffset, count_zone(z)+zoffset_n  ! offset only for writing zone_mappings.txt
+
+                           ! xindex, yindex for 2D <--> 1-D transformat
+                           if (zoffset_n<=0) then
+                               xindx = starti(1)+i-1+i
+                               yindx = j
+                           else
+                               xindx = -9999  ! when joint tiles, the x/y index need to be re-done
+                               yindx = -9999
+                           endif
+                           write(9,'(f12.5,1x,f12.6,1x, 2(f15.1, 1x),3(I5,1x))') longxy(starti(1)+i-1,j), &
+                                latixy(starti(1)+i-1,j),              &
+                                xc1d(starti(1)+i-1), yc1d(j),         &
+                                xindx, yindx, ng+zoffset_n
                         !else
                         !   write(8,'(2(f10.3,1x),2(I5,1x))') xmax, latixy(starti(1)+i,j), &
                         !        z+zoffset, count_zone(z)+zoffset_n
@@ -547,7 +570,7 @@ do v=myid+1,7,np
       ierr = nf90_put_var(ncid_out(z), varids_out(z,4), &
                    data_zone(1:counti(1), 1:counti(2)), starti(1:2), counti(1:2))
       if (ierr/=0) then
-        print*, 'Variable writing status:', ierr, trim(nf90_strerror(ierr))
+        print*, 'Variable writing status:', ierr,  ' - ', trim(nf90_strerror(ierr))
         print*, 'yr:',y, 'zone:',z, 'var:',trim(metvars), counti(1:2), starti(1:2)
         print*, 'file: ', trim(fname)
         stop
@@ -559,6 +582,7 @@ do v=myid+1,7,np
    ierr = nf90_close(ncid_out(z))
  end do  !zone loop
  if (myid .eq. 0) close(8)  
+ if (myid .eq. 0) close(9)
 end do   !Variable loop
 
 deallocate(xc)
