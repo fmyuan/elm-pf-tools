@@ -237,8 +237,12 @@ elseif(trim(fstmetfile) /= '') then
     !mask = reshape(data_in, shape(mask))
     ! the above seems ok with gnu 9, but not with gnu 6 on CADES,
     ! so the following is good for all compilers
+    if (xmin/=-9999.0 .and. xmin<0.0) xmin=xmin+360.0
+    if (xmax/=-9999.0 .and. xmax<0.0) xmax=xmax+360.0
     do i=1,ni
       do j=1,nj
+        if (xc(i,j)/=-9999.0 .and. xc(i,j)<0.0) xc(i,j)=xc(i,j)+360.0
+
         if ( (data_in(i,j,1) .le. 1e9) .or. &
              (data_in(i,j,1) .gt. huge(data_in(i,j,1))) .or. &
              (.not.(data_in(i,j,1) /= data_in(i,j,1)) ) ) then
@@ -457,6 +461,11 @@ do v=myid+1,7,np
                ! the following may change masked gridcell from variable/time to variable/time
                !if ( (data_in(i,j,1) .le. 1e9) .or. &
                !     (.not.(data_in(i,j,1) /= data_in(i,j,1))) ) mask(i,j)=1
+
+               ! better to let 'longitude' in format of 0~360
+               if (longxy(starti(1)+i-1,j)<0.0) then
+                   longxy(starti(1)+i-1,j) = longxy(starti(1)+i-1,j) + 360.0
+               endif
 
                if (mask(starti(1)+i-1,j) == 1) then
 
