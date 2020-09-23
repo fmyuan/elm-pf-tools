@@ -267,11 +267,16 @@ if (options.elmheader != ""):
             
             src_dims = variable.dimensions
                 
-            if ('gridcell' in src_dims or 'lndgrid' in src_dims):
+            if ('gridcell' in src_dims or 'lndgrid' in src_dims \
+                or 'landunit' in src_dims \
+                or 'column' in src_dims \
+                or 'pft' in src_dims):
                 try:
                     FillValue = variable._FillValue
                 except:
                     FillValue = -9999
+                src_data = np.asarray(src[name])# be ready for original data to re-shape if any below 
+
                 new_dims = []
                 i = -1
                 for dim in src_dims:
@@ -280,6 +285,50 @@ if (options.elmheader != ""):
                         idim = i
                         new_dims.append('geoy')
                         new_dims.append('geox')
+                    elif dim in ('landunit','column','pft') and \
+                                ('gridcell' in src.dimensions.keys() \
+                                 or 'lndgrid' in src.dimensions.keys()):
+                        # in ELM output, column/pft dims are gridcells*col/patch
+                        idim = i
+                        #new_dims.append('geoy')
+                        #new_dims.append('geox')
+                        # reshape of dim column/pft
+                        len_dim = src.dimensions[dim].size
+                        if('gridcell' in src.dimensions.keys()):
+                            len_grid = src.dimensions['gridcell'].size
+                        elif('lndgrid' in src.dimensions.keys()):
+                            len_grid = src.dimensions['lndgrid'].size
+                            
+                        if(math.fmod(len_dim, len_grid)==0):
+                            len_dim = int(len_dim/len_grid)
+                            name_dim = dim+'_index'
+                            
+                            # only need to create a new dimension ONCE, if not yet
+                            if (name_dim not in dst.dimensions.keys()):
+                                dst.createDimension(name_dim, len_dim)
+                            new_dims.append(name_dim)
+                            
+                            #reshape original data to be like from (totalpft=gidx*col/pft) --> (gidx,col/pft)
+                            src_shp = src_data.shape
+                            if idim == 0:
+                                re_shp = (len(gidx),len_dim,)+src_shp[1:]
+                            elif idim >= 1:
+                                re_shp = src_shp[0:idim-1]+(len(gidx),len_dim,)+src_shp[idim+1:]
+                            else:
+                                print('Error - more than at least 4 dimension variable, not supported yet')
+                                sys.exit(-1)
+                            src_data = np.reshape(src_data, re_shp)
+                            # better move col/pft dim forward, so that in order of (col/pft, gidx), 
+                            # then when remapping gidx --> y/x, it's in order of (col/pft, geoy, geox) which VISIT can plot correctly
+                            src_data = np.swapaxes(src_data, idim, idim+1)
+                            idim = idim + 1 #swaping above actually moved 'gidx' 1 dimension backwardly
+                        else:
+                            print('Error in size of ', dim.name)
+                            sys.exit(-1)
+                        
+                        new_dims.append('geoy')
+                        new_dims.append('geox')
+
                     else:
                         new_dims.append(dim)
                 x = dst.createVariable(name, variable.datatype, \
@@ -288,7 +337,6 @@ if (options.elmheader != ""):
                 
                 # re-assign data from gidx to (yidx,xidx)
                 # gidx should be in order already
-                src_data = np.asarray(src[name])
                 dst_data = np.asarray(dst[name])
                 if idim == 0:
                     dst_data[yidx,xidx,] = src_data[gidx,]
@@ -302,6 +350,9 @@ if (options.elmheader != ""):
                 elif idim == 3:
                     dst_data[:,:,:,yidx,xidx,] = src_data[:,:,:,gidx,]
                     dst[name][:,:,:,:,] = dst_data
+                elif idim == 4:
+                    dst_data[:,:,:,:,yidx,xidx,] = src_data[:,:,:,:,gidx,]
+                    dst[name][:,:,:,:,:,] = dst_data
                 else:
                     print('Error - more than at least 4 dimension variable, not supported yet')
                     sys.exit(-1)
