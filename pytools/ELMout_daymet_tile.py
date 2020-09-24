@@ -201,17 +201,40 @@ if (options.elmheader != ""):
     xidx=np.asanyarray(data[:,4],np.int)-1  # in mappings.txt, those index are 1-based
     yidx=np.asanyarray(data[:,5],np.int)-1
     gidx=np.asanyarray(data[:,6],np.int)-1
-    # geox/geoy need to sort by xidx/yidx and removal of duplicate
-    # the following approach can guaranttee xidx/yidx match with original geox/geoy order 
-    [idx, i] = np.unique(xidx, return_index=True)
-    ii = np.argsort(idx)
-    idx = i[ii]
-    geox = geox[idx]
+    
+    #xidx/yidx may be missing (<0)
+    resx = 1000.0 #daymet cell resolution in meters
+    resy = 1000.0
+    if any(xidx<=0) or any(yidx<=0):
+        #
+        xmin = np.min(geox)
+        xmax = np.max(geox)
+        x = np.arange(xmin, xmax+resx, resx)
+        ymin = np.min(geoy)
+        ymax = np.max(geoy)
+        y = np.arange(ymin, ymax+resy, resy)
+        
+        for idx in range(len(gidx)):
+            ii=np.argmin(abs(geox[idx]-x))
+            jj=np.argmin(abs(geoy[idx]-y))
+            xidx[idx] = ii
+            yidx[idx] = jj
+        geox = deepcopy(x)
+        geoy = deepcopy(y)
+        
+    else:
+        # xidx/yidx is really actual indices
+        # geox/geoy need to sort by xidx/yidx and removal of duplicate
+        # the following approach can guaranttee xidx/yidx match with original geox/geoy order 
+        [idx, i] = np.unique(xidx, return_index=True)
+        ii = np.argsort(idx)
+        idx = i[ii]
+        geox = geox[idx]
 
-    [idx, i] = np.unique(yidx, return_index=True)
-    ii = np.argsort(idx)
-    idx = i[ii]
-    geoy = geoy[idx]
+        [idx, i] = np.unique(yidx, return_index=True)
+        ii = np.argsort(idx)
+        idx = i[ii]
+        geoy = geoy[idx]
 
     # read-in datasets one by one
     for ncfile in alldirfiles:
