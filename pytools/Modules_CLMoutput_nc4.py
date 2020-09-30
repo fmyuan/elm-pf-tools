@@ -247,7 +247,7 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
     
 # INPUTS
     #
-    clmhead = clm_odir+'/'+ ncfileheader +'.clm2'
+    clmhead = clm_odir+'/'+ ncfileheader
     print('nc file set : '+ clmhead + '.*.nc')
 
     VARS_ALL = False
