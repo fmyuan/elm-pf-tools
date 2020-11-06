@@ -91,6 +91,7 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
     if(varname in ['SNOW_DEPTH','SNOWDP']):         
         varname=varname+' (m)'
 
+    #varname = varname+' (SWE, mm)'
     
     gridtext = []
 
@@ -109,7 +110,7 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
             #gridtext.append(("GRID "+str(igrd)))
             plt.plot(t, sdata[:,igrd])
         #gridtext.append(["NAMC","DSLT","AS","WBT","TT-WBT","TT"])
-        gridtext.append("Grid_Alert-CANADA")
+        gridtext.append("Daymet_Tile13868 (Kougarok Site")
 
     else:
         #gridtext.append(("GRID "+str(0)))
@@ -292,7 +293,7 @@ for var in varnames:
     for hv in vars_list:
         if re.search(var, hv): 
             var_h = hv
-            hinc  = hv.replace(var,'')
+            hinc  = options.ncfincl+'_' #hv.replace(var,'')
             var_t = '%stime' %hinc
             break
         

@@ -300,12 +300,18 @@ if (options.elmheader != ""):
 
         src = Dataset(ncfile,'r')
         file_names = np.asarray(ncfile)
-        file_timestr = ncfile.split('.')[-4:-1] # '.clm2[elm].h?.????-??-*'
-        file_timestr = file_timestr[0]+'.'+file_timestr[1]+'.'+file_timestr[2]
+        if ('elm' in file_names or 'clm2' in file_names):
+            file_timestr = ncfile.split('.')[-4:-1] # '.clm2[elm].h?.????-??-*'
+            file_timestr = file_timestr[0]+'.'+file_timestr[1]+'.'+file_timestr[2]
+        else:
+            file_timestr = ''
         if (options.workdir2!=''):
             for dir2 in workdir2:
                 file_matched = False
-                ncfile2 = sorted(glob.glob("%s*.%s.%s" % (dir2.strip()+'/', file_timestr,ftype)))
+                if file_timestr == '':
+                    ncfile2 = sorted(glob.glob("%s*.%s" % (dir2.strip()+'/', ftype)))
+                else:
+                    ncfile2 = sorted(glob.glob("%s*.%s.%s" % (dir2.strip()+'/', file_timestr,ftype)))
                 if len(ncfile2)==1: 
                     file_matched = True
                     file_names=np.append(file_names,ncfile2)
