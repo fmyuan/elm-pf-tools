@@ -8,6 +8,7 @@ from pip._vendor.distlib.util import CSVReader
 from calendar import isleap
 from numpy import intersect1d
 from matplotlib.pyplot import axis
+import glob
 
 #ncopath = '/usr/local/nco/bin/'
 #####################################################################################################
@@ -702,9 +703,15 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
     met ={}
     vdims={}
     mdoy=[0,31,59,90,120,151,181,212,243,273,304,334]#monthly starting DOY
-    if('GSWP3' in met_type):
-        varlist=['FSDS','PRECTmms','FLDS','PSRF','QBOT','TBOT','WIND']
+    if('GSWP3' in met_type or \
+       'Site' in met_type):
+        
+        if 'GSWP3' in met_type:
+            varlist=['FSDS','PRECTmms','FLDS','PSRF','QBOT','TBOT','WIND']
+        if 'Site' in met_type:
+            varlist=['FSDS','PRECTmms','FLDS','PSRF','RH','TBOT','WIND']
 
+        if (len(vars)<=0): vars=varlist
         for v in vars:
             if v not in varlist:
                 print('NOT found variable:  '+ v)
@@ -713,22 +720,29 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
                  
             
             # file directories
-            if (v == 'FSDS'):
-                fdir = metdir+'/Solar3Hrly/'
-            elif (v == 'PRECTmms'):
-                fdir = metdir+'/Precip3Hrly/'
-            else:
-                fdir = metdir+'/TPHWL3Hrly/'
-                
+            if 'GSWP3' in met_type:
+                if (v == 'FSDS'):
+                    fdir = metdir+'/Solar3Hrly/'
+                elif (v == 'PRECTmms'):
+                    fdir = metdir+'/Precip3Hrly/'
+                else:
+                    fdir = metdir+'/TPHWL3Hrly/'
+            if 'Site' in met_type:
+                fdir = metdir+'/'
+                 # So 'metdir' must be full path, e.g. ../atm/datm7/CLM1PT_data/1x1pt_US-Brw
 
             #
             tvar = np.asarray([])
             vdata= np.asarray([])
-            dirfiles = sorted(os.listdir(fdir))
+            if (fileheader==''):
+                dirfiles = sorted(os.listdir(fdir))
+            else:
+                fdirheader=fdir+fileheader.strip()
+                dirfiles = sorted(glob.glob("%s*.*" % fdirheader))  # maybe file pattern in 'fileheader'
             for dirfile in dirfiles:
                 # in metdata directory
-                if(fileheader in dirfile):
-                    fnc = Dataset(fdir+'/'+dirfile,'r')
+                if(os.path.isfile(dirfile)):
+                    fnc = Dataset(dirfile,'r')
 
                     # only need to read once for all files
                     if ('LATIXY' not in met.keys()):
@@ -787,6 +801,10 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
                 
         # all vars done
     
+    else:
+        print('NOT supported Met_type: '+ met_type)
+        sys.exit(-1)
+        
     return ix,iy, vdims,met
     
     
