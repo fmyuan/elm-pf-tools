@@ -22,6 +22,43 @@ from hdf5_modules import Read1hdf                         # for ATS metdata in h
 from Modules_plots import SinglePlotting, One2OnePlotting,TimeGridedVarPlotting
 
 # ---------------------------------------------------------------
+#  Data sub-timing (down) precipitation (rate-type data), from up-integration (known)
+def RateRedistribution(sdata_src, sdata_up, rh=[]):
+    # 'sdata_src' is providing sub-timely variation, 
+    # while 'sdata_up' is rate integrated-up, which should be conserved after re-distribution
+    # For 'precipitation', for example, if no sub-timely pattern (variation, e.g. no rain in a day), 
+    #  it's still possible to re-distribute if relative humidity known
+    
+    if (len(rh) >0):
+        if (len(rh) != len(sdata_src)):
+            print('Error: redistributing data size different: ', len(sdata_src), len(rh))
+            os.exit(-1)
+    
+    # it's required that len(sdata_src) is muliple of len(sdata_up)
+    if(np.mod(len(sdata_src),len(sdata_up))!=0):
+        print('Error: length of "sdata_src" not multiple of "sdata_up" - ', len(sdata_src), len(sdata_up))
+        os.exit(-2)
+    else:
+        nsub = int(len(sdata_src)/len(sdata_up))
+    
+    #
+    sdata_adj = []
+    for i in range(len(sdata_up)):
+        isub = i*nsub
+        frac = sdata_src[isub:isub+nsub]
+        tot = np.sum(frac)
+        if tot!=0: 
+            frac = frac/tot
+        else:
+            frac[:] = 1.0/nsub
+            # this is temporarily set, and would be using 'rh' variation (TODO)
+        
+        sdata_adj = np.hstack((sdata_adj, frac*sdata_up[i]*nsub))  # '*nsub' will allow rate unit same
+        
+    #
+    return sdata_adj
+
+#-------------------------------------------------------------------------------
 #  Data sub-timing (down)
 def DataTimeDown(sdata_jointting, src, target, data_method='offset'):
     
@@ -222,7 +259,7 @@ parser.add_option("--e3sm_metdomain", dest="met_domain", default="", \
 parser.add_option("--e3sm_metheader", dest="met_header", default="", \
                   help="e3sminput directory (default = '', i.e., standard file name)")
 parser.add_option("--varname", dest="vars", default="", \
-                  help = "variable name to be merged/jointed: ONLY one of 'TBOT, PRECT, QBOT, RH, FSDS, FLDS, PSRF, WIND' ")
+                  help = "variable name to be merged/jointed: ONLY one of 'TBOT, PRECT, QBOT, RH, FSDS, FLDS, estFLDS, PSRF, WIND' ")
 parser.add_option("--lon", dest="lon", default=-999, \
                   help = " longitude to be reading/plotting, default -999 for first one")
 parser.add_option("--lat", dest="lat", default=-999, \
@@ -232,10 +269,11 @@ parser.add_option("--user_metdir", dest="user_metdir", default="./", \
                   help="user-defined met directory (default = ./, i.e., under current directory)")
 parser.add_option("--user_metfile", dest="user_metfile", default="", \
                   help="user-defined met file(s) under user_metdir (default = '', i.e., None)")
-##
-parser.add_option("--t_unit", dest="t_unit", default="Days", \
-                  help="X-axis time unit (default = Days, i.e. Days since start-time of simulation)")
-
+parser.add_option("--source_adjusting", dest="src_adj", default=False, \
+                  help = "adjusting source data by detrended mean", action="store_true")
+parser.add_option("--plotting", dest="plotting", default=False, \
+                  help = "plotting data for checking", action="store_true")
+#
 (options, args) = parser.parse_args()
 
 
@@ -243,14 +281,6 @@ parser.add_option("--t_unit", dest="t_unit", default="Days", \
 
 startdays = -9999
 enddays = -9999
-
-tunit = str.capitalize(options.t_unit)
-if tunit.startswith("H"): 
-    day_scaling = 24.0
-elif tunit.startswith("Y"): 
-    day_scaling = 1.0/365.0
-else:
-    day_scaling = 1.0
 
 #-----------------------------------------------------------------------------------
 if (options.vars == ''):
@@ -597,7 +627,7 @@ if('CRU' in options.met_type or \
    'cplbypass' in options.met_type): # ELM offline forcing
     data2 = np.squeeze(sdata_elm)
     t2 = t_elm
-    vname1=vname_elm
+    vname2=vname_elm
 
 #--------------------------------------------------------------------------------------
 # SEASONALITY
@@ -607,6 +637,7 @@ ANNUALLY=True
 #
 detrending='yearly'
 #detrending=''
+if (vname1=='NONE' or vname2=='NONE'): detrending=''
 
 if (detrending!=''):
     t1, data1, t1_yrly, data1_yrly, t1_seasonally, data1_seasonally, fitfunc_data1 = \
@@ -617,10 +648,12 @@ if (detrending!=''):
         DataTimePatterns(t2, data2, SEASONALLY, ANNUALLY, ts_yrly=365, detrending=detrending)
     noted = 'detrended'
 else:
+    
     t1, data1, t1_yrly, data1_yrly, t1_seasonally, data1_seasonally = \
         DataTimePatterns(t1, data1, SEASONALLY, ANNUALLY, ts_yrly=365)
     # t1/data1 may be integrated if its 'ts_yrly' over 365 (i.e. sub-daily TS)
     #SinglePlotting(t1, '', ['original','de-trended'], ['-','-'], [sdata_ats, data1]) # for checking
+    
     t2, data2, t2_yrly, data2_yrly, t2_seasonally, data2_seasonally = \
         DataTimePatterns(t2, data2, SEASONALLY, ANNUALLY, ts_yrly=365)
     noted = 'orig'
@@ -637,25 +670,65 @@ else:
 #--------------------------------------------------------------------------------------
 # Merging
 
-CHECKING=True
-
 # by jointing 2 datasets directly
 BY_JOINTING=True
 if (BY_JOINTING):
     noted = noted+'_jointed'
+
+    # Source time/data for up-/-down temporally-scaling
+    t_src = deepcopy(t_elm)
+    sdata_src = deepcopy(sdata_elm)
     
     # joint-smooth-transition
     if detrending!='':
-        # time-interval sync'ed data2/data1
-        tj=(t2[-1]+t1[0])/2.0
-        jointgap_data = fitfunc_data2(tj)-fitfunc_data1(tj)
-        data2 = data2 - jointgap_data
+        # prior to adjust data, save if need to backwardly adjust 'data2' from 'data1'
+        if (options.src_adj):
+
+            # precipitation (rate): re-distruting but conserved daily rate
+            if (options.vars=='PRECT'):
+                for i in range(len(t2_yrly)):
+                    iyr2 = t2_yrly[i]
+                    iyr1 = t1_yrly[i]  # this is temporary, should be from 'similarity' analysis above
+                    idx2 = np.where((t_src>=iyr2*365.0) & (t_src<(iyr2+1.0)*365.0))
+                    idx1 = np.where((t1>=iyr1*365.0) & (t1<(iyr1+1.0)*365.0))
+                    sdata_iyr = sdata_src[idx2]
+                    sdata_iyr = RateRedistribution(sdata_iyr, data1[idx1])
+                    sdata_src[idx2] = sdata_iyr
+            
+            elif (options.vars=='TBOT' or options.vars=='PSRF'):
+                # T/P variables
+                offset12_yrly = np.nanmean(data1_yrly)-np.nanmean(data2_yrly)
+                sdata_src = sdata_src-offset12_yrly
+            else:
+                # humidity, radiations, wind speedy
+                try:
+                    ratio12_yrly = np.nanmean(data1_yrly)/np.nanmean(data2_yrly)
+                except:
+                    # in case np.nanmen(data2_yrly) = 0
+                    ratio12_yrly = 1.0
+                sdata_src = sdata_src*ratio12_yrly
     
-        # integrated data2/data1
-        jointgap_yrly = np.nanmean(data2_yrly)-np.nanmean(data1_yrly)
-        data2_yrly = data2_yrly - jointgap_yrly
-        jointgap_seasonally = np.nanmean(data2_seasonally)-np.nanmean(data1_seasonally)
-        data2_seasonally = data2_seasonally - jointgap_seasonally
+            # data scaled, requiring re-do time-pattern analysis
+            t2, data2, t2_yrly, data2_yrly, t2_seasonally, data2_seasonally, fitfunc_data2 = \
+                DataTimePatterns(t_src, sdata_src, SEASONALLY, ANNUALLY, ts_yrly=365, detrending=detrending)
+            
+            # no-need to do scaling below
+            jointgap_data = 0.0
+            jointgap_yrly = 0.0
+            jointgap_seasonally = 0.0
+        
+        else:
+            
+            # time-interval sync'ed data2/data1
+            tj=(t2[-1]+t1[0])/2.0
+            jointgap_data = fitfunc_data2(tj)-fitfunc_data1(tj)
+            data2 = data2 - jointgap_data
+    
+            # integrated data2/data1
+            jointgap_yrly = np.nanmean(data2_yrly)-np.nanmean(data1_yrly)
+            data2_yrly = data2_yrly - jointgap_yrly
+            jointgap_seasonally = np.nanmean(data2_seasonally)-np.nanmean(data1_seasonally)
+            data2_seasonally = data2_seasonally - jointgap_seasonally
     
     else:
         jointgap_data = 0.0
@@ -663,10 +736,6 @@ if (BY_JOINTING):
         jointgap_seasonally = 0.0
     
     
-    # Source time/data for up-/-down temporally-scaling
-    t_src = deepcopy(t_elm)
-    sdata_src = deepcopy(sdata_elm)
-
     # to be jointed/temporally-scaling
     t_jointed = deepcopy(t_src)
     sdata_jointed = deepcopy(sdata_src)
@@ -691,11 +760,16 @@ if (BY_JOINTING):
             twidth = 1.0  # 1-d moving-window (for 'data_method' of 'smooth', t spans 2 or more timesteps)
             idx = np.where((t2>=td0_t2) & (t2<(td0_t2+twidth)))
             src = data2[idx]
-            idx = np.where((t1>=td0_t1) & (t1<(td0_t1+twidth)))
-            target = data1[idx]
             
-            # 'data_method': 'offset' (default), 'ratio','smooth'
-            sdata_jointting = DataTimeDown(sdata_jointting, src, target, data_method='offset')
+            if (vname1!='NONE'):
+                idx = np.where((t1>=td0_t1) & (t1<(td0_t1+twidth)))
+                target = data1[idx]
+                
+                # 'data_method': 'offset' (default), 'ratio','smooth'
+                sdata_jointting = DataTimeDown(sdata_jointting, src, target, data_method='offset')
+                
+            #else:
+                # do nothing if 'data1' not exists, then just simply copy data
             
             sdata_jointed = np.hstack((sdata_jointed, sdata_jointting))
 
@@ -705,7 +779,7 @@ if (BY_JOINTING):
         if(iyr_t_src>=len(t2_yrly)): iyr_t_src = 0
 
     #DONE 'for iyr in np.floor(t1_yrly)'
-    if (CHECKING):
+    if (options.plotting):
         SinglePlotting(t_jointed, 'Jointed', ['-'], ['-'], sdata_jointed)
 
         txx, dataxx, txx_yrly, dataxx_yrly, txx_seasonally, dataxx_seasonally = \
@@ -717,7 +791,7 @@ if (BY_JOINTING):
 #--------------------------------------------------------------------------------------
 # printing plot in PDF
 # for checking data-jointing
-if (CHECKING):
+if (options.plotting):
     tt=np.hstack((t_elm,t_ats))
     dd=np.hstack((np.squeeze(sdata_elm),sdata_ats))
     SinglePlotting(tt, 'Original', ['-'], ['-'], dd, figno='1-orig')
