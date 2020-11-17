@@ -297,6 +297,41 @@ elif(not options.vars in ['TBOT', 'PRECT', 'QBOT', 'RH', 'FSDS', 'FLDS', 'estFLD
 
 
 #--------------------------------------------------------------------------------------
+# standard met variables for ELM
+if(options.vars=='TBOT'):
+    vname_elm = 'TBOT'
+    varunit = 'K'
+elif(options.vars=='PRECT'):
+    vname_elm = 'PRECTmms'
+    varunit = 'mm/s'
+elif(options.vars=='QBOT'):
+    vname_elm = 'QBOT'
+    varunit = 'kg/kg'
+elif(options.vars=='RH'):
+    vname_elm = 'RH'
+    varunit = '-'
+elif(options.vars=='FSDS'):
+    vname_elm = 'FSDS'
+    varunit = 'W/m2'
+elif(options.vars=='FLDS'):
+    vname_elm = 'FLDS'
+    varunit = 'W/m2'
+elif(options.vars=='estFLDS'):
+    vname_elm = 'estFLDS'
+    varunit = 'W/m2'
+elif(options.vars=='PSRF'):
+    vname_elm = 'PSRF'
+    varunit = 'Pa'
+elif(options.vars=='WIND'):
+    vname_elm = 'WIND'
+    varunit = 'm/s'
+else:
+    print('NOT supported variable name, should be one of : ')
+    print('TBOT, PRECT, QBOT, RH, FSDS, FLDS, estFLDS, PSRF, WIND')
+    sys.exit(-1)
+
+t_elm = []
+vardatas = []
 # read-in metdata from CPL_BYPASS_FULL
 if ('cplbypass' in options.met_type or 'CPL' in options.met_type):
     cplbypass_dir=options.met_idir+'/cpl_bypass_full'
@@ -306,7 +341,7 @@ if ('cplbypass' in options.met_type or 'CPL' in options.met_type):
     lat = float(options.lat)
 
     # read in
-    ix,iy, varsdims, varsdata = \
+    ix,iy, varsdims, vardatas = \
         Modules_metdata.clm_metdata_cplbypass_read( \
                             cplbypass_dir,cplbypass_fileheader, cplbypass_mettype, lon, lat, varnames)
 
@@ -319,63 +354,11 @@ if ('cplbypass' in options.met_type or 'CPL' in options.met_type):
     tvarname = 'DTIME'    # variable name for time/timing
     #cplvars =  ['DTIME','tunit','t0_datetime','LONGXY','LATIXY',
     #            'FLDS','FSDS','PRECTmms','PSRF','QBOT/RH','TBOT','WIND']
-    vars_list = list(varsdata.keys())
-    t = vardatas[tvarname] # days since 1900-01-01-00000
-
-    if(options.vars=='TBOT'):
-        vname_elm = 'TBOT'
-        varunit = 'K'
-    elif(options.vars=='PRECT'):
-        vname_elm = 'PRECTmms'
-        varunit = 'mm/s'
-    elif(options.vars=='QBOT'):
-        vname_elm = 'QBOT'
-        varunit = '-'
-    elif(options.vars=='RH'):
-        vname_elm = 'RH'
-        varunit = '-'
-    elif(options.vars=='FSDS'):
-        vname_elm = 'FSDS'
-        varunit = 'W/m2'
-    elif(options.vars=='FLDS'):
-        vname_elm = 'FLDS'
-        varunit = 'W/m2'
-    elif(options.vars=='PSRF'):
-        vname_elm = 'PSRF'
-        varunit = 'Pa'
-    elif(options.vars=='WIND'):
-        vname_elm = 'WIND'
-        varunit = 'm/s'
-    else:
-        print('NOT supported variable name, should be one of : ')
-        print('TBOT, PRECT, QBOT, RH, FSDS, FLDS, PSRF, WIND')
-        sys.exit(-1)
-
-    t0 = 1900*365 # days since 0000-01-01-00000
-
-    for varname in vars_list:
-        if vname_elm not in varname: continue
-        
-        vardata = vardatas[varname]
-        if 'PRECTmms' in varname: 
-            sdata_elm = deepcopy(vardata)*86400000 # m/s -> mm/day
-        else:
-            sdata_elm = deepcopy(vardata)
-        #SinglePlotting(t, time_unit, varname, varunit, sdata_elm) # for checking
-        
-        vname_elm = varname
-        break
-        
-    #
-    t_elm = deepcopy(t)+t0
-    del vardata, vardatas, t
-
-
 
 #--------------------------------------------------------------------------------------
 # read-in metdata from full met directory, except for CPL_BYPASS
 # E3SM met data
-if (('CRU' in options.met_type or \
+elif (('CRU' in options.met_type or \
     'GSWP3' in options.met_type or \
     'Site' in options.met_type) and \
     ('cplbypass' not in options.met_type and 'CPL' not in options.met_type)):
@@ -403,84 +386,85 @@ if (('CRU' in options.met_type or \
     tvarname = 'time'    # variable name for time/timing
     #cplvars =  ['time','tunit','LONGXY','LATIXY',
     #            'FLDS','FSDS','PRECTmms','PSRF','QBOT/RH','TBOT','WIND']
+
+#------------------------------
+# if read-in data successfully
+if len(vardatas)>0:
     vars_list = list(vardatas.keys())
-    tunit0 = 0.0
     
     t = vardatas[tvarname] # days since 1901-01-01-00000
     time_unit = 'days-since-0000-01-01-00:00:00'
     t0 = 1900*365 # converted to days since 0000-01-01-00000
 
-    if(options.vars=='TBOT'):
-        vname_elm = 'TBOT'
-        varunit = 'K'
-    elif(options.vars=='PRECT'):
-        vname_elm = 'PRECTmms'
-        varunit = 'mm/s'
-    elif(options.vars=='QBOT'):
-        vname_elm = 'QBOT'
-        varunit = 'kg/kg'
-    elif(options.vars=='RH'):
-        vname_elm = 'RH'
-        varunit = '-'
-    elif(options.vars=='FSDS'):
-        vname_elm = 'FSDS'
-        varunit = 'W/m2'
-    elif(options.vars=='FLDS'):
-        vname_elm = 'FLDS'
-        varunit = 'W/m2'
-    elif(options.vars=='estFLDS'):
-        vname_elm = 'estFLDS'
-        vars_list = np.hstack((vars_list,vname_elm))
-        varunit = 'W/m2'
-    elif(options.vars=='PSRF'):
-        vname_elm = 'PSRF'
-        varunit = 'Pa'
-    elif(options.vars=='WIND'):
-        vname_elm = 'WIND'
-        varunit = 'm/s'
-    else:
-        print('NOT supported variable name, should be one of : ')
-        print('TBOT, PRECT, QBOT, RH, FSDS, FLDS, estFLDS, PSRF, WIND')
-        sys.exit(-1)
-
     for varname in vars_list:
-        if vname_elm not in varname: 
-            continue
-        elif (vname_elm=='estFLDS'):
-            #Longwave radiation (calculated from air temperature, humidity)
-            if 'TBOT' in vars_list:
-                tk = np.squeeze(vardatas['TBOT'])
-            else:
-                print('ERROR: for calculating FLDS, air temperature is required')
-                sys.exit(-1)
-            if 'PSRF' in vars_list:
-                pres_pa = np.squeeze(vardatas['PSRF'])
-            else:
-                pres_pa = 101325.0
-            if 'QBOT' in vars_list:
-                qbot = np.squeeze(vardatas['QBOT'])
-                rh = []
-            elif 'RH' in vars_list:
-                rh = np.squeeze(vardatas['RH'])
-                qbot = []
-            vardatas[varname] = \
-                Modules_metdata.calcFLDS(tk, pres_pa, q_kgkg=qbot, rh_100=rh)
-            
+        if vname_elm not in varname: continue
         
-        vardata = vardatas[varname]
         if 'PRECTmms' in varname: 
-            sdata_elm = deepcopy(vardata)*86400 # mm/s -> mm/day
+            sdata_elm = deepcopy(vardatas[varname])*86400 # mm/s -> mm/day
         else:
-            sdata_elm = deepcopy(vardata)
+            sdata_elm = deepcopy(vardatas[varname])
         sdata_elm = np.squeeze(sdata_elm)
         #SinglePlotting(t, time_unit, varname, varunit, sdata_elm) # for checking
         
         vname_elm = varname
         break
-        
     #
     t_elm = np.asarray(t)+t0
-    del vardata, vardatas, t
+    del t
+    #       
+    # usually  either 'RH' or 'QBOT' is available, but if the other is required
+    if (vname_elm=='RH'):
+        if 'QBOT' in vars_list and 'RH' not in vars_list:
+            qbot = np.squeeze(vardatas['QBOT'])
+            if 'TBOT' in vars_list:
+                tk = np.squeeze(vardatas['TBOT'])
+                if 'PSRF' in vars_list:
+                    pres_pa = np.squeeze(vardatas['PSRF'])
+                else:
+                    pres_pa = 101325.0
+                sdata_elm = Modules_metdata.converHumidity(tk, pres_pa, q_kgkg=qbot)
+            else:
+                print('ERROR: for RH coverting from QBOT, air temperature is required')
+                sys.exit(-1)
+    elif (vname_elm=='QBOT'):
+        if 'RH' in vars_list and 'QBOT' not in vars_list:
+            rh = np.squeeze(vardatas['RH'])
+            if 'TBOT' in vars_list:
+                tk = np.squeeze(vardatas['TBOT'])
+                if 'PSRF' in vars_list:
+                    pres_pa = np.squeeze(vardatas['PSRF'])
+                else:
+                    pres_pa = 101325.0
+            else:
+                print('ERROR: for RH coverting from QBOT, air temperature is required')
+                sys.exit(-1)
+            sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, rh_100=rh)
+    # if FLDS estimated from humidity and temperature
+    elif (vname_elm=='estFLDS'):
+        #Longwave radiation (calculated from air temperature, humidity)
+        if 'TBOT' in vars_list:
+            tk = np.squeeze(vardatas['TBOT'])
+        else:
+            print('ERROR: for calculating FLDS, air temperature is required')
+            sys.exit(-1)
+        if 'PSRF' in vars_list:
+            pres_pa = np.squeeze(vardatas['PSRF'])
+        else:
+            pres_pa = 101325.0
+        if 'QBOT' in vars_list:
+            qbot = np.squeeze(vardatas['QBOT'])
+            rh = []
+        elif 'RH' in vars_list:
+            rh = np.squeeze(vardatas['RH'])
+            qbot = []
+        else:
+            print('ERROR: for calculating FLDS, either RH or QBOT is required')
+            sys.exit(-1)
+        sdata_elm = \
+            Modules_metdata.calcFLDS(tk, pres_pa, q_kgkg=qbot, rh_100=rh)
+    
+    # clean-up
+    del vardatas, vars_list
 
 
 #--------------------------------------------------------------------------------------
@@ -497,10 +481,10 @@ if ('NCDC' in options.met_type):
     # need to recalculate time
     tvarname = 'time'    # variable name for time/timing
     
-    varsdata = {}
-    varsdata['time']=(odata['YEAR']-1900.0)*365.0+(odata['DOY']-1.0)  # days since 1900-01-01 00:00:00
+    vardatas = {}
+    vardatas['time']=(odata['YEAR']-1900.0)*365.0+(odata['DOY']-1.0)  # days since 1900-01-01 00:00:00
     lpyrindex=[i for i, x in enumerate(odata['DOY']) if x == 366.0 ]  # NCDC data is in leap-year calender. Here simply remove last day of the year
-    varsdata['time']=np.delete(varsdata['time'],lpyrindex)
+    vardatas['time']=np.delete(vardatas['time'],lpyrindex)
 
     varsdims = {}
     varsdims['time']  = tvarname
@@ -510,11 +494,11 @@ if ('NCDC' in options.met_type):
     varsdims['PRCPd'] = tvarname
     varsdims['SNWDd'] = tvarname
 
-    varsdata['TBOTd']=np.delete(odata['TAVG'],lpyrindex)+273.15
-    varsdata['TMAXd']=np.delete(odata['TMAX'],lpyrindex)+273.15
-    varsdata['TMINd']=np.delete(odata['TMIN'],lpyrindex)+273.15
-    varsdata['PRCPd']=np.delete(odata['PRCP'],lpyrindex)
-    varsdata['SNWDd']=np.delete(odata['SNWD'],lpyrindex)
+    vardatas['TBOTd']=np.delete(odata['TAVG'],lpyrindex)+273.15
+    vardatas['TMAXd']=np.delete(odata['TMAX'],lpyrindex)+273.15
+    vardatas['TMINd']=np.delete(odata['TMIN'],lpyrindex)+273.15
+    vardatas['PRCPd']=np.delete(odata['PRCP'],lpyrindex)
+    vardatas['SNWDd']=np.delete(odata['SNWD'],lpyrindex)
 
     
     nx=1#len(site['LONGITUDE'])
@@ -581,7 +565,7 @@ if ('ATS_h5' in options.met_type):
         vname_ats = 'precipitation [m s^-1]'
         varunit = 'm/s'
     elif(options.vars=='QBOT'):
-        vname_ats = 'relative humidity' # note that must do convertion below
+        vname_ats = 'specific humidity' # note that must do convertion below
         varunit = '-'
     elif(options.vars=='RH'):
         vname_ats = 'relative humidity'
@@ -630,14 +614,14 @@ if ('ATS_h5' in options.met_type):
             if 'air temperature' in varnames[ivar]: 
                 tk = vardatas[varnames[ivar]]
             elif 'relative humidity' in varnames[ivar]:
-                rh = vardatas[varnames[ivar]]
+                rh = vardatas[varnames[ivar]]*100
             else:
                 continue
         
         #
         pres_pa = 101325.0
         if(options.vars=='QBOT'):
-            sdata_ats = Modules_metdata.converHumidity(tk, pres_pa, q_kgkg=[], rh_100=rh)
+            sdata_ats = Modules_metdata.convertHumidity(tk, pres_pa, q_kgkg=[], rh_100=rh)
         #
         if(options.vars=='estFLDS'):
             sdata_ats = Modules_metdata.calcFLDS(tk, pres_pa, q_kgkg=[], rh_100=rh)
