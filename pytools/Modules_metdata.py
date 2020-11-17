@@ -12,6 +12,73 @@ import glob
 
 #ncopath = '/usr/local/nco/bin/'
 #####################################################################################################
+
+# ---------------------------------------------------------------
+# vapor pressure (pa) at saturated from air temperature (K)
+def vpsat_pa(tk):
+    a = (6.107799961, 4.436518521e-01, \
+         1.428945805e-02,2.650648471e-04, \
+         3.031240396e-06, 2.034080948e-08, \
+         6.136820929e-11)
+
+    b = (6.109177956, 5.034698970e-01, \
+         1.886013408e-02, 4.176223716e-04, \
+         5.824720280e-06, 4.838803174e-08, \
+         1.838826904e-10)
+
+    vpsat = np.zeros_like(tk)
+    idx=np.where(tk>273.15)
+    if (len(idx[0])>0):
+        tc = tk[idx]-273.15
+        vpsat[idx] = 100.*(a[0]+tc*(a[1]+tc*(a[2]+tc*(a[3]+tc*(a[4]+tc*(a[5]+tc*a[6]))))))
+    
+    idx=np.where(tk<=273.15)
+    if (len(idx[0])>0):
+        tc = tk[idx]-273.15
+        vpsat[idx] = 100.*(b[0]+tc*(b[1]+tc*(b[2]+tc*(b[3]+tc*(b[4]+tc*(b[5]+tc*b[6]))))))
+
+    return vpsat
+
+# ---------------------------------------------------------------
+# conversion btw specific (kg/kg) and relative humidity (percentage), 
+# known air temperature (K) and pressure (pa)
+def convertHumidity(tk, pres_pa, q_kgkg=[], rh_100=[]):
+    
+    vpsat = vpsat_pa(tk)
+    d_pres = pres_pa - 0.378*vpsat
+    qsat = 0.622*vpsat / d_pres
+    if rh_100.size>0:
+        q_kgkg = qsat*rh_100/100.0
+        
+        return q_kgkg
+    
+    elif q_kgkg.size>0:
+        rh_100 = q_kgkg/qsat*100.0
+        
+        return rh_100
+    else:
+        print('ERROR: must provide either "q_kgkg" or "rh_100" ')
+
+# ---------------------------------------------------------------
+#Longwave radiation (calculated from air temperature, in K, specific humidity in kg/kg or RH in percentage)
+def calcFLDS(tk, pres_pa, q_kgkg=[], rh_100=[]):
+    
+    CONST_STEBOL  = 5.67e-8      # Stefan-Boltzmann constant ~ W/m^2/K^4 
+    
+    if rh_100.size>0:
+        q_kgkg = convertHumidity(tk, pres_pa, rh_100=rh_100)
+    elif q_kgkg.size<=0:
+        print('ERROR: must provide either "q_kgkg" or "rh_100" ')
+    
+    es =  pres_pa * q_kgkg /(0.622 + 0.378 * q_kgkg )
+    ea = 0.70 + 5.95e-7 * es * np.exp(1500.0/tk)
+    FLDS = ea * CONST_STEBOL * (tk**4)
+    
+    #
+    return FLDS
+
+
+
 #
 # ------- GSWP3 met forcing data extraction for site or sites ------------------------------------
 #
