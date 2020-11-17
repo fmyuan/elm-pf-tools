@@ -11,15 +11,18 @@ from netCDF4 import Dataset
 from matplotlib.backends.backend_pdf import PdfPages
 from copy import deepcopy
 
-from Modules_metdata import clm_metdata_cplbypass_read    # CPL_BYPASS
-from Modules_metdata import clm_metdata_read              # GSWP3
-from Modules_metdata import singleNCDCReadCsvfile         # NCDC 
-from Modules_metdata import subsetDaymetRead1NCfile       # DAYMET in nc4 format
-from Modules_metdata import singleDaymetReadCsvfile       # DAYMET in csv format
+import Modules_metdata
+#from Modules_metdata import clm_metdata_cplbypass_read    # CPL_BYPASS
+#from Modules_metdata import clm_metdata_read              # GSWP3
+#from Modules_metdata import singleNCDCReadCsvfile         # NCDC 
+#from Modules_metdata import subsetDaymetRead1NCfile       # DAYMET in nc4 format
+#from Modules_metdata import singleDaymetReadCsvfile       # DAYMET in csv format
 
 from hdf5_modules import Read1hdf                         # for ATS metdata in h5 format
 
 from Modules_plots import SinglePlotting, One2OnePlotting,TimeGridedVarPlotting
+
+
 
 # ---------------------------------------------------------------
 #  Data sub-timing (down) precipitation (rate-type data), from up-integration (known)
@@ -287,9 +290,9 @@ if (options.vars == ''):
     print('No variable name by " --varname=???", one of following ')
     print('TBOT, PRECT, QBOT, RH, FSDS, FLDS, PSRF, WIND')
     sys.exit(-1)
-elif(not options.vars in ['TBOT', 'PRECT', 'QBOT', 'RH', 'FSDS', 'FLDS', 'PSRF', 'WIND']):
+elif(not options.vars in ['TBOT', 'PRECT', 'QBOT', 'RH', 'FSDS', 'FLDS', 'estFLDS', 'PSRF', 'WIND']):
     print('NOT supported variable name, should be one of : ')
-    print('TBOT, PRECT, QBOT, RH, FSDS, FLDS, PSRF, WIND')
+    print('TBOT, PRECT, QBOT, RH, FSDS, FLDS, estFLDS, PSRF, WIND')
     sys.exit(-1)
 
 
@@ -304,7 +307,8 @@ if ('cplbypass' in options.met_type or 'CPL' in options.met_type):
 
     # read in
     ix,iy, varsdims, varsdata = \
-        clm_metdata_cplbypass_read(cplbypass_dir,cplbypass_fileheader, cplbypass_mettype, lon, lat, varnames)
+        Modules_metdata.clm_metdata_cplbypass_read( \
+                            cplbypass_dir,cplbypass_fileheader, cplbypass_mettype, lon, lat, varnames)
 
     # assign data to plotting variables
     nx=len(ix)
@@ -389,7 +393,7 @@ if (('CRU' in options.met_type or \
 
     # read in
     ix,iy, varsdims, vardatas = \
-        clm_metdata_read(metdir,metfileheader, met_type, met_domain, lon, lat,'')
+        Modules_metdata.clm_metdata_read(metdir,metfileheader, met_type, met_domain, lon, lat,'')
     # assign data to plotting variables
     nx=len(ix)
     ny=len(iy)
@@ -414,7 +418,7 @@ if (('CRU' in options.met_type or \
         varunit = 'mm/s'
     elif(options.vars=='QBOT'):
         vname_elm = 'QBOT'
-        varunit = '-'
+        varunit = 'kg/kg'
     elif(options.vars=='RH'):
         vname_elm = 'RH'
         varunit = '-'
@@ -424,6 +428,10 @@ if (('CRU' in options.met_type or \
     elif(options.vars=='FLDS'):
         vname_elm = 'FLDS'
         varunit = 'W/m2'
+    elif(options.vars=='estFLDS'):
+        vname_elm = 'estFLDS'
+        vars_list = np.hstack((vars_list,vname_elm))
+        varunit = 'W/m2'
     elif(options.vars=='PSRF'):
         vname_elm = 'PSRF'
         varunit = 'Pa'
@@ -432,11 +440,32 @@ if (('CRU' in options.met_type or \
         varunit = 'm/s'
     else:
         print('NOT supported variable name, should be one of : ')
-        print('TBOT, PRECT, QBOT, RH, FSDS, FLDS, PSRF, WIND')
+        print('TBOT, PRECT, QBOT, RH, FSDS, FLDS, estFLDS, PSRF, WIND')
         sys.exit(-1)
 
     for varname in vars_list:
-        if vname_elm not in varname: continue
+        if vname_elm not in varname: 
+            continue
+        elif (vname_elm=='estFLDS'):
+            #Longwave radiation (calculated from air temperature, humidity)
+            if 'TBOT' in vars_list:
+                tk = np.squeeze(vardatas['TBOT'])
+            else:
+                print('ERROR: for calculating FLDS, air temperature is required')
+                sys.exit(-1)
+            if 'PSRF' in vars_list:
+                pres_pa = np.squeeze(vardatas['PSRF'])
+            else:
+                pres_pa = 101325.0
+            if 'QBOT' in vars_list:
+                qbot = np.squeeze(vardatas['QBOT'])
+                rh = []
+            elif 'RH' in vars_list:
+                rh = np.squeeze(vardatas['RH'])
+                qbot = []
+            vardatas[varname] = \
+                Modules_metdata.calcFLDS(tk, pres_pa, q_kgkg=qbot, rh_100=rh)
+            
         
         vardata = vardatas[varname]
         if 'PRECTmms' in varname: 
@@ -459,7 +488,7 @@ if (('CRU' in options.met_type or \
 
 if ('NCDC' in options.met_type):
     site,odata_header,odata = \
-        singleNCDCReadCsvfile('2059560_Alert_initproc.csv','NCDC_metric','-999.99') # 'metric' refers to NCDC data converted to metric system already
+        Modules_metdata.singleNCDCReadCsvfile('2059560_Alert_initproc.csv','NCDC_metric','-999.99') # 'metric' refers to NCDC data converted to metric system already
         #singleNCDCReadCsvfile('2022211_MysVanKarem_initproc.csv','NCDC_metric','-9999.99') # 'metric' refers to NCDC data converted to metric system already
         #singleNCDCReadCsvfile('GHCND_Alert_initproc.csv','GHCND','-999.99')
     #site_header = ("LATITUDE","LONGITUDE","ELEVATION")
@@ -560,7 +589,7 @@ if ('ATS_h5' in options.met_type):
     elif(options.vars=='FSDS'):
         vname_ats = 'incoming shortwave radiation'
         varunit = 'W/m2'
-    elif(options.vars=='FLDS'):
+    elif(options.vars=='FLDS' or options.vars=='estFLDS'):
         vname_ats = 'incoming longwave radiation'
         varunit = 'W/m2'
     elif(options.vars=='PSRF'):
@@ -571,7 +600,7 @@ if ('ATS_h5' in options.met_type):
         varunit = 'm/s'
     else:
         print('NOT supported variable name, should be one of : ')
-        print('TBOT, PRECT, QBOT, RH, FSDS, FLDS, PSRF, WIND')
+        print('TBOT, PRECT, QBOT, RH, FSDS, FLDS, estFLDS, PSRF, WIND')
         sys.exit(-1)
 
     t0 = 2015*365 # ==>days since 0000-01-01-000000
@@ -596,13 +625,23 @@ if ('ATS_h5' in options.met_type):
         break # exit for loop
     
     #
-    if(options.vars=='QBOT'):
+    if(options.vars=='QBOT' or options.vars=='estFLDS'):
         for ivar in range(0,nvars):
-            if 'air temperature' not in varnames[ivar]: 
-                continue #skip
-            else:
+            if 'air temperature' in varnames[ivar]: 
                 tk = vardatas[varnames[ivar]]
-         
+            elif 'relative humidity' in varnames[ivar]:
+                rh = vardatas[varnames[ivar]]
+            else:
+                continue
+        
+        #
+        pres_pa = 101325.0
+        if(options.vars=='QBOT'):
+            sdata_ats = Modules_metdata.converHumidity(tk, pres_pa, q_kgkg=[], rh_100=rh)
+        #
+        if(options.vars=='estFLDS'):
+            sdata_ats = Modules_metdata.calcFLDS(tk, pres_pa, q_kgkg=[], rh_100=rh)
+    
     #
     t_ats = np.asarray(t)/86400.0+t0
     del vardatas, t
