@@ -47,7 +47,8 @@ def getvar(ncfile, varname):
     return odata, odata_dims, odata_attr
  
 #----------------------------------------------------------------------------             
-def putvar(ncfile, varname, varvals):
+def putvar(ncfile, varname, varvals, varatts=''):
+    # varatts: 'varname::att=att_val; varname::att=att_val; ...'
     try:
         f = Dataset(ncfile,'r+')
         #
@@ -58,7 +59,7 @@ def putvar(ncfile, varname, varvals):
             return -1
         #
         else:
-            if isinstance(varvals, dict): #multiple dataset for corresponding varname           
+            if isinstance(varvals, dict): #multiple dataset for corresponding same numbers of varname
                 for v in varname:
                     val=np.asarray(varvals[v])
                     if v in f.variables.keys():
@@ -68,35 +69,56 @@ def putvar(ncfile, varname, varvals):
                 v=varname[0]
                 if v in f.variables.keys():
                     f.variables[v][...]=np.copy(val)
+
+            #
+            if varatts!='':
+                varatts=varatts.split(";")
+                for varatt in varatts:
+                    v=varatt.split('::')[0].strip()
+                    att=varatt.split('::')[1].strip().split('=')[0]
+                    att_val=varatt.split('::')[1].strip().split('=')[1]
+                f.variables[v].setncattr(att,att_val)
                 
                 
             f.sync()
             f.close()
             
-            f = Dataset(ncfile,'r')
             return 0
 
     except:
         return -2
 
 #----------------------------------------------------------------------------             
-# duplicately expand all variables along named dimension by multiple times
-def dupexpand(ncfilein, ncfileout,dim_name,dim_multipler):
+# duplicate and/or expand all variables along named dimension by multiple times
+def dupexpand(ncfilein, ncfileout,dim_name='',dim_len=-999, dim_multipler=1):
+    # dim_len -999, no-change; dim_len 0, unlimited; dime_len positive, re-size
+    # but dim_multipler must be 1 (obviously)
+    if (dim_len>=0 and dim_multipler>1):
+        print('Error: cannot have new-dim_len and multiplied len -', dim_len, dim_multipler)
+        sys.exit(-1)
+    
     with Dataset(ncfilein) as src, Dataset(ncfileout, "w") as dst:
         # copy global attributes all at once via dictionary
         dst.setncatts(src.__dict__)
    
-        if type(dim_name)==str: 
+        if type(dim_name)==str:
+            # the following will allow multiple name/leng change 
             dim_name=[dim_name]
             dim_multipler=[dim_multipler]
+            dim_len=[dim_len]
+            
 
-        # copy or multiply dimensions
+        # copy, resize or multiply dimensions
         for name, dimension in src.dimensions.items():
+            len_dimension = len(dimension)
             if name in dim_name:
                 indx=dim_name.index(name)
-                len_dimension = len(dimension)*dim_multipler[indx]
-            else:
-                len_dimension = len(dimension)
+                if (dim_multipler[indx]>1):
+                    len_dimension = len(dimension)*dim_multipler[indx]
+                elif (dim_len[indx]>0):
+                    len_dimension = dim_len[indx]
+                elif (dim_len[indx]==0):
+                    dimension=None
             
             dst.createDimension(name, len_dimension if not dimension.isunlimited() else None)
         #   
@@ -114,13 +136,26 @@ def dupexpand(ncfilein, ncfileout,dim_name,dim_multipler):
             #
             varvals = np.copy(src[name][...])
             for dim in dim_name:
-                if dim in variable.dimensions and dim_multipler[dim_name.index(dim)]>1:
-                    dim_indx = variable.dimensions.index(dim)
-                    multipler = dim_multipler[dim_name.index(dim)]
-                    tmp=varvals
-                    while multipler>1:
-                        tmp=np.concatenate((tmp,varvals), axis=dim_indx)
-                        multipler-=1
+                if dim in variable.dimensions:
+                    if dim_multipler[dim_name.index(dim)]>1:
+                        dim_indx = variable.dimensions.index(dim)
+                        multipler = dim_multipler[dim_name.index(dim)]
+                        tmp=varvals
+                        while multipler>1:
+                            tmp=np.concatenate((tmp,varvals), axis=dim_indx)
+                            multipler-=1
+                    elif dim_len[dim_name.index(dim)]>0:
+                        dim_indx = variable.dimensions.index(dim)
+                        resizer = dim_len[dim_name.index(dim)]
+                        if(resizer>np.size(varvals, axis=dim_indx)):
+                            tmp=varvals
+                            resizer = resizer - np.size(varvals, axis=dim_indx)
+                            while resizer>1:
+                                varval = np.take(varvals, [0], axis=dim_indx)
+                                tmp=np.concatenate((tmp,varval), axis=dim_indx)
+                                resizer-=1
+                        else:
+                            tmp = np.take(varvals, range(resizer), axis=dim_indx)
                     #
                     varvals=tmp
             #           
@@ -130,7 +165,7 @@ def dupexpand(ncfilein, ncfileout,dim_name,dim_multipler):
         #
             
     #            
-    print('done!')
+    
 
 #----------------------------------------------------------------------------             
 # merge all variables along 1 named dimension

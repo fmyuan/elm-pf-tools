@@ -827,6 +827,8 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
                                 tunit= fnc.variables['time'].getncattr('units')
                                 if ('days since' in tunit):
                                     t0=str(tunit).strip('days since')
+                                    if(t0.endswith(' 00') and not t0.endswith(' 00:00:00')):
+                                        t0=t0+':00:00'
                                     t0=datetime.strptime(t0,'%Y-%m-%d %X')
                                     #t0=t0-datetime.strptime('1901-01-01 00:00:00','%Y-%m-%d %X') 
                                     # the above is not right, because  'datetime' is a leap-year system
@@ -858,7 +860,7 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
                 if ('time' not in met.keys()): # only need once, assuming all variables exactly same timing
                      met['time'] = tt
                      vdims['time'] = tdims
-                     met['tunit']='days since 1901-01-01 00:00:00' # Force time unit to be this one
+                     met['tunit']='days since 1901-01-01 00:00:00' # Force all time unit to be this one
 
                 if(v not in met.keys()):
                      met[v]=vdata[it]

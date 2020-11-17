@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-import sys
+import os, sys
+from datetime import datetime
 import glob
 import re
 import math
@@ -11,16 +12,16 @@ from netCDF4 import Dataset
 from matplotlib.backends.backend_pdf import PdfPages
 from copy import deepcopy
 
+# customized modules
 import Modules_metdata
 #from Modules_metdata import clm_metdata_cplbypass_read    # CPL_BYPASS
 #from Modules_metdata import clm_metdata_read              # GSWP3
 #from Modules_metdata import singleNCDCReadCsvfile         # NCDC 
 #from Modules_metdata import subsetDaymetRead1NCfile       # DAYMET in nc4 format
 #from Modules_metdata import singleDaymetReadCsvfile       # DAYMET in csv format
-
 from hdf5_modules import Read1hdf                         # for ATS metdata in h5 format
-
 from Modules_plots import SinglePlotting, One2OnePlotting,TimeGridedVarPlotting
+import netcdf_modules as nfmod
 
 
 
@@ -276,6 +277,10 @@ parser.add_option("--source_adjusting", dest="src_adj", default=False, \
                   help = "adjusting source data by detrended mean", action="store_true")
 parser.add_option("--plotting", dest="plotting", default=False, \
                   help = "plotting data for checking", action="store_true")
+parser.add_option("--nc_create", dest="nc_create", default=False, \
+                  help = "output new nc file", action="store_true")
+parser.add_option("--nc_write", dest="nc_write", default=False, \
+                  help = "output to a existed nc file", action="store_true")
 #
 (options, args) = parser.parse_args()
 
@@ -392,9 +397,10 @@ elif (('CRU' in options.met_type or \
 if len(vardatas)>0:
     vars_list = list(vardatas.keys())
     
-    t = vardatas[tvarname] # days since 1901-01-01-00000
-    time_unit = 'days-since-0000-01-01-00:00:00'
-    t0 = 1900*365 # converted to days since 0000-01-01-00000
+    t = vardatas[tvarname] # days since 1901-01-01 00:00
+    tunit = vardatas['tunit']
+    tunit = tunit.replace('1901-','0001-')
+    t0 = 1901*365 # converted from 'days-since-1901-01-01-00:00' to days since 0001-01-01 00:00
 
     for varname in vars_list:
         if vname_elm not in varname: continue
@@ -410,6 +416,7 @@ if len(vardatas)>0:
         break
     #
     t_elm = np.asarray(t)+t0
+    tunit_elm = tunit
     del t
     #       
     # usually  either 'RH' or 'QBOT' is available, but if the other is required
@@ -462,6 +469,7 @@ if len(vardatas)>0:
             sys.exit(-1)
         sdata_elm = \
             Modules_metdata.calcFLDS(tk, pres_pa, q_kgkg=qbot, rh_100=rh)
+        vname_elm='FLDS'
     
     # clean-up
     del vardatas, vars_list
@@ -482,7 +490,7 @@ if ('NCDC' in options.met_type):
     tvarname = 'time'    # variable name for time/timing
     
     vardatas = {}
-    vardatas['time']=(odata['YEAR']-1900.0)*365.0+(odata['DOY']-1.0)  # days since 1900-01-01 00:00:00
+    vardatas['time']=(odata['YEAR']-1901.0)*365.0+(odata['DOY']-1.0)  # days since 1901-01-01 00:00:00
     lpyrindex=[i for i, x in enumerate(odata['DOY']) if x == 366.0 ]  # NCDC data is in leap-year calender. Here simply remove last day of the year
     vardatas['time']=np.delete(vardatas['time'],lpyrindex)
 
@@ -510,9 +518,9 @@ if ('NCDC' in options.met_type):
     iy = 0
     vars_list = list(varsdata.keys())
 
-    t = vardatas[tvarname] # days since 1900-01-01-00000
-    time_unit = 'days-since-0000-01-01-00:00:00'
-    t0 = 1900*365 # converted to days since 0000-01-01-00000
+    t = vardatas[tvarname] # days since 1901-01-01-00000
+    tunit = 'days since 0001-01-01 00:00'
+    t0 = 1901*365 # converted to days since 0000-01-01-00000
 
     if(options.vars=='TBOT'):
         vname_elm = 'TBOTd'
@@ -522,7 +530,7 @@ if ('NCDC' in options.met_type):
         varunit = 'mm/d'
     else:
         print('NOT supported variable name, should be one of : ')
-        print('TBOT, PRECT, QBOT, RH, FSDS, FLDS, PSRF, WIND')
+        print('TBOT, PRECT')
         sys.exit(-1)
 
     for varname in vars_list:
@@ -537,6 +545,7 @@ if ('NCDC' in options.met_type):
         
     #
     t_ncdc = np.asarray(t)+t0
+    tunit_ncdc = tunit
     del vardata, vardatas, t
     
 #--------------------------------------------------------------------------------------
@@ -551,7 +560,7 @@ if ('ATS_h5' in options.met_type):
 
     # 
     t_name='time [s]'
-    time_unit='[s]'
+    tunit='[s]'
     t = vardatas[t_name]
     varnames = [x for x in vardatas.keys() if x!=t_name]
     nvars = len(varnames)
@@ -587,7 +596,7 @@ if ('ATS_h5' in options.met_type):
         print('TBOT, PRECT, QBOT, RH, FSDS, FLDS, estFLDS, PSRF, WIND')
         sys.exit(-1)
 
-    t0 = 2015*365 # ==>days since 0000-01-01-000000
+    t0 = 2016*365 # ==>days since 0001-01-01-000000
     
     for ivar in range(0,nvars):
         if vname_ats not in varnames[ivar]: 
@@ -628,21 +637,36 @@ if ('ATS_h5' in options.met_type):
     
     #
     t_ats = np.asarray(t)/86400.0+t0
+    tunit_ats = 'days since 0001-01-01 00:00'
+
     del vardatas, t
     #
 
 
 #---------------------------------------------------------------------------------------------------------
 # 2 data sets for similiarity and temporal up-scaling/down-scaling
-
 if ('ATS_h5' in options.met_type):
     data1 = sdata_ats
     t1 = t_ats
     vname1=vname_ats
+    tunit1 = tunit_ats
 elif ('NCDC' in options.met_type):
     data1 = sdata_ncdc
     t1 = t_ncdc
     vname1=vname_ncdc
+    tunit1 = tunit_ncdc
+else:
+    t_ats=[]
+    sdata_ats=[]
+    data1=[]
+    t1=[]
+    data1_yrly=[]
+    t1_yrly=[]
+    data1_seasonally=[]
+    t1_seasonally=[]
+    tunit1=''
+    vname1=''
+
 if('CRU' in options.met_type or \
    'Site' in options.met_type or \
    'GSWP3' in options.met_type or \
@@ -651,6 +675,18 @@ if('CRU' in options.met_type or \
     data2 = np.squeeze(sdata_elm)
     t2 = t_elm
     vname2=vname_elm
+    tunit2=tunit_elm
+else:
+    t_elm=[]
+    sdata_elm=[]
+    data2=[]
+    t2=[]
+    data2_yrly=[]
+    t2_yrly=[]
+    data2_seasonally=[]
+    t2_seasonally=[]
+    tunit2=''
+    vname2=''
 
 #--------------------------------------------------------------------------------------
 # SEASONALITY
@@ -663,22 +699,25 @@ detrending='yearly'
 if (vname1=='NONE' or vname2=='NONE'): detrending=''
 
 if (detrending!=''):
-    t1, data1, t1_yrly, data1_yrly, t1_seasonally, data1_seasonally, fitfunc_data1 = \
-        DataTimePatterns(t1, data1, SEASONALLY, ANNUALLY, ts_yrly=365, detrending=detrending) 
-    # (optional) detrending: '', 'yearly','all', with output 'fitfunc_data1' (np.poly1d, i.e. fitfunc_data1(t1))
-    #SinglePlotting(t1, '', ['original','de-trended'], ['-','-'], [sdata_ats, data1]) # for checking 'detrending'
-    t2, data2, t2_yrly, data2_yrly, t2_seasonally, data2_seasonally, fitfunc_data2 = \
-        DataTimePatterns(t2, data2, SEASONALLY, ANNUALLY, ts_yrly=365, detrending=detrending)
+    if (vname1!=''):
+        t1, data1, t1_yrly, data1_yrly, t1_seasonally, data1_seasonally, fitfunc_data1 = \
+            DataTimePatterns(t1, data1, SEASONALLY, ANNUALLY, ts_yrly=365, detrending=detrending) 
+        # (optional) detrending: '', 'yearly','all', with output 'fitfunc_data1' (np.poly1d, i.e. fitfunc_data1(t1))
+        #SinglePlotting(t1, '', ['original','de-trended'], ['-','-'], [sdata_ats, data1]) # for checking 'detrending'
+    if (vname2!=''):
+        t2, data2, t2_yrly, data2_yrly, t2_seasonally, data2_seasonally, fitfunc_data2 = \
+            DataTimePatterns(t2, data2, SEASONALLY, ANNUALLY, ts_yrly=365, detrending=detrending)
     noted = 'detrended'
 else:
     
-    t1, data1, t1_yrly, data1_yrly, t1_seasonally, data1_seasonally = \
-        DataTimePatterns(t1, data1, SEASONALLY, ANNUALLY, ts_yrly=365)
-    # t1/data1 may be integrated if its 'ts_yrly' over 365 (i.e. sub-daily TS)
-    #SinglePlotting(t1, '', ['original','de-trended'], ['-','-'], [sdata_ats, data1]) # for checking
-    
-    t2, data2, t2_yrly, data2_yrly, t2_seasonally, data2_seasonally = \
-        DataTimePatterns(t2, data2, SEASONALLY, ANNUALLY, ts_yrly=365)
+    if (vname1!=''):
+        t1, data1, t1_yrly, data1_yrly, t1_seasonally, data1_seasonally = \
+            DataTimePatterns(t1, data1, SEASONALLY, ANNUALLY, ts_yrly=365)
+        # t1/data1 may be integrated if its 'ts_yrly' over 365 (i.e. sub-daily TS)
+        #SinglePlotting(t1, '', ['original','de-trended'], ['-','-'], [sdata_ats, data1]) # for checking
+    if (vname2!=''):
+        t2, data2, t2_yrly, data2_yrly, t2_seasonally, data2_seasonally = \
+            DataTimePatterns(t2, data2, SEASONALLY, ANNUALLY, ts_yrly=365)
     noted = 'orig'
     
     
@@ -694,7 +733,10 @@ else:
 # Merging
 
 # by jointing 2 datasets directly
-BY_JOINTING=True
+if(vname1!='' and vname2!=''):
+    BY_JOINTING=True
+else:
+    BY_JOINTING=False
 if (BY_JOINTING):
     noted = noted+'_jointed'
 
@@ -800,8 +842,27 @@ if (BY_JOINTING):
         #cycling 'sdata_elm' throughout by year-order
         iyr_t_src = iyr_t_src + 1
         if(iyr_t_src>=len(t2_yrly)): iyr_t_src = 0
-
+    
     #DONE 'for iyr in np.floor(t1_yrly)'
+    # some simple checkings
+    if(options.vars.strip()=='RH'):
+        idx=np.where(sdata_jointed>100.0)
+        sdata_jointed[idx]=100.0
+        idx=np.where(sdata_jointed<5.0)
+        sdata_jointed[idx]=5.0
+    if('FLDS' in options.vars.strip() or 'FSDS' in options.vars.strip() \
+       or 'QBOT' in options.vars.strip() or 'PRECT' in options.vars.strip() \
+       or 'WIND' in options.vars.strip()):
+        idx=np.where(sdata_jointed<0.0)
+        sdata_jointed[idx]=0.0
+    if(options.vars.strip()=='TBOT'):
+        idx=np.where(sdata_jointed<203.15)
+        sdata_jointed[idx]=203.15
+    if(options.vars.strip()=='PSRF'):
+        idx=np.where(sdata_jointed<50000.0)
+        sdata_jointed[idx]=101325.0
+        
+    
     if (options.plotting):
         SinglePlotting(t_jointed, 'Jointed', ['-'], ['-'], sdata_jointed)
 
@@ -821,7 +882,7 @@ if (options.plotting):
     
     tt=np.hstack((t2,t1))
     dd=np.hstack((data2,data1))
-    SinglePlotting(tt, 'Original-aggregated', ['-'], ['-'], dd, figno='1A-'+noted)
+    SinglePlotting(tt, 'Original-aggregated', ['-'], ['-'], dd, figno='1A-orig')
     
     tt=np.hstack((t2_yrly,t1_yrly))
     dd=np.hstack((data2_yrly,data1_yrly))
@@ -831,4 +892,87 @@ if (options.plotting):
     dd=np.hstack((data2_seasonally,data1_seasonally))
     SinglePlotting(tt, 'Seasonally-DOY', ['-'], ['-'], dd, figno='3-'+noted)
 
+#--------------------------------------------------------------------------------------
+# save in ELM forcing data format
+if (options.nc_create or options.nc_write):
+    if (options.nc_create and options.nc_write):
+        print('Error: cannot have both "--nc_create" and "--nc_write" ')
+        sys.exit(-1)
+    elif (options.nc_create):
+        print('Create new ELM forcing data ? ', options.nc_create)
+    elif (options.nc_write):
+        print('Write to existed ELM forcing data ? ', options.nc_write)
+    
+    # get a template ELM forcing data nc file
+    # 
+    if 'GSWP3' in met_type:
+        if (v == 'FSDS'):
+            fdir = metdir+'/Solar3Hrly/'
+        elif (v == 'PRECTmms'):
+            fdir = metdir+'/Precip3Hrly/'
+        else:
+            fdir = metdir+'/TPHWL3Hrly/'
+    elif 'Site' in met_type:
+        fdir = metdir+'/'
+        # So 'metdir' must be full path, e.g. ../atm/datm7/CLM1PT_data/1x1pt_US-Brw
+    if (metfileheader==''):
+        dirfiles = sorted(os.listdir(fdir))
+    else:
+        fdirheader=fdir+metfileheader.strip()
+        dirfiles = sorted(glob.glob("%s*.*" % fdirheader))  # maybe file pattern in 'fileheader'
+    if (os.path.isfile(dirfiles[0]) and str(dirfiles[0]).endswith('.nc')):
+        ncfilein = dirfiles[0]
+    
+    # new met nc files to create or write
+    yyyymm=ncfilein.split('/')[-1]
+    yyyymm=yyyymm.split('.')[-2]
+    # elm met file usually ending like '*.1980-01.nc', except in CPL_BYPASS format (TODO)
+    yyyy=yyyymm.split('-')[-2]
+    mm=yyyymm.split('-')[-1]
+    
+    mdoy=[0,31,59,90,120,151,181,212,243,273,304,334,365]#monthly starting DOY
+    tyr = np.asarray(np.floor(t_jointed/365.0))
+    tdoy = t_jointed-tyr*365.0
+    
+    varname = vname_elm
+    tyrly = np.asarray(np.sort(np.unique(tyr)))
+    for iyr in tyrly:
+        print('YEAR: ', int(iyr), varname)
+        for imm in range(len(mdoy)-1):
+            #
+            idx = np.where((tdoy>=mdoy[imm]) & (tdoy<mdoy[imm+1]) & (tyr==iyr))
+            
+            t=t_jointed[idx]
+            varvals = sdata_jointed[idx]
+            #
+            ncfileout = ncfilein.split('/')[-1]
+            ncfileout = ncfileout.replace(str(yyyy)+'-',str(int(iyr)).zfill(4)+'-') #tip: prefix '-' to prevent yyyy-mm messing-up
+            ncfileout = ncfileout.replace('-'+str(mm),'-'+str(int(imm)+1).zfill(2))
+            #
+            if(options.nc_create):
+                # no-expanding for any dimension but re-size
+                nfmod.dupexpand(ncfilein, ncfileout, dim_name=tvarname, dim_len=len(t)) 
+                
+                # time
+                try:
+                    tunit = Dataset(ncfilein).variables[tvarname].getncattr('units')
+                    t0=str(tunit).strip('days since')
+                    t0=datetime.strptime(t0,'%Y-%m-%d %X')
+                    t=t-(iyr*365+mdoy[imm])
+                    tunit = tunit.replace(str(t0.year).zfill(4)+'-', str(int(iyr)).zfill(4)+'-')
+                    tunit = tunit.replace('-'+str(t0.month).zfill(2)+'-', '-'+str(int(imm)+1).zfill(2)+'-')
+                    if(tunit.endswith(' 00') and not tunit.endswith(' 00:00:00')):
+                        tunit=tunit+':00:00'
 
+                except:
+                    tunit = tunit_elm
+                error=nfmod.putvar(ncfileout, [tvarname], t, varatts=tvarname+'::units='+tunit)
+                # varatts must in format: 'varname::att=att_val; varname::att=att_val; ...'
+                if error!=0: sys.exit('nfmod.putvar WRONG')
+            
+            #elif(options.nc_write):
+            if (varname=='PRECTmms'): varvals=varvals/86400.0 # mm/day -> mm/s
+            error=nfmod.putvar(ncfileout, [varname], varvals)
+            if error!=0: sys.exit('nfmod.putvar WRONG')
+        # end of for imm
+    #end fo for iyr
