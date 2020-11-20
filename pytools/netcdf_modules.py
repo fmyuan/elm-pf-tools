@@ -59,6 +59,21 @@ def putvar(ncfile, varname, varvals, varatts=''):
             return -1
         #
         else:
+            if varatts!='':
+                varatts=varatts.split(";")
+                for varatt in varatts:
+                    v=varatt.split('::')[0].strip()
+                    att=varatt.split('::')[1].strip().split('=')[0]
+                    att_val=varatt.split('::')[1].strip().split('=')[1]
+                    if (att=='add_offset' or att=='scale_factor'):
+                        # this must be done before data written, 
+                        # otherwise the written would use the original add_offset and scale_factor
+                        # TIP: when data written, the input valule is in unpacked and the program will do packing
+                        f.variables[v].setncattr(att,float(att_val))
+                    else:
+                        f.variables[v].setncattr(att,att_val)
+
+            
             if isinstance(varvals, dict): #multiple dataset for corresponding same numbers of varname
                 for v in varname:
                     val=np.asarray(varvals[v])
@@ -71,13 +86,6 @@ def putvar(ncfile, varname, varvals, varatts=''):
                     f.variables[v][...]=np.copy(val)
 
             #
-            if varatts!='':
-                varatts=varatts.split(";")
-                for varatt in varatts:
-                    v=varatt.split('::')[0].strip()
-                    att=varatt.split('::')[1].strip().split('=')[0]
-                    att_val=varatt.split('::')[1].strip().split('=')[1]
-                f.variables[v].setncattr(att,att_val)
                 
                 
             f.sync()
@@ -148,12 +156,14 @@ def dupexpand(ncfilein, ncfileout,dim_name='',dim_len=-999, dim_multipler=1):
                         dim_indx = variable.dimensions.index(dim)
                         resizer = dim_len[dim_name.index(dim)]
                         if(resizer>np.size(varvals, axis=dim_indx)):
-                            tmp=varvals
-                            resizer = resizer - np.size(varvals, axis=dim_indx)
-                            while resizer>1:
-                                varval = np.take(varvals, [0], axis=dim_indx)
-                                tmp=np.concatenate((tmp,varval), axis=dim_indx)
-                                resizer-=1
+                            tmp=np.zeros(dst.variables[name].shape)
+                            # the following is slow, if length too big
+                            # tmp = varvals
+                            #resizer = resizer - np.size(varvals, axis=dim_indx)
+                            #while resizer>1:
+                            #    varval = np.take(varvals, [0], axis=dim_indx)
+                            #    tmp=np.concatenate((tmp,varval), axis=dim_indx)
+                            #    resizer-=1
                         else:
                             tmp = np.take(varvals, range(resizer), axis=dim_indx)
                     #
