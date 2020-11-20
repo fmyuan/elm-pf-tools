@@ -47,12 +47,12 @@ def convertHumidity(tk, pres_pa, q_kgkg=[], rh_100=[]):
     vpsat = vpsat_pa(tk)
     d_pres = pres_pa - 0.378*vpsat
     qsat = 0.622*vpsat / d_pres
-    if rh_100.size>0:
+    if len(rh_100)>0:
         q_kgkg = qsat*rh_100/100.0
         
         return q_kgkg
     
-    elif q_kgkg.size>0:
+    elif len(q_kgkg)>0:
         rh_100 = q_kgkg/qsat*100.0
         
         return rh_100
@@ -65,9 +65,9 @@ def calcFLDS(tk, pres_pa, q_kgkg=[], rh_100=[]):
     
     CONST_STEBOL  = 5.67e-8      # Stefan-Boltzmann constant ~ W/m^2/K^4 
     
-    if rh_100.size>0:
+    if len(rh_100)>0:
         q_kgkg = convertHumidity(tk, pres_pa, rh_100=rh_100)
-    elif q_kgkg.size<=0:
+    elif len(q_kgkg)<=0:
         print('ERROR: must provide either "q_kgkg" or "rh_100" ')
     
     es =  pres_pa * q_kgkg /(0.622 + 0.378 * q_kgkg )
@@ -607,71 +607,85 @@ def singleNCDCReadCsvfile(filename, ncdc_type, missing):
 # read a met variables from CPL_BYPASS directory 
 def clm_metdata_cplbypass_read(filedir,fileheader, met_type, lon, lat, vars):
     #
-    # zone_mapping.txt
-    f_zoning = filedir+'/zone_mappings.txt'
-    all_lons=[]
-    all_lats=[]
-    all_zones=[]
-    all_lines=[]
-    with open(f_zoning) as f:
-        dtxt=f.readlines()
-        dtxt=filter(lambda x: x.strip(), dtxt)
-        for d in dtxt:
-            all=np.array(d.split(),dtype=float)
-            if(all[0]<0.0): all[0]=360.0+all[0] # convert longitude in format of 0 - 360
-            all_lons.append(all[0])
-            all_lats.append(all[1])
-            all_zones.append(int(all[2]))
-            all_lines.append(int(all[3]))
-            
-    all_lons = np.asarray(all_lons)
-    all_lats = np.asarray(all_lats)
-    all_zones= np.asarray(all_zones)
-    all_lines= np.asarray(all_lines)
-    
-    
-    if(lon==-999):
-        i = 0
-    else:
-        if(lon<0.0): lon=360.0+lon # convert longitude in format of 0 - 360
-        i=np.argmin(abs(all_lons-lon))
-    lon_i=all_lons[i]
-    i=np.where(all_lons == lon_i)[0]# in general, there are many numbers of 'lon' in 'all_lons' 
-
-    if(lon==-999):
-        j = 0
-    else:
-        j=np.argmin(abs(all_lats-lat))
-    lat_j=all_lats[j]
-    j=np.where(all_lats == lat_j)[0]# in general, there are many numbers of 'lat' in 'all_lats' 
+    if('GSWP3' in met_type):
+        # zone_mapping.txt
+        f_zoning = filedir+'/zone_mappings.txt'
+        all_lons=[]
+        all_lats=[]
+        all_zones=[]
+        all_lines=[]
+        with open(f_zoning) as f:
+            dtxt=f.readlines()
+            dtxt=filter(lambda x: x.strip(), dtxt)
+            for d in dtxt:
+                all=np.array(d.split(),dtype=float)
+                if(all[0]<0.0): all[0]=360.0+all[0] # convert longitude in format of 0 - 360
+                all_lons.append(all[0])
+                all_lats.append(all[1])
+                all_zones.append(int(all[2]))
+                all_lines.append(int(all[3]))
+                
+        all_lons = np.asarray(all_lons)
+        all_lats = np.asarray(all_lats)
+        all_zones= np.asarray(all_zones)
+        all_lines= np.asarray(all_lines)
         
-    if(len(i)>0 and len(j)>0): 
-        ij = np.intersect1d(i, j)
-    else:
-        print('NOT found point: lon - '+str(lon)+ ' lat - '+str(lat))
-        sys.exit()
-    zone = np.array(all_zones)[ij]
-    line = np.array(all_lines)[ij]
-    #because extraction going to do for zone/line, the grid is orderly cleared
-    ix=np.asarray(range(len(ij))) 
-    iy=np.asarray(range(len(ij))) 
+        
+        if(lon==-999):
+            i = 0
+        else:
+            if(lon<0.0): lon=360.0+lon # convert longitude in format of 0 - 360
+            i=np.argmin(abs(all_lons-lon))
+        lon_i=all_lons[i]
+        i=np.where(all_lons == lon_i)[0]# in general, there are many numbers of 'lon' in 'all_lons' 
+    
+        if(lon==-999):
+            j = 0
+        else:
+            j=np.argmin(abs(all_lats-lat))
+        lat_j=all_lats[j]
+        j=np.where(all_lats == lat_j)[0]# in general, there are many numbers of 'lat' in 'all_lats' 
+            
+        if(len(i)>0 and len(j)>0): 
+            ij = np.intersect1d(i, j)
+        else:
+            print('NOT found point: lon - '+str(lon)+ ' lat - '+str(lat))
+            sys.exit()
+        zone = np.array(all_zones)[ij]
+        line = np.array(all_lines)[ij]
+        #because extraction going to do for zone/line, the grid is orderly cleared
+        ix=np.asarray(range(len(ij))) 
+        iy=np.asarray(range(len(ij))) 
+    
+    elif ('Site' in met_type):
+        zone=[1]
+        line=[1]
+        ix=[0]
+        iy=[0]
 
     #file
     met ={}
     vdims={}
-    if('GSWP3' in met_type):
+    mdoy=[0,31,59,90,120,151,181,212,243,273,304,334]#monthly starting DOY
+    if('GSWP3' in met_type or 'Site' in met_type):
         varlist=['FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
+        if 'Site' in met_type:
+            varlist=['FLDS','FSDS','PRECTmms','PSRF','RH','TBOT','WIND']
+        
         for v in vars:
-            if('v1' in met_type):
-                file=filedir+'/GSWP3_'+v+'_1901-2010_z'+str(int(zone[0])).zfill(2)+'.nc'
-            if('daymet' in met_type):
-                file=filedir+'/GSWP3_Daymet3_'+v+'_1980-2010_z'+str(int(zone[0])).zfill(2)+'.nc'
-            else:
-                file=filedir+'/GSWP3_'+v+'_1901-2014_z'+str(int(zone[0])).zfill(2)+'.nc'
+            if ('GSWP3' in met_type):
+                if('v1' in met_type):
+                    file=filedir+'/GSWP3_'+v+'_1901-2010_z'+str(int(zone[0])).zfill(2)+'.nc'
+                elif('daymet' in met_type):
+                    file=filedir+'/GSWP3_Daymet4_'+v+'_1980-2014_z'+str(int(zone[0])).zfill(2)+'.nc'
+                else:
+                    file=filedir+'/GSWP3_'+v+'_1901-2014_z'+str(int(zone[0])).zfill(2)+'.nc'
+            
+            elif('Site' in met_type):
+                file=filedir+'/all_hourly.nc'
 
             if v not in varlist:
                 print('NOT found variable:  '+ v)
-                print('IN: '+ varlist)
                 sys.exit()
                 
             #
@@ -683,29 +697,38 @@ def clm_metdata_cplbypass_read(filedir,fileheader, met_type, lon, lat, vars):
                 met['LONGXY']=np.asarray(fnc.variables['LONGXY'])[line[0]-1]
         
             if ('DTIME' not in met.keys()):
-                met['DTIME']=np.asarray(fnc.variables['DTIME'])
+                t=np.asarray(fnc.variables['DTIME'])
                 vdims['DTIME'] = fnc.variables['DTIME'].dimensions
                 if('units' in fnc.variables['DTIME'].ncattrs()):
                     tunit= fnc.variables['DTIME'].getncattr('units')
+                    tunit=tunit.lower()
                     if ('days since' in tunit):
-                        met['tunit']='days'
                         t0=str(tunit).strip('days since')
+                        if (t0.endswith(' 00:00')): t0=t0+':00' # in case time written NOT exactly in 00:00:00
+                        if (t0.endswith(' 00')): t0=t0+':00:00'
                         t0=datetime.strptime(t0,'%Y-%m-%d %X')
-                        met['t0_datetime']=t0
+                        y0=t0.year
+                        m0=t0.month
+                        d0=t0.day-1.0
+                        days0 = (y0-1901)*365+mdoy[m0-1]+d0+t0.second/86400.0 # force days since 1901-01-01 00:00:00
+                        t = t + days0
+                        met['DTIME']=t
+                        met['tunit']='days since 1901-01-01 00:00:00'
                 
             #correct 'DTIME' (when do this modify fnc to be 'r+')
-            try:
-                dt=np.diff(met['DTIME'])
-                idx=np.where(dt!=0.125)
-                if len(idx)>1:
-                    dt[idx]=0.125
-                    dt=np.insert(dt, 0, met['DTIME'][0])
-                    dt=np.add.accumulate(dt)
-                    met['DTIME']=dt
-                    daysnum = fnc.variables['DTIME']
-                    daysnum[:] = dt
-            except:
-                print('NC file not writable')
+            if ('GSWP3' in met_type):
+                try:
+                    dt=np.diff(met['DTIME'])
+                    idx=np.where(dt!=0.125)
+                    if len(idx)>1:
+                        dt[idx]=0.125
+                        dt=np.insert(dt, 0, met['DTIME'][0])
+                        dt=np.add.accumulate(dt)
+                        met['DTIME']=dt
+                        daysnum = fnc.variables['DTIME']
+                        daysnum[:] = dt
+                except:
+                    print('NC file not writable')
 
             if(v in fnc.variables.keys()): 
                 d=np.asarray(fnc.variables[v])[line[0]-1,:]
