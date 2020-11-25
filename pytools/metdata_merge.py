@@ -20,7 +20,7 @@ import Modules_metdata
 #from Modules_metdata import subsetDaymetRead1NCfile       # DAYMET in nc4 format
 #from Modules_metdata import singleDaymetReadCsvfile       # DAYMET in csv format
 from hdf5_modules import Read1hdf                         # for ATS metdata in h5 format
-from Modules_plots import SinglePlotting, One2OnePlotting,TimeGridedVarPlotting
+from Modules_plots import SubPlotting, SinglePlotting, One2OnePlotting,TimeGridedVarPlotting
 import netcdf_modules as nfmod
 
 
@@ -426,7 +426,7 @@ if len(vardatas)>0:
         else:
             sdata_elm = deepcopy(vardatas[varname])
         sdata_elm = np.squeeze(sdata_elm)
-        #SinglePlotting(t, time_unit, varname, varunit, sdata_elm) # for checking
+        #SubPlotting(t, time_unit, varname, varunit, sdata_elm) # for checking
         
         vname_elm = varname
         break
@@ -566,7 +566,7 @@ if ('NCDC' in options.met_type):
         
         vardata = vardatas[varname]
         sdata_ncdc = deepcopy(vardata)
-        #SinglePlotting(t, time_unit, varname, varunit, sdata_ncdc) # for checking
+        #SubPlotting(t, time_unit, varname, varunit, sdata_ncdc) # for checking
         
         vname_ncdc = varname
         break
@@ -637,7 +637,7 @@ if ('ATS_h5' in options.met_type):
 
         if 'rain' in varname or 'snow' in varname or 'precipitation' in varname: 
             sdata_ats = deepcopy(sdata_ats)*86400000 # m/s -> mm/day
-        #SinglePlotting(t, time_unit, varname, varunit, sdata_ats) # for checking
+        #SubPlotting(t, time_unit, varname, varunit, sdata_ats) # for checking
         
         if 'relative humidity' in varname:
             sdata_ats = sdata_ats*100.
@@ -731,7 +731,6 @@ if (detrending!=''):
         t1, data1, t1_yrly, data1_yrly, t1_seasonally, data1_seasonally, fitfunc_data1 = \
             DataTimePatterns(t1, data1, SEASONALLY, ANNUALLY, ts_yrly=365, detrending=detrending) 
         # (optional) detrending: '', 'yearly','all', with output 'fitfunc_data1' (np.poly1d, i.e. fitfunc_data1(t1))
-        #SinglePlotting(t1, '', ['original','de-trended'], ['-','-'], [sdata_ats, data1]) # for checking 'detrending'
     if (vname2!=''):
         t2, data2, t2_yrly, data2_yrly, t2_seasonally, data2_seasonally, fitfunc_data2 = \
             DataTimePatterns(t2, data2, SEASONALLY, ANNUALLY, ts_yrly=365, detrending=detrending)
@@ -741,8 +740,6 @@ else:
     if (vname1!=''):
         t1, data1, t1_yrly, data1_yrly, t1_seasonally, data1_seasonally = \
             DataTimePatterns(t1, data1, SEASONALLY, ANNUALLY, ts_yrly=365)
-        # t1/data1 may be integrated if its 'ts_yrly' over 365 (i.e. sub-daily TS)
-        #SinglePlotting(t1, '', ['original','de-trended'], ['-','-'], [sdata_ats, data1]) # for checking
     if (vname2!=''):
         t2, data2, t2_yrly, data2_yrly, t2_seasonally, data2_seasonally = \
             DataTimePatterns(t2, data2, SEASONALLY, ANNUALLY, ts_yrly=365)
@@ -769,8 +766,8 @@ if (BY_JOINTING):
     noted = noted+'_jointed'
 
     # Source time/data for up-/-down temporally-scaling
-    t_src = deepcopy(t_elm)
-    sdata_src = deepcopy(sdata_elm)
+    t_src2 = deepcopy(t_elm)
+    sdata_src2 = deepcopy(sdata_elm)
     
     # joint-smooth-transition
     if detrending!='':
@@ -779,19 +776,22 @@ if (BY_JOINTING):
 
             # precipitation (rate): re-distruting but conserved daily rate
             if (options.vars=='PRECT'):
+                i2=-1
                 for i in range(len(t2_yrly)):
                     iyr2 = t2_yrly[i]
-                    iyr1 = t1_yrly[i]  # this is temporary, should be from 'similarity' analysis above
-                    idx2 = np.where((t_src>=iyr2*365.0) & (t_src<(iyr2+1.0)*365.0))
+                    i2=i2+1
+                    if (i2>len(t1_yrly)-1): i2=0
+                    iyr1 = t1_yrly[i2]  # this is temporary, should be from 'similarity' analysis above
+                    idx2 = np.where((t_src2>=iyr2*365.0) & (t_src2<(iyr2+1.0)*365.0))
                     idx1 = np.where((t1>=iyr1*365.0) & (t1<(iyr1+1.0)*365.0))
-                    sdata_iyr = sdata_src[idx2]
+                    sdata_iyr = sdata_src2[idx2]
                     sdata_iyr = RateRedistribution(sdata_iyr, data1[idx1])
-                    sdata_src[idx2] = sdata_iyr
+                    sdata_src2[idx2] = sdata_iyr
             
             elif (options.vars=='TBOT' or options.vars=='PSRF'):
                 # T/P variables
                 offset12_yrly = np.nanmean(data1_yrly)-np.nanmean(data2_yrly)
-                sdata_src = sdata_src-offset12_yrly
+                sdata_src2 = sdata_src2-offset12_yrly
             else:
                 # humidity, radiations, wind speedy
                 try:
@@ -799,11 +799,11 @@ if (BY_JOINTING):
                 except:
                     # in case np.nanmen(data2_yrly) = 0
                     ratio12_yrly = 1.0
-                sdata_src = sdata_src*ratio12_yrly
+                sdata_src2 = sdata_src2*ratio12_yrly
     
             # data scaled, requiring re-do time-pattern analysis
             t2, data2, t2_yrly, data2_yrly, t2_seasonally, data2_seasonally, fitfunc_data2 = \
-                DataTimePatterns(t_src, sdata_src, SEASONALLY, ANNUALLY, ts_yrly=365, detrending=detrending)
+                DataTimePatterns(t_src2, sdata_src2, SEASONALLY, ANNUALLY, ts_yrly=365, detrending=detrending)
             
             # no-need to do scaling below
             jointgap_data = 0.0
@@ -816,6 +816,7 @@ if (BY_JOINTING):
             tj=(t2[-1]+t1[0])/2.0
             jointgap_data = fitfunc_data2(tj)-fitfunc_data1(tj)
             data2 = data2 - jointgap_data
+            sdata_src2 = sdata_src2 - jointgap_data
     
             # integrated data2/data1
             jointgap_yrly = np.nanmean(data2_yrly)-np.nanmean(data1_yrly)
@@ -830,11 +831,13 @@ if (BY_JOINTING):
     
     
     # to be jointed/temporally-scaling
-    t_jointed = deepcopy(t_src)
-    sdata_jointed = deepcopy(sdata_src)
+    t_jointed = deepcopy(t_src2)
+    sdata_jointed = deepcopy(sdata_src2)
     
     # loop through 't1' by year
     iyr_t_src = 0
+    t_src1 = []
+    sdata_src1 = []
     for iyr in np.floor(t1_yrly):
         
         if iyr<=t2_yrly[-1]: continue
@@ -843,13 +846,13 @@ if (BY_JOINTING):
             td0_t1 = iyr*365.0+iday                  # starting point of a day in t1
             td0_t2 = t2_yrly[iyr_t_src]*365.0+iday   # starting point of a day in t2
         
-            idx_src = np.where((t_src>=td0_t2) & (t_src<(td0_t2+1.0)))
+            idx_src = np.where((t_src2>=td0_t2) & (t_src2<(td0_t2+1.0)))
             
-            t_jointting = td0_t1 + (t_src[idx_src]-td0_t2) # the second portion is sub-daily (fraction) time
+            t_jointting = td0_t1 + (t_src2[idx_src]-td0_t2) # the second portion is sub-daily (fraction) time
             t_jointed = np.hstack((t_jointed, t_jointting))
             
             # temporal down-scaling:
-            sdata_jointting = sdata_src[idx_src]
+            sdata_jointting = sdata_src2[idx_src]
             # 'sdata_jointing' - in/out (for sub-time variation), 
             # 'src/target' are time-sync'ed datasets to provide scalors (a moving window)
             twidth = 1.0  # 1-d moving-window (for 'data_method' of 'smooth', t spans 2 or more timesteps)
@@ -859,6 +862,9 @@ if (BY_JOINTING):
             if (vname1!='NONE'):
                 idx = np.where((t1>=td0_t1) & (t1<(td0_t1+twidth)))
                 target = data1[idx]
+                
+                t_src1 = np.hstack((t_src1, t1[idx]))
+                sdata_src1 = np.hstack((sdata_src1, target))
                 
                 # 'data_method': 'offset' (default), 'ratio','smooth'
                 sdata_jointting = DataTimeDown(sdata_jointting, src, target, data_method='offset')
@@ -894,33 +900,91 @@ if (BY_JOINTING):
         
     
     if (options.plotting):
-        SinglePlotting(t_jointed, 'Jointed', ['-'], ['-'], sdata_jointed)
+        snames = ['Jointed','Original-1','Original-2']
+        tt={}
+        tt[snames[0]] = deepcopy(t_jointed)
+        tt[snames[1]] = deepcopy(t_elm)
+        tt[snames[2]] = deepcopy(t_ats)
+        sdatas={}
+        sdatas[snames[0]] = deepcopy(sdata_jointed)
+        sdatas[snames[1]] = deepcopy(sdata_elm)
+        sdatas[snames[2]] = deepcopy(sdata_ats)
+        
+        SinglePlotting(tt, 'days-since-0001-01-01', snames, vname_elm, sdatas)
 
         txx, dataxx, txx_yrly, dataxx_yrly, txx_seasonally, dataxx_seasonally = \
             DataTimePatterns(t_jointed, sdata_jointed, SEASONALLY, ANNUALLY, ts_yrly=365) 
-        SinglePlotting(txx, 'Jointed', ['-'], ['-'], dataxx, figno='XX-1')
-        SinglePlotting(txx_yrly, 'Jointed', ['-'], ['-'], dataxx_yrly, figno='XX-2')
-        SinglePlotting(txx_seasonally, 'Jointed', ['-'], ['-'], dataxx_seasonally, figno='XX-3')
+        tt={}
+        tt[snames[0]] = deepcopy(txx)
+        tt[snames[1]] = deepcopy(t2)
+        tt[snames[2]] = deepcopy(t1)
+        sdatas={}
+        sdatas[snames[0]] = deepcopy(dataxx)
+        sdatas[snames[1]] = deepcopy(data2)
+        sdatas[snames[2]] = deepcopy(data1)
+        SinglePlotting(tt, 'days-since-0001-01-01', snames, vname_elm, sdatas, figno='XX-1')
+
+        tx2, datax2, tx2_yrly, datax2_yrly, tx2_seasonally, datax2_seasonally = \
+            DataTimePatterns(t_src2, sdata_elm, SEASONALLY, ANNUALLY, ts_yrly=365) 
+        tx1, datax1, tx1_yrly, datax1_yrly, tx1_seasonally, datax1_seasonally = \
+            DataTimePatterns(t_ats, sdata_ats, SEASONALLY, ANNUALLY, ts_yrly=365) 
+
+        tt={}
+        tt[snames[0]] = deepcopy(txx_yrly)
+        tt[snames[1]] = deepcopy(tx2_yrly)
+        tt[snames[2]] = deepcopy(tx1_yrly)
+        sdatas={}
+        sdatas[snames[0]] = deepcopy(dataxx_yrly)
+        sdatas[snames[1]] = deepcopy(datax2_yrly)
+        sdatas[snames[2]] = deepcopy(datax1_yrly)
+        SinglePlotting(tt, 'YEAR', snames, vname_elm, sdatas, figno='XX-2')
+
+        tt={}
+        tt[snames[0]] = deepcopy(txx_seasonally)
+        tt[snames[1]] = deepcopy(tx2_seasonally)
+        tt[snames[2]] = deepcopy(tx1_seasonally)
+        sdatas={}
+        sdatas[snames[0]] = deepcopy(dataxx_seasonally)
+        sdatas[snames[1]] = deepcopy(datax2_seasonally)
+        sdatas[snames[2]] = deepcopy(datax1_seasonally)
+        SinglePlotting(tt, 'DOY', snames, vname_elm, sdatas, figno='XX-3')
 
 #--------------------------------------------------------------------------------------
 # printing plot in PDF
 # for checking data-jointing
 if (options.plotting):
-    tt=np.hstack((t_elm,t_ats))
-    dd=np.hstack((np.squeeze(sdata_elm),sdata_ats))
-    SinglePlotting(tt, 'Original', ['-'], ['-'], dd, figno='1-orig')
+    snames = ['elm','ats']
+    tt={}
+    tt[snames[0]] = deepcopy(t_elm)
+    tt[snames[1]] = deepcopy(t_ats)
+    sdatas={}
+    sdatas[snames[0]] = deepcopy(sdata_elm)
+    sdatas[snames[1]] = deepcopy(sdata_ats)
+    SinglePlotting(tt, 'days-since-0001-01-01', snames, vname_elm, sdatas, figno='1-orig')
     
-    tt=np.hstack((t2,t1))
-    dd=np.hstack((data2,data1))
-    SinglePlotting(tt, 'Original-aggregated', ['-'], ['-'], dd, figno='1A-orig')
+    tt={}
+    tt[snames[0]] = deepcopy(t2)
+    tt[snames[1]] = deepcopy(t1)
+    sdatas={}
+    sdatas[snames[0]] = deepcopy(data2)
+    sdatas[snames[1]] = deepcopy(data1)
+    SinglePlotting(tt, 'days-since-0001-01-01', snames, vname_elm, sdatas, figno='1A-orig')
     
-    tt=np.hstack((t2_yrly,t1_yrly))
-    dd=np.hstack((data2_yrly,data1_yrly))
-    SinglePlotting(tt, 'Yearly', ['-'], ['-'], dd, figno='2-'+noted)
+    tt={}
+    tt[snames[0]] = deepcopy(t2_yrly)
+    tt[snames[1]] = deepcopy(t1_yrly)
+    sdatas={}
+    sdatas[snames[0]] = deepcopy(data2_yrly)
+    sdatas[snames[1]] = deepcopy(data1_yrly)
+    SinglePlotting(tt, 'Yearly', snames, vname_elm, sdatas, figno='2-'+noted)
     
-    tt=np.hstack((t2_seasonally,t1_seasonally))
-    dd=np.hstack((data2_seasonally,data1_seasonally))
-    SinglePlotting(tt, 'Seasonally-DOY', ['-'], ['-'], dd, figno='3-'+noted)
+    tt={}
+    tt[snames[0]] = deepcopy(t2_seasonally)
+    tt[snames[1]] = deepcopy(t1_seasonally)
+    sdatas={}
+    sdatas[snames[0]] = deepcopy(data2_seasonally)
+    sdatas[snames[1]] = deepcopy(data1_seasonally)
+    SinglePlotting(tt, 'Seasonally-DOY', snames, vname_elm, sdatas, figno='3-'+noted)
 
 #--------------------------------------------------------------------------------------
 # save in ELM forcing data format

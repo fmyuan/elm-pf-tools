@@ -11,7 +11,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 # ---------------------------------------------------------------
 # plotting 1 graph with at most 4 sub-plots 
 
-def SinglePlotting(tt, time_unit, varnames, varunits, vardatas, figno=None):
+def SubPlotting(tt, time_unit, varnames, varunits, vardatas, figno=None):
     nvars = len(varnames)
     
     nrow = 1   # sub-plot vertically arranged number (row no.)
@@ -78,6 +78,41 @@ def SinglePlotting(tt, time_unit, varnames, varunits, vardatas, figno=None):
         lx = 0.05
         ly = 0.95
         plt.text(lx, ly, '(d) ', transform=ax3.transAxes)
+
+    #
+    ofname = 'Figure_XX.pdf'
+    if (not figno is None): ofname = 'Figure_-'+figno+'.pdf'
+    plt.savefig(ofname)
+    plt.show()
+
+    plt.close('all')
+
+# ---------------------------------------------------------------
+# plotting 1 plot with at most 4 varied-length vars 
+
+def SinglePlotting(tt, time_unit, varnames, varunits, vardatas, figno=None):
+    nvars = len(varnames)
+    
+    nrow = 1   # sub-plot vertically arranged number (row no.)
+    ncol = 1   # sub-plot horizontally arranged number (column no.)
+
+    fig = plt.figure(figsize=(11.5,8.5))
+    ax0=plt.subplot(nrow, ncol, 1)
+    #
+    # data must be in dictionary, due to length may not be same
+    for var in varnames:
+        t = tt[var]
+        sdata = vardatas[var]
+        plt.plot(t, sdata)
+    
+    plt.xlabel('Time ('+time_unit+')')
+    plt.ylabel(varunits)
+    plt.legend((varnames), loc=2, fontsize=12)
+
+    lx = 0.05
+    ly = 0.95
+    plt.text(lx, ly, '', transform=ax0.transAxes)
+        
 
     #
     ofname = 'Figure_XX.pdf'
