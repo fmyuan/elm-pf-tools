@@ -357,11 +357,18 @@ if (options.elmheader != ""):
         elm_snowcov = gdata
         
     # lon/lat of ELM output
-    lonlat2xy = False
-    elmx = varsdata['lon']
-    elmy = varsdata['lat']
-    elmx_res = 0.50
-    elmy_res = 0.50
+    if ('lon' in varsdata.keys() and 'lat' in varsdata.keys()):
+        elmx = varsdata['lon']
+        elmy = varsdata['lat']
+        elmx_res = 0.50
+        elmy_res = 0.50
+        elmxy = False
+    elif ('geox' in varsdata.keys() and 'geoy' in varsdata.keys()):
+        elmx = varsdata['geox']
+        elmy = varsdata['geoy']
+        elmx_res = np.nanmean(np.diff(elmx))
+        elmy_res = np.nanmean(np.diff(elmy))
+        elmxy = True
     if ('landmask' in varsdata.keys()):
         landmask = varsdata['landmask'] # ELM 2-D data is in [y,x] order
     else:
@@ -499,10 +506,11 @@ if (options.imsheader != ""):
                     elmnodey = np.asarray([elmy[0]-halfy, elmy[0]+halfy])
                 
                 # matching ims grid-centroids within ELM grid-mesh
+                #  note: upon 'elmxy' (True/False), ims_lon/ims_lat may be in geox/y too as elm's
                 imsinelm_indx, ims_lon, ims_lat = \
                     nicims.IMS_ELM_gridmatching(elmnodex, elmnodey, \
                                                 ims_gx, ims_gy, \
-                                                Grid1ifxy=False, Grid2ifxy=True, \
+                                                Grid1ifxy=elmxy, Grid2ifxy=True, \
                                                 Grid1_cells=elm_lndij)
 
                     
@@ -538,7 +546,9 @@ if (options.imsheader != ""):
                             vdata_1delmcell[idx] = np.nanmean(vdata_it[ij]) # IMS ==> ELM
                             vdata_std_1delmcell[idx] = np.nanstd(vdata_it[ij]) # IMS ==> ELM
                             #vdata_1delmcell[idx] = np.mean(ims_lon[ij]) # IMS ==> ELM, for testing if imsx/y correctly mapped into ELM grid
-                            #vdata_1delmcell[idx] = np.mean(imsy[j]) # IMS ==> ELM. for test if imsx/y correctly mapped into ELM grid
+                            #vdata_std_1delmcell[idx] = np.nanstd(ims_lon[ij])
+                            #vdata_1delmcell[idx] = np.mean(imsy[j]) # IMS ==> ELM. for test if imsx/y correctly mapped into ELM grid (note the difference from above line)
+                            #vdata_std_1delmcell[idx] = np.nanstd(imsy[j])
 
                     # assign ELM output to IMS' grids, if time matches
                     if(elm_it.size>0):
@@ -587,10 +597,14 @@ if (options.imsheader != ""):
                 varname = elm_varname+'_ims'
                 ncdata = {}
 
-                ncdata['lon']  = deepcopy(elmx)
-                ncdata['lat']  = deepcopy(elmy)
-
-                #
+                if (elmxy):
+                    ncdata['geox']  = deepcopy(elmx)
+                    ncdata['geoy']  = deepcopy(elmy)
+                else:
+                    ncdata['lon']  = deepcopy(elmx)
+                    ncdata['lat']  = deepcopy(elmy)
+                
+                # the following seems not in right place (TODO)
                 if(elm_it_all[0]==elm_it and elm_it>0): # matching-time is NOT the first one
                     # may need to write non-matched ELM data, assuming ELM time is in-order
                     for iy in yr_elm[:elm_it]:
@@ -604,20 +618,19 @@ if (options.imsheader != ""):
                             imslnd = np.where(vdata_it[ij]>=0.0)[0] # extract sub-set's IMS land-cell
                             if imslnd.size>0:
                                 if ij[0].size<=1:
-                                    vdata_fromelm[(ij[0],ij[1])] = temp[(j,i)] # ELM ==> IMS (Note: here ELM ji flipped to match with IMS)
+                                    vdata_fromelm[(0,ij[0],ij[1])] = temp[(j,i)] # ELM ==> IMS (Note: here ELM ji flipped to match with IMS)
                                 else:
-                                    vdata_fromelm[(ij[0][imslnd],ij[1][imslnd])] = temp[(j,i)] # ELM ==> IMS (Note: here ELM ji flipped to match with IMS)
-
+                                    vdata_fromelm[(0,ij[0][imslnd],ij[1][imslnd])] = temp[(j,i)] # ELM ==> IMS (Note: here ELM ji flipped to match with IMS)
                         
-                else:
-                    ncdata['date'] = [num2date(it).date() for it in tt[0:]]
-                    ncdata[elm_varname] = np.full(vdata_2delmcell.shape,np.float32(FillValue_SEA)) # shape as IMS data, but filled with data from ELM next-line
-                    ncdata[elm_varname][ims_it_all,] = deepcopy(elm_vdata[elm_it_all])
-                    ncdata[varname] = deepcopy(vdata_2delmcell)
-                    ncdata[varname+'_std'] = deepcopy(vdata_std_2delmcell)
+                
+                ncdata['date'] = [num2date(it).date() for it in tt[0:]]
+                ncdata[elm_varname] = np.full(vdata_2delmcell.shape,np.float32(FillValue_SEA)) # shape as IMS data, but filled with data from ELM next-line
+                ncdata[elm_varname][ims_it_all,] = deepcopy(elm_vdata[elm_it_all])
+                ncdata[varname] = deepcopy(vdata_2delmcell)
+                ncdata[varname+'_std'] = deepcopy(vdata_std_2delmcell)
 
-                    # difference btw ELM and IMS
-                    temp = np.full(vdata_2delmcell.shape,0.0) # shape as IMS data, but will be filled with data from ELM next-line
+                # difference btw ELM and IMS
+                temp = np.full(vdata_2delmcell.shape,0.0) # shape as IMS data, but will be filled with data from ELM next-line
                 
                 temp = ncdata[elm_varname] - ncdata[varname]
                 # since 'diff' could be negative, better to mark non-land in either dataset as ZERO
@@ -631,6 +644,9 @@ if (options.imsheader != ""):
                 ij = np.where( (ncdata[elm_varname]==FillValue_SEA)  | \
                                (ncdata[varname]==FillValue_SEA) )
                 temp[ij] = FillValue_SEA
+                ij = np.where( (ncdata[elm_varname]==FillValue_LND)  | \
+                               (ncdata[varname]==FillValue_LND) )
+                temp[ij] = FillValue_LND
                 ncdata[elm_varname+'_diff'] = temp
 
                 ncfname = ncfile.split('/')[-1] # remove directory name if any
@@ -646,15 +662,17 @@ if (options.imsheader != ""):
                 ncdata = {}
                 ncdata['date'] = [num2date(it).date() for it in daynums_from_elm]
                 # truncating too-much beyond-ELM grids (i.e. lower-latitudes)
-                ij=np.where(ims_lat>=(np.min(elmnodey)-5.0)) 
-                #ij=np.where( (ims_lat>=np.min(elmnodey)) &
-                #             (ims_lat<=np.max(elmnodey)) &
-                #             (ims_lon>=np.min(elmnodex)) &
-                #             (ims_lon<=np.max(elmnodex)) )
-                imax=np.max(ij[0])
-                imin=np.min(ij[0])
-                jmax=np.max(ij[1])
-                jmin=np.min(ij[1])
+                if (elmxy):
+                    ij=np.where( (ims_lat>=np.min(elmnodey)) &
+                                 (ims_lat<=np.max(elmnodey)) &
+                                 (ims_lon>=np.min(elmnodex)) &
+                                 (ims_lon<=np.max(elmnodex)) )
+                else:
+                    ij=np.where(ims_lat>=(np.min(elmnodey)-5.0))  # since it's polar stereo, no max limit 
+                imax=np.max(ij[1])
+                imin=np.min(ij[1])
+                jmax=np.max(ij[0])
+                jmin=np.min(ij[0])
                 ncdata['geox']  = deepcopy(imsx[imin:imax+1])
                 ncdata['geoy']  = deepcopy(imsy[jmin:jmax+1])
                 vdata_ij = vdata[ims_it_all,]
@@ -671,9 +689,9 @@ if (options.imsheader != ""):
                 jout = np.asarray(ijout[1])
                 vdata_ij[:,iout,jout] = np.float32(FillValue_LND)
                 
-                vdata_ij = deepcopy(vdata_ij[:,imin:imax+1, jmin:jmax+1]) # IMS-data in [t,i,j] order of dimension
+                vdata_ij = deepcopy(vdata_ij[:,jmin:jmax+1, imin:imax+1]) # IMS-data in [t,i,j] order of dimension
                 ncdata[ims_varname] = deepcopy(vdata_ij) 
-                vdata_elm_ij = snowcov_from_elm[:,imin:imax+1, jmin:jmax+1] # ELM-data in [t,j,i] order of dimension, but flip already
+                vdata_elm_ij = snowcov_from_elm[:,jmin:jmax+1, imin:imax+1] # ELM-data in [t,j,i] order of dimension, but flip already
                 ncdata[varname] = deepcopy(vdata_elm_ij) 
 
                 # difference btw ELM and IMS
@@ -690,6 +708,9 @@ if (options.imsheader != ""):
                 ij = np.where( (ncdata[elm_varname]==FillValue_SEA)  | \
                                (ncdata[varname]==FillValue_SEA) )
                 temp[ij] = FillValue_SEA
+                ij = np.where( (ncdata[elm_varname]==FillValue_LND)  | \
+                               (ncdata[varname]==FillValue_LND) )
+                temp[ij] = FillValue_LND
                 ncdata[ims_varname+'_diff'] = temp
 
                 # write NC file(s)
@@ -751,9 +772,13 @@ if len(snow_yearly)>0:
         snow_yearly['geoy'] = deepcopy(imsy)
     elif(options.elmheader != "" and options.imsheader==""):
         ncfname = 'ELM20181101_N60_yearly_snowstats.nc'
-
-        snow_yearly['lon']  = deepcopy(elmx)
-        snow_yearly['lat']  = deepcopy(elmy)
+        if(elmxy):
+            snow_yearly['geox']  = deepcopy(elmx)
+            snow_yearly['geoy']  = deepcopy(elmy)
+        
+        else:
+            snow_yearly['lon']  = deepcopy(elmx)
+            snow_yearly['lat']  = deepcopy(elmy)
 
     if os.path.isfile(ncfname): os.system('rm -rf '+ncfname)
     ncfile = Dataset(ncfname, mode='w',format='NETCDF4') 
@@ -776,12 +801,29 @@ if len(snow_yearly)>0:
         lat = snow_yearly['geoy']
         lon_dim = ncfile.createDimension('geox',  len(lon))
         lat_dim = ncfile.createDimension('geoy',  len(lat))
-        vlat = ncfile.createVariable('geox', np.float32, ('geox',))
+        vlat = ncfile.createVariable('geoy', np.float32, ('geoy',))
         vlat.units = 'meters'
-        vlat.long_name = 'Northing (Polar stereographic ellipsoidal projection)'
-        vlon = ncfile.createVariable('geoy', np.float32, ('geoy',))
+        if (elmxy):
+            vlat.long_name = 'Northing (lambert conformal conic projection)'
+            
+            vproj = ncfile.createVariable('lambert_conformal_conic', np.int32)
+            vproj.grid_mapping_name = "lambert_conformal_conic"
+            vproj.longitude_of_central_meridian = -100.
+            vproj.latitude_of_projection_origin = 42.5
+            vproj.false_easting = 0.
+            vproj.false_northing = 0.
+            vproj.standard_parallel = 25., 60.
+            vproj.semi_major_axis = 6378137.
+            vproj.inverse_flattening = 298.257223563 
+
+        else:
+            vlat.long_name = 'Northing (Polar stereographic ellipsoidal projection)'
+        vlon = ncfile.createVariable('geox', np.float32, ('geox',))
         vlon.units = 'meters'
-        vlon.long_name = 'Easting (Polar stereographic ellipsoidal projection)'
+        if (elmxy):
+            vlon.long_name = 'Easting (lambert conformal conic projection)'
+        else:
+            vlon.long_name = 'Easting (Polar stereographic ellipsoidal projection)'
 
     vlat[:] = lat
     vlon[:] = lon
@@ -871,10 +913,16 @@ if len(snow_yearly)>0:
     #global attributes
     if(options.elmheader !=""):
         ncfile.description = 'ELM simulated No60 and above Northern High-latitude Region yearly snow-cover gone/start day and snowfree length @0.5deg resolution '
-        ncfile.data_source = ('Offline E3SM Land Model, ' +
-        'forced by GSWP3 v2, half-degree, over >=N60, fully CNP coupled' +
-        'Master @ 2018-11-01 ')
-        ncfile.history = '2020-05-06: calculated from  daily snow coverage FSNO simulations.'
+        if (elmxy):
+            ncfile.data_source = ('Offline E3SM Land Model, ' +
+                'forced by GSWP3 v2/DaymetNA, ~1km, over Northern America, fully CNP coupled' +
+                'Master @ 2018-11-01 ')
+            ncfile.history = '2020-12-21: calculated from  daily snow coverage FSNO simulations.'
+        else:
+            ncfile.data_source = ('Offline E3SM Land Model, ' +
+                'forced by GSWP3 v2, half-degree, over >=N60, fully CNP coupled' +
+                'Master @ 2018-11-01 ')
+            ncfile.history = '2020-05-06: calculated from  daily snow coverage FSNO simulations.'
         
     if(options.imsheader!=""):
         if (res=='1km'):

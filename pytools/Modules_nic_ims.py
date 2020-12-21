@@ -241,6 +241,23 @@ def IMS_ELM_gridmatching(Grid1_Xdim, Grid1_Ydim, Grid2_x, Grid2_y, \
         Tlonlat2xy = Transformer.from_proj(lonlatProj, geoxyProj, always_xy=True)
         Grid2_gxx,Grid2_gyy = Tlonlat2xy.transform(Grid2_xx,Grid2_yy)
     
+    elif (Grid2ifxy and Grid1ifxy):
+        # Grid1 is in geox/y as well, e.g. DAYMET geox/y here
+        #lambert_conformal_conic:grid_mapping_name = "lambert_conformal_conic" ;
+        #lambert_conformal_conic:longitude_of_central_meridian = -100. ;
+        #lambert_conformal_conic:latitude_of_projection_origin = 42.5 ;
+        #lambert_conformal_conic:false_easting = 0. ;
+        #lambert_conformal_conic:false_northing = 0. ;
+        #lambert_conformal_conic:standard_parallel = 25., 60. ;
+        #lambert_conformal_conic:semi_major_axis = 6378137. ;
+        #lambert_conformal_conic:inverse_flattening = 298.257223563 ;
+
+        #Proj4: +proj=lcc +lon_0=-100 +lat_1=25 +lat_2=60 +k=1 +x_0=0 +y_0=0 +R=6378137 +f=298.257223563 +units=m  +no_defs
+        geoxy1_proj_str = "+proj=lcc +lon_0=-100 +lat_0=42.5 +lat_1=25 +lat_2=60 +x_0=0 +y_0=0 +R=6378137 +f=298.257223563 +units=m +no_defs"
+        geoxy1Proj = CRS.from_proj4(geoxy1_proj_str)
+        Tgeoxy2xy = Transformer.from_proj(geoxy1Proj, geoxyProj, always_xy=True)
+        Grid2_gxx,Grid2_gyy = Tgeoxy2xy.transform(Grid2_xx,Grid2_yy)
+
     else:
         Grid2_gxx = Grid2_xx
         Grid2_gyy = Grid2_yy

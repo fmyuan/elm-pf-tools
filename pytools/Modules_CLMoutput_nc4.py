@@ -308,6 +308,9 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
     keep_const.append("BSW")
     keep_const.append("HKSAT")
 
+    keep_const.append("geox")     # grid center x-coordinates
+    keep_const.append("geoy")     # grid center y-coordinates
+
     # variables name dictionary
     keep = keep_const
     keep.append("nstep")         # need this for time step numbers
@@ -427,6 +430,9 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
                 elif('lat' in chunkdatai and 'lon' in chunkdatai):
                     nx = chunkdatai['lon'].size
                     ny = chunkdatai['lat'].size
+                elif('geox' in chunkdatai and 'geoy' in chunkdatai):
+                    nx = chunkdatai['geox'].size
+                    ny = chunkdatai['geoy'].size
                 
             if (nlgrnd<=0 and 'levgrnd' in chunkdatai):
                 nlgrnd = len(chunkdatai['levgrnd'])
