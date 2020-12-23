@@ -363,12 +363,16 @@ if (options.elmheader != ""):
         elmx_res = 0.50
         elmy_res = 0.50
         elmxy = False
+        elmprjstr = ''
     elif ('geox' in varsdata.keys() and 'geoy' in varsdata.keys()):
         elmx = varsdata['geox']
         elmy = varsdata['geoy']
         elmx_res = np.nanmean(np.diff(elmx))
         elmy_res = np.nanmean(np.diff(elmy))
         elmxy = True
+        # elm proj is lambert conformal conic, when using daymet scaled-forcing
+        elmprjstr = "+proj=lcc +lon_0=-100 +lat_0=42.5 +lat_1=25 +lat_2=60 +x_0=0 +y_0=0 +R=6378137 +f=298.257223563 +units=m +no_defs"
+
     if ('landmask' in varsdata.keys()):
         landmask = varsdata['landmask'] # ELM 2-D data is in [y,x] order
     else:
@@ -459,6 +463,9 @@ if (options.imsheader != ""):
         if ncfile == alldirfiles[0]:
             imsx = np.asarray(f.variables['geox'])
             imsy = np.asarray(f.variables['geoy'])
+            # Polar stereographic ellipsoidal projection with WGS-84 ellipsoid for IMS data
+            #Proj4: +proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs
+            imsprjstr = "+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs"
         
         # read-in datasets from one or multiple nc file 
         if ('daysnum' in f.variables.keys()):
@@ -510,7 +517,7 @@ if (options.imsheader != ""):
                 imsinelm_indx, ims_lon, ims_lat = \
                     nicims.IMS_ELM_gridmatching(elmnodex, elmnodey, \
                                                 ims_gx, ims_gy, \
-                                                Grid1ifxy=elmxy, Grid2ifxy=True, \
+                                                Grid1prjstr=elmprjstr, Grid2prjstr=imsprjstr, \
                                                 Grid1_cells=elm_lndij)
 
                     
@@ -538,6 +545,11 @@ if (options.imsheader != ""):
                 vdata_std_1delmcell = np.full((len(elm_lndij[0])),np.float32(FillValue_SEA)) # to hold 1-D aggregated IMS 'vdata' by ELM lnd-grid (-2/-55 is for sea)
                 for idx in range(len(elm_lndij[0])):
                     ij = imsinelm_indx[str(idx)] #  paired-tuple index
+                    if (len(ij)<=0):
+                        vdata_1delmcell[idx] = FillValue_LND
+                        vdata_std_1delmcell[idx] = FillValue_LND
+                        continue
+                    
                     if(ij[0].size>0):
                         # assign IMS averaged to elm cell
                         i = imsinelm_indx[str(idx)][0]
@@ -651,9 +663,15 @@ if (options.imsheader != ""):
 
                 ncfname = ncfile.split('/')[-1] # remove directory name if any
                 ncfname = './ELM_obs_from_'+ncfname
+                if (elmxy):
+                    prjname = 'lambert conformal conic projection: '+ \
+                    '"+proj=lcc +lon_0=-100 +lat_0=42.5 +lat_1=25 +lat_2=60 +x_0=0 +y_0=0 +R=6378137 +f=298.257223563 +units=m +no_defs"'
+                else:
+                    prjname = ''
+                    
                 nicims.Write1GeoNc([elm_varname, elm_varname+'_diff', varname,varname+'_std'], \
                                    ncdata, ptxy=[], ncfname=ncfname, newnc=True, \
-                                   FillValue=FillValue_SEA)
+                                   FillValue=FillValue_SEA, geoprj=prjname)
                 
                 
                 
@@ -716,9 +734,11 @@ if (options.imsheader != ""):
                 # write NC file(s)
                 ncfname = ncfile.split('/')[-1] # remove directory name if any
                 ncfname = './ELM_sim_for_'+ncfname
+                prjname = 'Polar stereographic ellipsoidal projection: '+ \
+                    '"+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs" '
                 nicims.Write1GeoNc([ims_varname, ims_varname+'_diff', varname], \
                                    ncdata, ptxy=[], ncfname=ncfname, newnc=True, \
-                                   FillValue=FillValue_SEA)
+                                   FillValue=FillValue_SEA,geoprj=prjname)
         
         # ---------------------------------------------------------------------
         

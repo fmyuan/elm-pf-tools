@@ -190,16 +190,16 @@ def Prep_ims_snowcov(ifile, fileheader, varname, alldata={}):
 
 #--------------------------------------------------------------------------------
 
-def IMS_ELM_gridmatching(Grid1_Xdim, Grid1_Ydim, Grid2_x, Grid2_y, \
-                         Grid1ifxy=False, Grid2ifxy=True, Grid1_cells=()):
+def IMS_ELM_gridmatching(Grid1_Xdim, Grid1_Ydim, Grid2_x, Grid2_y, Grid2_dxy=None, \
+                         Grid1prjstr='', Grid2prjstr='', Grid1_cells=()):
     
     # Match Grid2 within each Grid1, so return Grid2-xy index for each Grid1 cell
-    # by default, (1) Grid1 (parent) in lon/lat (aka ifxy=False), Grid2 in geox/y (aka ifxy=True)
+    # by default, (1) Grid1 (parent) in xlon/ylat mesh, Grid2 in lonx/laty 1-D grids
     #             (2) Grid1 XY is grid-mesh-nodes, Grid2xy is grid-centroids. Then is good for searching Grid2 in Grid1
     #             (3) all cells in Grid1 are assigned Grid2's cell-index - maybe only those indiced in 'Grid1_cells'
     
     # it's supposed that: Grid1 X/Y are in 1-D regularly-intervaled (may not evenly) nodes along axis
-    # while, Grid2 might be either like Grid2 or in 2-D mesh.
+    # while, Grid2 might be either like Grid2 or in 2-D mesh, with optional interval (Grid2_dxy in length of 2, e.g. [1000 1000] )
     if (len(Grid2_x.shape)<2): 
         # Grid2 must be converted to 2D paired x/y mesh, if not
         Grid2_xx, Grid2_yy = np.meshgrid(Grid2_x, Grid2_y) # mid-points of grid
@@ -220,29 +220,18 @@ def IMS_ELM_gridmatching(Grid1_Xdim, Grid1_Ydim, Grid2_x, Grid2_y, \
     # For projection conversion
     # Polar stereographic ellipsoidal projection with WGS-84 ellipsoid
     #Proj4: +proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs
-    geoxy_proj_str = "+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs"
-    geoxyProj = CRS.from_proj4(geoxy_proj_str)
+    # geoxy_proj_str = "+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs"
+    if (Grid2prjstr==''):
+        grid2Proj = CRS.from_epsg(4326) # in lon/lat coordinates
+    else:
+        grid2Proj = CRS.from_proj4(Grid2prjstr)
 
-    # EPSG: 4326
-    # Proj4: +proj=longlat +datum=WGS84 +no_defs
-    lonlatProj = CRS.from_epsg(4326) # in lon/lat coordinates
-    
-    # only if 2 grids are in different projections, do tansformation
-    if (Grid2ifxy and not Grid1ifxy):
-        Txy2lonlat = Transformer.from_proj(geoxyProj, lonlatProj, always_xy=True)
-        Grid2_gxx,Grid2_gyy = Txy2lonlat.transform(Grid2_xx,Grid2_yy)
-        
-        ij=np.where(Grid2_gxx<0.0)
-        if(len(ij[0])>0): Grid2_gxx[ij]=Grid2_gxx[ij]+360.0 # for convenience, longitude from 0~360
-        ij=np.where(Grid1_x<0.0)
-        if(len(ij[0])>0): Grid1_x[ij]=Grid1_x[ij]+360.0 # for convenience, longitude from 0~360
-
-    elif (not Grid2ifxy and Grid1ifxy):
-        Tlonlat2xy = Transformer.from_proj(lonlatProj, geoxyProj, always_xy=True)
-        Grid2_gxx,Grid2_gyy = Tlonlat2xy.transform(Grid2_xx,Grid2_yy)
-    
-    elif (Grid2ifxy and Grid1ifxy):
-        # Grid1 is in geox/y as well, e.g. DAYMET geox/y here
+    if (Grid1prjstr==''):
+        # EPSG: 4326
+        # Proj4: +proj=longlat +datum=WGS84 +no_defs
+        grid1Proj = CRS.from_epsg(4326) # in lon/lat coordinates
+    else:
+        # e.g. Grid1 is in geox/y as well, e.g. DAYMET geox/y here
         #lambert_conformal_conic:grid_mapping_name = "lambert_conformal_conic" ;
         #lambert_conformal_conic:longitude_of_central_meridian = -100. ;
         #lambert_conformal_conic:latitude_of_projection_origin = 42.5 ;
@@ -251,13 +240,21 @@ def IMS_ELM_gridmatching(Grid1_Xdim, Grid1_Ydim, Grid2_x, Grid2_y, \
         #lambert_conformal_conic:standard_parallel = 25., 60. ;
         #lambert_conformal_conic:semi_major_axis = 6378137. ;
         #lambert_conformal_conic:inverse_flattening = 298.257223563 ;
-
         #Proj4: +proj=lcc +lon_0=-100 +lat_1=25 +lat_2=60 +k=1 +x_0=0 +y_0=0 +R=6378137 +f=298.257223563 +units=m  +no_defs
-        geoxy1_proj_str = "+proj=lcc +lon_0=-100 +lat_0=42.5 +lat_1=25 +lat_2=60 +x_0=0 +y_0=0 +R=6378137 +f=298.257223563 +units=m +no_defs"
-        geoxy1Proj = CRS.from_proj4(geoxy1_proj_str)
-        Tgeoxy2xy = Transformer.from_proj(geoxy1Proj, geoxyProj, always_xy=True)
-        Grid2_gxx,Grid2_gyy = Tgeoxy2xy.transform(Grid2_xx,Grid2_yy)
-
+        #grid1prjstr = "+proj=lcc +lon_0=-100 +lat_0=42.5 +lat_1=25 +lat_2=60 +x_0=0 +y_0=0 +R=6378137 +f=298.257223563 +units=m +no_defs"
+        grid1Proj = CRS.from_proj4(Grid1prjstr)
+    
+    # only if 2 grids are in different projections, do tansformation
+    if (Grid2prjstr.strip() != Grid1prjstr.strip()):
+        T2to1 = Transformer.from_proj(grid2Proj, grid1Proj, always_xy=True)
+        Grid2_gxx,Grid2_gyy = T2to1.transform(Grid2_xx,Grid2_yy)
+        
+        if(Grid1prjstr==''):  # because grid2 will transformed as grid1's proj
+            ij=np.where(Grid2_gxx<0.0)
+            if(len(ij[0])>0): Grid2_gxx[ij]=Grid2_gxx[ij]+360.0 # for convenience, longitude from 0~360
+            ij=np.where(Grid1_x<0.0)
+            if(len(ij[0])>0): Grid1_x[ij]=Grid1_x[ij]+360.0 # for convenience, longitude from 0~360
+    
     else:
         Grid2_gxx = Grid2_xx
         Grid2_gyy = Grid2_yy
@@ -279,35 +276,36 @@ def IMS_ELM_gridmatching(Grid1_Xdim, Grid1_Ydim, Grid2_x, Grid2_y, \
         jnth = np.max(Grid1_y[j:j+2])
         ij = np.where( ((Grid2_gxx<=iest) & (Grid2_gxx>iwst)) & \
                        ((Grid2_gyy<=jnth) & (Grid2_gyy>jsth)) )
-        Grid2in1_indx[str(indx)] = deepcopy(ij)
-            
+        
+        # none of IMS cell centroid inside a ELM grid (e.g. IMS cell is larger and centroid beyond any ELM grids), 
+        # find the close one instead
         if(len(ij[0])<1):
-             # none of IMS cell centroid inside a ELM grid, find the close one instead
-            closej  = np.where((Grid2_gyy<=jnth) & (Grid2_gyy>jsth)) # do lat/y first, due to evenly-intervaled along lat/y
-            if closej[0].size<=0:
-                closei  = np.where((Grid2_gxx<=iest) & (Grid2_gxx>iwst)) # do lon/x first
-                if(closei[0].size>0):
-                    closeiy = np.argmin(abs(Grid2_gyy[closei]-(jnth+jsth)/2.0))
-                    closeij = (np.asarray(closei[0][closeiy]),np.asarray(closei[1][closeiy]))
-                else:
-                    closeij = deepcopy(closei)
-            else:
-                closejx  = np.argmin(abs(Grid2_gxx[closej]-(iwst+iest)/2.0))
-                closeij = (np.asarray(closej[0][closejx]),np.asarray(closej[1][closejx]))
-            Grid2in1_indx[str(indx)] = deepcopy(closeij)
-    
+            # only search within Grid2' range
+            if (Grid2_dxy!=None):
+                print()
+                
+            dx=abs(Grid2_gxx-(iwst+iest)/2.0)
+            dy=abs(Grid2_gyy-(jnth+jsth)/2.0)
+            dxy = dx*dx+dy*dy
+            ij = np.unravel_index(np.argmin(dxy, axis=None), dxy.shape)
+            
+        
+        Grid2in1_indx[str(indx)] = deepcopy(ij)
+
     # done with all grids
     return Grid2in1_indx, Grid2_gxx, Grid2_gyy
    
 #-------------------Writing submodule-----------------------------------------------
 # Write to geo-referenced CF compliant nc file, if filename given
 
-def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True, FillValue=None):
+def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True, FillValue=None, geoprj=''):
     # INPUTS: vars      - variable names, separated by ','. if 'all' means every var-key in 'vardatas'
     #         vardatas  - python np list, with dicts/data
     #    (optional) ptxy    - paired lon/lat (x/y), in [x/lon,y/lat] (only 1 point)
     #    (optional) ncfname - if not empty, write processed data into (geo)NC file
     #    (optional) newnc   - if not True, write into existed 'ncfname' nc file
+    #    (optional) FillValue - 
+    #    (optional) geoprj   - if not empty, GeoX/Y projection names
     # OUTPUTS (optional): if NOT write to NC file and 'vars' only has 1 variable
     #                     Output year, doy, lon, lat, data for 'vars' in np.array  
     
@@ -380,11 +378,11 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True, FillValue=None)
 
                     vlat = ncfile.createVariable('geoy', np.float32, ('geoy',))
                     vlat.units = 'meters'
-                    vlat.long_name = 'Northing (Polar stereographic ellipsoidal projection)'
+                    vlat.long_name = 'Northing ('+geoprj+')'
                 
                     vlon = ncfile.createVariable('geox', np.float32, ('geox',))
                     vlon.units = 'meters'
-                    vlon.long_name = 'Easting (Polar stereographic ellipsoidal projection)'
+                    vlon.long_name = 'Easting ('+geoprj+')'
 
                 else:
                     lon_dim = ncfile.createDimension('lon',  lon.size)
