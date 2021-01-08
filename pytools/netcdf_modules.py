@@ -4,6 +4,7 @@ import numpy as np
 from netCDF4 import Dataset
 from netCDF4 import Variable
 from array import array
+from numpy import newaxis
 ncopath = '/usr/local/nco/bin'
 
 #----------------------------------------------------------------------------             
@@ -341,6 +342,66 @@ def geotiff2nc(file, bandinfos):
 
     ncof.close()
 #
+#----------------------------------------------------------------------------             
+# average specific variable(s) along named dimension and write back for all
+def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL'):
+    dim_name = dim_name.strip()
+    if dim_name=='':
+        print('Error: please provide a valid dim_name')
+        sys.exit()
+    
+    with Dataset(ncfilein) as src, Dataset(ncfileout, "w") as dst:
+        # copy global attributes all at once via dictionary
+        dst.setncatts(src.__dict__)
+   
+        if type(var_name)==str:
+            # in case variable(s) not in a string array
+            if var_name=='ALL':
+                var_name = src.variables.keys()
+            else:
+                var_name=var_name.strip().split(',')
+        
+
+        # copy dimensions
+        for name, dimension in src.dimensions.items():
+            len_dimension = len(dimension)
+            
+            dst.createDimension(name, len_dimension if not dimension.isunlimited() else None)
+        #   
+    
+        # copy all file data except for matched-up variables, which instead averaged along specified dimension
+        for name, variable in src.variables.items():
+
+            # create variables, but will update its values later 
+            dst.createVariable(name, variable.datatype, variable.dimensions)
+            
+            # copy variable attributes all at once via dictionary after created
+            dst[name].setncatts(src[name].__dict__)
+
+            #
+            varvals = np.copy(src[name][...])
+            if (dim_name in variable.dimensions) and (name in var_name):
+                dim_indx = variable.dimensions.index(dim_name)
+                tmp = np.mean(varvals, axis=dim_indx)
+                if dim_indx==0:
+                    varvals[:,...]=tmp
+                elif dim_indx==1:
+                    varvals[:,:,...]=tmp[:,newaxis]
+                elif dim_indx==2:
+                    varvals[:,:,:,...]=tmp[:,:,newaxis]
+                elif dim_indx==3:
+                    varvals[:,:,:,:,...]=tmp[:,:,:,newaxis]
+                else:
+                    print('Error:  dimension over 4 not supported')
+                    sys.exit()
+            #
+                
+            dst[name][...] = np.copy(varvals)
+        
+        #
+            
+    #            
+    
 
 
 #####################################################################
@@ -395,3 +456,7 @@ def geotiff2nc(file, bandinfos):
 #           }
 
 #geotiff2nc(file, bandinfos)
+
+#varmeanby1dim
+#varmeanby1dim('surfdata_pft.nc', 'surfdata_INUNDATION.nc','gridcell',var_name=['F0','FMAX','P3','ZWT0'])
+
