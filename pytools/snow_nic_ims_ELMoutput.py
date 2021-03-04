@@ -316,8 +316,17 @@ if (options.elmheader != ""):
     ncfileheader = elmpathfileheader.split('/')[-1]
     elm_odir   = elmpathfileheader.replace(ncfileheader,'')
     if(elm_odir.strip()==''):elm_odir='./'
+    elmfileheader = elmpathfileheader.replace(elm_odir,'')
+
     elmfincl = 'h0'
-    if ('.h1.' in alldirfiles[0]): elmfincl='h1'
+    if ('.h1.' in alldirfiles[0]): 
+        elmfincl='h1'
+    elif ('.h2.' in alldirfiles[0]): 
+        elmfincl='h2'
+    elif ('.h3.' in alldirfiles[0]): 
+        elmfincl='h3'
+    elif ('.h4.' in alldirfiles[0]): 
+        elmfincl='h4'
     
     # read-in datasets from 1 simulation
     nx, ny, nlgrnd, nldcmp, ncolumn, npft, varsdata, varsdims, ttunits = \
@@ -426,7 +435,7 @@ if (options.elmheader != ""):
         elm_daynums = t*365.0 # first day of year t (i.e. year)
     else:
         elm_daynums = t
-        
+    elm_yr=np.trunc(elm_daynums/365.0).astype(int)
     
 
     # looking-up snow-free seasons over years
@@ -443,9 +452,11 @@ if (options.elmheader != ""):
     
 #-------------------------------------------------------------------------
 # NIC-IMS snow coverages reading from daily NC snowcov dataset
+snow_yearly = {}
 if (options.imsheader != ""):
     imspathfileheader = options.imsheader
-
+    if (options.elmheader == ""): elmxy=False
+    
     alldirfiles = sorted(glob.glob("%s*.%s" % (imspathfileheader, ftype)))
     if(len(alldirfiles)<=0):
         sys.exit("No file exists - %s*.%s IN %s" %(imspathfileheader, ftype, cwdir))
@@ -455,6 +466,7 @@ if (options.imsheader != ""):
     ncfileheader = imspathfileheader.split('/')[-1]
     ims_odir   = imspathfileheader.replace(ncfileheader,'')
     if(ims_odir.strip()==''):ims_odir='./'
+    imsfileheader = imspathfileheader.replace(ims_odir,'')
 
     for ncfile in alldirfiles:
         print ('Processing - ', ncfile)
@@ -491,10 +503,10 @@ if (options.imsheader != ""):
                 dy = np.diff(imsy)
                 yres = np.mean(dy)
                 dy = np.hstack((dy,yres)) 
-                # imsx/imsy IS grid left/bottom corner, for centroids, adding half of intervals 
-                x = imsx + 0.5*dx
-                y = imsy + 0.5*dy
-                ims_gx, ims_gy = np.meshgrid(x, y) # mid-points of grid
+                # imsx/imsy IS grid centroids, shifting half of intervals for mesh 
+                x = imsx - 0.5*dx
+                y = imsy - 0.5*dy
+                ims_gx, ims_gy = np.meshgrid(x, y)
 
                 # ELM grid-mesh nodes: elmx/y are grid-centroids
                 if elmx.size>1:
@@ -529,6 +541,8 @@ if (options.imsheader != ""):
             daynums_from_elm = np.empty((0),np.float32)
             elm_it_all = np.empty((0),np.int)
             ims_it_all = np.empty((0),np.int)
+            
+            # (1) ELM and IMS grid-matching for each time-interval of IMS data
             for it in range(tt[0:].size):
                 # match YEAR/DOY btw 'vdata' and 'elm_vdata' (NOT date/time due to no_leap in ELM time)
                 day_tt = num2date(tt[it]).date()
@@ -604,7 +618,7 @@ if (options.imsheader != ""):
                     daynums_from_elm = np.hstack((daynums_from_elm,tt[it]))
                     ims_it_all = np.hstack((ims_it_all,it))
             
-            # after done with 1 ncfile, need to save matched datasets
+            # (2) IMS into ELM grid
             if (vdata_2delmcell.shape[0]>0):  # IMS data aggregated into ELM cells, if sucessfully calculated
                 varname = elm_varname+'_ims'
                 ncdata = {}
@@ -674,7 +688,7 @@ if (options.imsheader != ""):
                                    FillValue=FillValue_SEA, geoprj=prjname)
                 
                 
-                
+            # (3) ELM into IMS
             if (len(daynums_from_elm)>0): # ELM simulation assigned into IMS grids
                 varname = ims_varname+'_elm'
                 ncdata = {}
@@ -723,10 +737,10 @@ if (options.imsheader != ""):
                                (np.isnan(ncdata[varname])) | (np.isinf(ncdata[varname])) )
                 temp[ij] = 0.0 
                 # for best visual effect, mask sea-cell  of either dataset
-                ij = np.where( (ncdata[elm_varname]==FillValue_SEA)  | \
+                ij = np.where( (ncdata[ims_varname]==FillValue_SEA)  | \
                                (ncdata[varname]==FillValue_SEA) )
                 temp[ij] = FillValue_SEA
-                ij = np.where( (ncdata[elm_varname]==FillValue_LND)  | \
+                ij = np.where( (ncdata[ims_varname]==FillValue_LND)  | \
                                (ncdata[varname]==FillValue_LND) )
                 temp[ij] = FillValue_LND
                 ncdata[ims_varname+'_diff'] = temp
@@ -740,30 +754,38 @@ if (options.imsheader != ""):
                                    ncdata, ptxy=[], ncfname=ncfname, newnc=True, \
                                    FillValue=FillValue_SEA,geoprj=prjname)
         
-        # ---------------------------------------------------------------------
+        # end of if (option.elmheader != '') # i.e. merging two datasets of ELM and IMS
+        # but only with 1 IMS nc file.
+        # -----------------------------------------------------------------------------
         
-        # at end of 1 nc file, need to concat it into 1 all-time datasets
+        # at end of 1 nc file, need to concat it into 1 all-time datasets for yearly lookup snow statistics
         if ncfile == alldirfiles[0]:
             daynums = deepcopy(tt)
-            snowcov = deepcopy(np.flip(np.flip(vdata,1),2))
+            snowcov = deepcopy(vdata)
         else:
             daynums = np.hstack((daynums, tt))
-            snowcov = np.vstack((snowcov, np.flip(np.flip(vdata,1),2))) # weired here: vdata seems flipped in both x/y
+            snowcov = np.vstack((snowcov, vdata))
     
-        # ONLY needs 1 year data for 'lookup snowfree season' really - this will save a lot of memory if more than 2-year data
+        # ONLY needs at most 2 year data for 'lookup snowfree season' really - this will save a lot of memory if more than 2-year data
         # (NOTE: here assuming data time-series is in order, i.e. continuously)
         if (options.lookup_snowfreeseason):
             daynums_yr = np.asarray([num2date(x).year for x in daynums])
             if(daynums_yr[-1]>daynums_yr[0] or ncfile==alldirfiles[-1]): # year number changed or last file
                 if (ncfile==alldirfiles[-1]):
-                    ij_1yr = np.where(daynums_yr!=np.nan)[0] # all T-series, likely 1 or 2-years
+                    ij_1yr = np.where(daynums_yr!=np.nan)[0] # all T-series to end, likely 1 or 2-years
                 else:
                     ij_1yr = np.where(daynums_yr==daynums_yr[0])[0] # this is 1-D tuple index, better to get its [0]
-                print('Data T-length: '+str(len(ij_1yr))+ \
+                print('Snow Statistics on Data of T-length: '+str(len(ij_1yr))+ \
                       ' From: '+ str(num2date(daynums[ij_1yr[0]]))+ \
                       ' To: ' + str(num2date(daynums[ij_1yr[-1]])) )
-                snow_yearly = \
-                    seeking_YRLYsnowfreeseason(daynums[ij_1yr], snowcov[ij_1yr])
+                if (len(snow_yearly)<=0):
+                    snow_yearly = \
+                        seeking_YRLYsnowfreeseason(daynums[ij_1yr], snowcov[ij_1yr], no_leap=False)
+                else:
+                    snow_yearly = \
+                        seeking_YRLYsnowfreeseason(daynums[ij_1yr], snowcov[ij_1yr], no_leap=False,
+                                                   snow_yearly=snow_yearly)
+                
                 
                 # only need the rest of data for next year
                 daynums = deepcopy(daynums[ij_1yr[-1]+1:])
@@ -782,16 +804,19 @@ if (options.imsheader != ""):
 
 # write yearly snow-free season data into 1 NC file
 if len(snow_yearly)>0:
+    yr0 = int(snow_yearly['Year'][0])
+    yr1 = int(snow_yearly['Year'][-1])
     
     #-----------------------------------------------------------
     # write all snow_yearly data to NC file
     if(options.imsheader != "" and options.elmheader==""):
-        ncfname = 'NSIDC_yearly_snowstats.nc'
+        ncfname = 'Yly_snowstats-'+imsfileheader+str(yr0)+'-'+str(yr1)+'.nc'
 
         snow_yearly['geox'] = deepcopy(imsx)
         snow_yearly['geoy'] = deepcopy(imsy)
+        elmxy = False
     elif(options.elmheader != "" and options.imsheader==""):
-        ncfname = 'ELM20181101_N60_yearly_snowstats.nc'
+        ncfname = 'Yly_snowstats-'+elmfileheader+'.'+elmfincl+'.'+str(yr0)+'-'+str(yr1)+'.nc'
         if(elmxy):
             snow_yearly['geox']  = deepcopy(elmx)
             snow_yearly['geoy']  = deepcopy(elmy)

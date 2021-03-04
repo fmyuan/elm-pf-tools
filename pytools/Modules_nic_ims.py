@@ -89,9 +89,6 @@ def Prep_ims_grid(res, minlat=None, lonlat2xy=False):
         imsym = imsym[:,0].astype(np.int) # grid-y nodes
         imsym = (np.round(imsym/10))*10 # there is ~5m error from original data
         
-        # the nodes are the lower-left corners of a cell -> centroids
-        #imsxm = imsxm + np.mean(np.diff(imsxm))/2  # easting
-        #imsym = imsym + np.mean(np.diff(imsym))/2  # northing
         
         if minlat!=None:
             return ix, iy, imsxm, imsym
@@ -122,7 +119,6 @@ def Prep_ims_snowcov(ifile, fileheader, varname, alldata={}):
         daynums = date2num(doy0)+doy-1
         mid_day = num2date(daynums).date()
 
-        # appears vardatas are in S-N/E-W ordered, so must be flip upside down to match with grids
         try:
             data = np.genfromtxt(ifile,dtype=np.int8,delimiter=1,skip_header=30)
         except:
@@ -155,7 +151,8 @@ def Prep_ims_snowcov(ifile, fileheader, varname, alldata={}):
                 print ('Error: data reading from file')
                 return -1
             
-        data = np.fliplr(data)
+        # appears vardatas are in S-N/E-W ordered, so must be flip upside down to match with grids
+        data = np.flipud(data)
         
 
         # data re-grouping as follows, so that it can be read in Visit using blue-scale :
@@ -501,7 +498,6 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True, FillValue=None,
             DONE_time = True
         
         # 
-        # appears vardatas are in S-N/E-W ordered, so must be flip over
         data = vardatas[varname]
         data = np.float32(data) # data type is 'uint8', convert to short (othwise cannot be read by Visit)
         
@@ -573,10 +569,10 @@ def SingleMap(varname, vardatas, figno=None):
     y = np.linspace(lat_s, lat_s + dlat*nlat, nlat)
     lon, lat = np.meshgrid(x, y)
     
-    # appears vardatas are in S-N/E-W ordered, so must be flip over
+    # appears vardatas are in S-N/E-W ordered, so shall be flip over
     data = vardatas[varname]
-    data = np.fliplr(data)
-    data = np.flipud(data)
+    #data = np.fliplr(data) # not with nic-ims data ??? - be super-cautious here
+    #data = np.flipud(data) # not with nic-ims data ??? - be super-cautious here
     
     # mid of day
     mid_day = vardatas['RANGEBEGINNINGDATE']+ (vardatas['RANGEENDINGDATE']-vardatas['RANGEENDINGDATE'])/2.0

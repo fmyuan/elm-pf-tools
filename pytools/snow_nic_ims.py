@@ -103,7 +103,7 @@ if options.file2nc and not options.lookup_snowfreeseason:
             snowdata[varname] = snowdata[varname][:,xind,:]
             snowdata[varname] = snowdata[varname][:,:,yind]
             
-        snowdata['date'] = mid_day
+        snowdata['date'] = [mid_day]
         if lonlat2xy:
             snowdata['geox']  = deepcopy(imsx)
             snowdata['geoy']  = deepcopy(imsy)
@@ -206,7 +206,7 @@ if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='
         # write smoothed 'temp_snowcov' to NC
         if options.file2nc:
             ncdata = {}
-            ncdata['date'] = mid_day
+            ncdata['date'] = [mid_day]
             if lonlat2xy:
                 ncdata['geox']  = deepcopy(imsx)
                 ncdata['geoy']  = deepcopy(imsy)
@@ -445,8 +445,10 @@ if len(snow_yearly)>0:
     del temp_snowcov_prv
 
     #-----------------------------------------------------------
+    yr0 = int(snow_yearly['Year'][0])
+    yr1 = int(snow_yearly['Year'][-1])
     # write all snow_yearly data to NC file
-    ncfname = 'NSIDC_yearly_snowfree.nc'
+    ncfname = 'NSIDC_yearly_snowfree.'+str(yr0)+'-'+str(yr1)+'.nc'
     if os.path.isfile(ncfname): os.system('rm -rf '+ncfname)
     ncfile = netCDF4.Dataset(ncfname, mode='w',format='NETCDF4') 
     print('Create and Write NC file: '+ncfname)

@@ -344,7 +344,7 @@ def geotiff2nc(file, bandinfos):
 #
 #----------------------------------------------------------------------------             
 # average specific variable(s) along named dimension and write back for all
-def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL'):
+def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
     dim_name = dim_name.strip()
     if dim_name=='':
         print('Error: please provide a valid dim_name')
@@ -357,9 +357,19 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL'):
         if type(var_name)==str:
             # in case variable(s) not in a string array
             if var_name=='ALL':
-                var_name = src.variables.keys()
+                var_name = list(src.variables.keys())
             else:
                 var_name=var_name.strip().split(',')
+        else:
+            print('Error in ',var_name)
+            sys.exit()
+        if var_excl!='' and type(var_excl)==str:
+            var_remv = var_excl.strip().split(',')
+            for v in var_remv:
+                if v in var_name: 
+                    var_name.remove(v)
+                else:
+                    print('Warning: ',v,' NOT in ',var_name)
         
 
         # copy dimensions
@@ -458,5 +468,16 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL'):
 #geotiff2nc(file, bandinfos)
 
 #varmeanby1dim
-#varmeanby1dim('surfdata_pft.nc', 'surfdata_INUNDATION.nc','gridcell',var_name=['F0','FMAX','P3','ZWT0'])
+#varmeanby1dim('surfdata_pft.nc', 'surfdata_VIC.nc','gridcell', \
+#              var_name='ALL', \
+#              var_excl='LONGXY,LATIXY,AREA,Ds,Dsmax,Ws,binfl')
+#              #var_excl='LONGXY,LATIXY,AREA,PCT_CROP,PCT_GLACIER,PCT_LAKE,PCT_NATVEG,PCT_NAT_PFT,PCT_URBAN,PCT_WETLAND,PFTDATA_MASK')
+#              #var_excl='LONGXY,LATIXY,AREA,F0,FMAX,P3,ZWT0')
+#              #var_excl='LONGXY,LATIXY,AREA,F0,FMAX,P3,ZWT0')
+#              #var_excl='LONGXY,LATIXY,AREA,TOPO,SLOPE,STD_ELEV')
+#              #var_excl='LONGXY,LATIXY,AREA,TOPO,SLOPE,STD_ELEV')
+#              #var_excl='LONGXY,LATIXY,AREA,PCT_CLAY,PCT_SAND,ORGANIC,SOIL_COLOR,SOIL_ORDER')
+              #
+              #var_name='ALL', # all variables averaged, but excluding in 'var_excl'
+              #var_excl='PCT_CROP,PCT_GLACIER,PCT_LAKE,PCT_NATVEG,PCT_NAT_PFT,PCT_URBAN,PCT_WETLAND,PFTDATA_MASK') # only those averaged
 
