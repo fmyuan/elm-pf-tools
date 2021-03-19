@@ -23,7 +23,7 @@ def SinglePlot(tt, time_unit, varnames, varunits, vardatas, figno=None):
         ncol = 2
 
 
-    fig = plt.figure(figsize=(8.5,11.5))
+    fig = plt.figure(figsize=(7.5,9.5))
      
     # plot 1, or subplot 1 if more than 1 subplot
     if (nvars >= 2):

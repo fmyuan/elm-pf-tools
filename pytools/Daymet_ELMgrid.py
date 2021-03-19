@@ -326,7 +326,6 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True, FillValue=None)
             DONE_time = True
         
         # 
-        # appears vardatas are in S-N/E-W ordered, so must be flip over
         data = vardatas[varname]
         data = np.float32(data) # data type is 'uint8', convert to short (othwise cannot be read by Visit)
         

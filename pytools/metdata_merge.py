@@ -108,6 +108,14 @@ def DataTimePatterns(t, data, SEASONALLY, ANNUALLY, t_unit='Days', ts_yrly=365, 
 
     t3=np.floor(t2)          # in 'years'
     t2=(t2-np.floor(t2))*365 # still in original time-unit, but in DOY
+    # doy 0, if from above, implies it be 365 and years be previous year, when it's not the first.
+    # when it's the starting, it's OK, otherwise it may cause issue for regrouping and plotting
+    if (t2[0]!=0):  
+        idx = np.where(t2==0)
+        t3[idx] = t3[idx]-1
+        t2[idx] = 365-1.0e-8
+    if(abs(t2[1]-t2[0])<1.0):
+        t2 = t2 + 1                  # convert to 1-based DOY, if sub-daily data
 
     
     # if 'season' length in 'data' is greater than pre-defined yrly timesteps
@@ -179,7 +187,6 @@ def DataTimePatterns(t, data, SEASONALLY, ANNUALLY, t_unit='Days', ts_yrly=365, 
     if(SEASONALLY):
         t2=t2.reshape(dim_yr,-1)
         t_seasonally=np.mean(t2,axis=0)
-        if(t_seasonally[0]!=0.0): t_seasonally=np.where(t_seasonally==0,365.0,t_seasonally)  # day 0 shall be day 365 if not first element, otherwise plotting X axis not good
         
         if(len(data)>0):
             shp=np.hstack(([dim_yr,-1],data_adj.shape[1:]))
@@ -281,10 +288,10 @@ parser.add_option("--nc_create", dest="nc_create", default=False, \
                   help = "output new nc file", action="store_true")
 parser.add_option("--nc_write", dest="nc_write", default=False, \
                   help = "output to a existed nc file", action="store_true")
-parser.add_option("--ncout_cplbypass", dest="nc_write_cplbypass", default=False, \
-                  help = "output to nc files for CPL_BYPASS", action="store_true")
-parser.add_option("--ncout_standard", dest="nc_write_standard", default=False, \
-                  help = "output to nc files in standard format as original", action="store_true")
+parser.add_option("--ncout_mettype", dest="nc_write_mettype", default="", \
+                  help = "output to nc files in defined format (default = '', i.e., as original)")
+parser.add_option("--ncout_stdmetdir", dest="nc_write_stdmetdir", default="", \
+                  help = "output nc met files templates directory (default = '', i.e., as in original)")
 #
 (options, args) = parser.parse_args()
 
@@ -349,13 +356,14 @@ lat = float(options.lat)
 t_elm = []
 vardatas = []
 # read-in metdata from CPL_BYPASS_FULL
-if ('cplbypass' in options.met_type or 'cplbypass_site' in options.met_type):
+if ('cplbypass' in options.met_type or 'cplbypass_Site' in options.met_type):
     cplbypass_dir=options.met_idir
-    cplbypass_fileheader=''
     cplbypass_mettype='GSWP3'
+    if ('daymet' in options.met_type): cplbypass_mettype='GSWP3_daymet'
+    if ('v1' in options.met_type): cplbypass_mettype='GSWP3v1'
     
     vnames=[vname_elm]
-    if('cplbypass_site' in options.met_type): 
+    if('cplbypass_Site' in options.met_type): 
         cplbypass_mettype='Site'
         if (vname_elm=='QBOT' or vname_elm=='estFLDS'): 
             vnames=['RH','TBOT','PSRF']
@@ -367,7 +375,7 @@ if ('cplbypass' in options.met_type or 'cplbypass_site' in options.met_type):
     # read in
     ix,iy, varsdims, vardatas = \
         Modules_metdata.clm_metdata_cplbypass_read( \
-                            cplbypass_dir,cplbypass_fileheader, cplbypass_mettype, lon, lat, vnames)
+                            cplbypass_dir, cplbypass_mettype, lon, lat, vnames)
 
     # assign data to plotting variables
     nx=len(ix)
@@ -387,7 +395,7 @@ if ('cplbypass' in options.met_type or 'cplbypass_site' in options.met_type):
 elif (('CRU' in options.met_type or \
     'GSWP3' in options.met_type or \
     'Site' in options.met_type) and \
-    ('cplbypass' not in options.met_type and 'cplbypass_site' not in options.met_type)):
+    ('cplbypass' not in options.met_type and 'cplbypass_Site' not in options.met_type)):
     if (options.met_idir == './'):
         print('e3sm met. directory is the current')
     else:
@@ -949,6 +957,11 @@ if (BY_JOINTING):
         sdatas[snames[2]] = deepcopy(datax1_seasonally)
         SinglePlotting(tt, 'DOY', snames, vname_elm, sdatas, figno='XX-3')
 
+else: # no jointing of datasets
+    t_jointed = deepcopy(t_elm)
+    sdata_jointed = deepcopy(sdata_elm)
+
+    
 #--------------------------------------------------------------------------------------
 # printing plot in PDF
 # for checking data-jointing
@@ -989,6 +1002,28 @@ if (options.plotting):
 #--------------------------------------------------------------------------------------
 # save in ELM forcing data format
 if (options.nc_create or options.nc_write):
+
+    # if cutoff data for whatever reason to output
+    NCOUT_CUTOFF=False
+    if NCOUT_CUTOFF:
+        yr=np.floor(t_jointed/365.0)
+        idx=np.where(yr<=2015)
+        t_jointed = t_jointed[idx]
+        sdata_jointed = sdata_jointed[idx]
+    
+    varname = vname_elm
+    
+    met_type = options.nc_write_mettype
+    if met_type =='': met_type = options.met_type
+    if met_type==options.met_type:
+        NCOUT_ORIGINAL=True
+    else:
+        NCOUT_ORIGINAL=False
+    if 'cplbypass' in options.nc_write_mettype:
+        NCOUT_CPLBYPASS=True
+    else:
+        NCOUT_CPLBYPASS=False
+
     if (options.nc_create and options.nc_write):
         print('Error: cannot have both "--nc_create" and "--nc_write" ')
         sys.exit(-1)
@@ -1000,15 +1035,17 @@ if (options.nc_create or options.nc_write):
     # get a template ELM forcing data nc file
     # 
     ncfilein_cplbypass = ''
+    metdir = options.nc_write_stdmetdir
+    if metdir=='': metdir=options.met_idir
     if 'GSWP3' in met_type:
-        if (vname_elm == 'FSDS'):
+        if (varname == 'FSDS'):
             fdir = metdir+'/Solar3Hrly/'
-        elif (vname_elm == 'PRECTmms'):
+        elif (varname == 'PRECTmms'):
             fdir = metdir+'/Precip3Hrly/'
         else:
             fdir = metdir+'/TPHWL3Hrly/'
         
-        fdirheader = metdir+'/GSWP3_'+vname_elm+'_'
+        fdirheader = metdir+'/GSWP3_'+varname+'_'
         ncfilein_cplbypass = sorted(glob.glob("%s*.*" % fdirheader))
         ncfilein_cplbypass = ncfilein_cplbypass[0]
         
@@ -1016,49 +1053,32 @@ if (options.nc_create or options.nc_write):
         fdir = metdir+'/'
         # So 'metdir' must be full path, e.g. ../atm/datm7/CLM1PT_data/1x1pt_US-Brw
         ncfilein_cplbypass=fdir+'all_hourly.nc'
-    if (metfileheader==''):
-        dirfiles = sorted(os.listdir(fdir))
-    else:
-        fdir = metdir+'/'
-        fdirheader=fdir+metfileheader.strip()
-        dirfiles = sorted(glob.glob("%s*.*" % fdirheader))  # maybe file pattern in 'fileheader'
-    if (os.path.isfile(dirfiles[0]) and str(dirfiles[0]).endswith('.nc')):
-        ncfilein = dirfiles[0]
-    
     
     # new met nc files to create or write
     
-    # if cutoff data for whatever reason to output
-    NCOUT_CUTOFF=False
-    if NCOUT_CUTOFF:
-        yr=np.floor(t_jointed/365.0)
-        idx=np.where(yr<=2015)
-        t_jointed = t_jointed[idx]
-        sdata_jointed = sdata_jointed[idx]
-    
-    yyyymm=ncfilein.split('/')[-1]
-    yyyymm=yyyymm.split('.')[-2]
-    # elm met file usually ending like '*.1980-01.nc', while in CPL_BYPASS format, ending like '*_1901-2014_z??.nc'
-    if ('GSWP3' in met_type): yyyymm = yyyymm.split('_')[-2]
-    yyyy=yyyymm.split('-')[-2]
-    mm=yyyymm.split('-')[-1]  # for 'GSWP3', 'mm' is the end-year while 'yyyy' is the starting-year
-    
-    mdoy=[0,31,59,90,120,151,181,212,243,273,304,334,365]#monthly starting DOY
-    tyr = np.asarray(np.floor(t_jointed/365.0))
-    tdoy = t_jointed-tyr*365.0
-    
-    varname = vname_elm
-    tyrly = np.asarray(np.sort(np.unique(tyr)))
-    
-    NCOUT_CPLBYPASS=options.nc_write_cplbypass
-    NCOUT_STANDARD=options.nc_write_standard
-    if (not NCOUT_STANDARD and not NCOUT_CPLBYPASS):
-        # if either output format not defined and nc_create/nc_write required
-        # allow output in standard format.
-        NCOUT_STANDARD=True
+    # (1) if in original output format
+    if NCOUT_ORIGINAL:
+        if (metfileheader==''):
+            dirfiles = sorted(os.listdir(fdir))
+        else:
+            fdirheader=fdir+metfileheader.strip()
+            dirfiles = sorted(glob.glob("%s*.*" % fdirheader))  # maybe file pattern in 'fileheader'
+        if (os.path.isfile(dirfiles[0]) and str(dirfiles[0]).endswith('.nc')):
+            ncfilein = dirfiles[0]
         
-    
-    if (NCOUT_STANDARD):
+        yyyymm=ncfilein.split('/')[-1]
+        yyyymm=yyyymm.split('.')[-2]
+        # elm met file usually ending like '*.1980-01.nc', while in CPL_BYPASS format, ending like '*_1901-2014_z??.nc'
+        if ('GSWP3' in met_type): yyyymm = yyyymm.split('_')[-2]
+        yyyy=yyyymm.split('-')[-2]
+        mm=yyyymm.split('-')[-1]  # for 'GSWP3', 'mm' is the end-year while 'yyyy' is the starting-year
+        
+        mdoy=[0,31,59,90,120,151,181,212,243,273,304,334,365]#monthly starting DOY
+        tyr = np.asarray(np.floor(t_jointed/365.0))
+        tdoy = t_jointed-tyr*365.0
+        
+        tyrly = np.asarray(np.sort(np.unique(tyr)))
+        
         for iyr in tyrly:
             print('YEAR: ', int(iyr), varname)
             for imm in range(len(mdoy)-1):
@@ -1102,15 +1122,20 @@ if (options.nc_create or options.nc_write):
                 if error!=0: sys.exit('nfmod.putvar WRONG')
             # end of for imm
         #end fo for iyr
-    # end of if (NCOUT_STANDARD)
+    # end of if (NCOUT_ORIGINAL)
     
+    #(2) in cplbypass format (NOTE: can output both original and cplbypass)
+    if (NCOUT_CPLBYPASS): print('cpl_bypass template file: '+ ncfilein_cplbypass)
     if (NCOUT_CPLBYPASS and ncfilein_cplbypass!=''):
         if 'site' in met_type.lower()  or 'GSWP3' in met_type: 
-            if 'site' in met_type:
+            if 'site' in met_type.lower():
                 ncfileout_cplbypass='all_hourly.nc'
             elif 'GSWP3' in met_type:
                 ncfileout_cplbypass=ncfilein_cplbypass.split('/')[-1]
-            
+            else:
+                print('currently only support 2 types of cpl_bypass: Site or GSWP3*')
+                sys.exit(-1)
+                
             tvarname = 'DTIME'
             
             if (options.nc_create):

@@ -67,7 +67,7 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
     lx = 0.10
     ly = 0.90
     #plot_title = ''
-    plot_title = 'Alert, CANADA' #plotlabel
+    plot_title = 'BEO, AK' #plotlabel
     #plot_title = 'VanKarem, RUSSIA' #plotlabel
     plt.text(lx, ly, plot_title, transform=ax.transAxes,fontsize=14, fontweight='bold')
 
@@ -191,9 +191,10 @@ if (options.clmncheader != '' and options.met_type == 'ELM'):
 #--------------------------------------------------------------------------------------
 # read-in metdata from CPL_BYPASS_FULL
 if (options.met_type=='cplbypass' or options.met_type=='CPL'):
-    cplbypass_dir=options.met_idir+'/cpl_bypass_full'
+    cplbypass_dir=options.met_idir
     cplbypass_fileheader=''
-    cplbypass_mettype='GSWP3_daymet'
+    cplbypass_mettype='GSWP3'
+    #cplbypass_mettype='GSWP3_daymet'
     lon = float(options.lon)
     lat = float(options.lat)
 

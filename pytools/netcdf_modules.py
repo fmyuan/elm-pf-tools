@@ -188,12 +188,26 @@ def mergefilesby1dim(ncfilein1, ncfilein2, ncfileout, dim_name):
    
         if type(dim_name)==str: 
             dim_name=[dim_name]
+        elif (len(dim_name)>1): # make sure only 1 dimension allowed
+            print("Error: only 1 dimension allowed")
+            sys.exit(-1)
 
-        # adding dimensions, if defined
+        # changing dimension length for dst
         for name, dimension in src1.dimensions.items():
             if name in dim_name:
                 dimension2 = src2.dimensions[name]
-                len_dimension = len(dimension) + len(dimension2)
+                d12 = []
+                if name in src1.variables.keys() and name in src2.variables.keys(): # overlay or merge
+                    d1 = np.asarray(src1[name])
+                    d2 = np.asarray(src2[name])
+                    d12, idx1, idx2  = np.intersect1d(d1, d2, return_indices=True)
+                    if len(d12)>0:
+                        for d in d12: 
+                            d1 = d1[d1!=d]
+                            d2 = d2[d2!=d]
+                    len_dimension = len(d1)+len(d12)+len(d2)
+                else:
+                    len_dimension = len(dimension) + len(dimension2)
             else:
                 len_dimension = len(dimension)
             
@@ -213,16 +227,113 @@ def mergefilesby1dim(ncfilein1, ncfilein2, ncfileout, dim_name):
             #
             varvals1 = np.copy(src1[name][...])
             tmp = varvals1
-            for dim in dim_name:
-                if dim in variable.dimensions:
-                    dim_indx = variable.dimensions.index(dim)
-                    varvals2=np.copy(src2[name][...])
+            dim=dim_name[0]  #only 1 dim supported
+            if dim in variable.dimensions:
+                dim_indx = variable.dimensions.index(dim)
+                varvals2=np.copy(src2[name][...])
+                if len(d12)>0:
+                    # overlay cells, if any
+                    varvals12 = (np.take_along_axis(varvals1,idx1,axis=dim_indx) + \
+                                 np.take_along_axis(varvals2,idx2,axis=dim_indx))/2.0
+                    
+                    varvals1 = np.put_along_axis(varvals1, idx1, varvals12, axis=dim_indx)
+                    varvals2 = np.delete(varvals2, idx2, axis=dim_indx)
+                if ((d1[0]<=d2[0] and d1[0]<=d1[-1]) or (d1[0]>=d2[0] and d1[0]>=d1[-1])):
                     tmp=np.concatenate((varvals1,varvals2), axis=dim_indx)
+                else:
+                    tmp=np.concatenate((varvals2,varvals1), axis=dim_indx)
                 
             dst[name][...] = np.copy(tmp)
         
         #
+        
+    #            
+    print('done!')
+
+#----------------------------------------------------------------------------             
+
+#----------------------------------------------------------------------------             
+# merge/overlay 2 ncfiles with same dimension names and resolution but might not be same length or range
+# 
+def overlayfiles(ncfilein1, ncfilein2, ncfileout):
+    with Dataset(ncfilein1) as src1, Dataset(ncfilein2) as src2, Dataset(ncfileout, "w") as dst:
+   
+        # dimensions in common to be merge/overlay
+        idx1={}
+        idx2={}
+        udims = {}
+        for name, dimension in src1.dimensions.items():
+            if (name in src2.dimensions.keys()):
+                dimension2 = src2.dimensions[name]
+                if name in src1.variables.keys() and name in src2.variables.keys(): # overlay or merge
+                    d1 = np.asarray(src1[name])
+                    d2 = np.asarray(src2[name])
+                    d12 = np.union1d(d1, d2)
+                    idx1[name] = np.asarray(np.where(np.isin(d12, d1))[0]) # indexing of d1 in d12, but converted to integer array
+                    idx2[name] = np.asarray(np.where(np.isin(d12, d2))[0])
+                    len_dimension = len(d12)
+                else:
+                    len_dimension = len(dimension) + len(dimension2)
+            else:
+                len_dimension = len(dimension)
+
+            if dimension.isunlimited(): # save current unlimited dim length for using below
+                udims[name] = len_dimension
             
+            dst.createDimension(name, len_dimension if not dimension.isunlimited() else None)
+        
+        #   
+        # copy all file data except for matched-up variables, which do merge/overlay
+        for name, variable in src1.variables.items():
+
+            # create variables, but will update its values later 
+            # NOTE: here the variable value size updated due to newly-created dimensions above
+            dst.createVariable(name, variable.datatype, variable.dimensions)
+            
+            # copy variable attributes all at once via dictionary after created
+            dst[name].setncatts(src1[name].__dict__)
+
+            #
+            varvals1 = np.copy(src1[name][...])
+            tmp = varvals1
+            
+            
+            if (name in src2.variables.keys()) and (not dst[name].dtype==np.str):
+                varvals2=np.copy(src2[name][...])
+
+                # nan-filled 'dst[name]' array for putting data from src1/src2
+                dst_shape = np.asarray(dst[name].shape)
+                for udim in udims.keys():
+                    if udim in variable.dimensions:
+                        udim_idx = variable.dimensions.index(udim)
+                        # unlimited length in 'dst_shape' from dst is default as 0
+                        # must assign current length, otherwise 'tmp1'/'tmp2' below is incorrect in shape
+                        dst_shape[udim_idx] = udims[udim]
+                temp1 = np.full(dst_shape, np.nan, dtype=dst[name].dtype) # nan-filled array for src1
+                temp2 = np.full(dst_shape, np.nan, dtype=dst[name].dtype) # nan-filled array for src2
+                
+                vdim = np.asarray(variable.dimensions)
+                temp_indx1 = np.asarray(np.where(np.isnan(temp1)))
+                temp_indx2 = np.asarray(np.where(np.isnan(temp2))) # whole-set multi-tuples indices
+                for i in range(len(vdim)):
+                    if vdim[i] in idx1.keys():  # dimension to be merge/overlay
+                        idx = np.asarray(np.where(np.isin(temp_indx1[i],idx1[vdim[i]])))
+                        temp_indx1 = temp_indx1[:,np.squeeze(idx)]
+                        idx = np.asarray(np.where(np.isin(temp_indx2[i],idx2[vdim[i]])))
+                        temp_indx2 = temp_indx2[:,np.squeeze(idx)]
+                #
+                vdim_indx1=np.ravel_multi_index(temp_indx1,temp1.shape)
+                vdim_indx2=np.ravel_multi_index(temp_indx2,temp2.shape)
+                np.put(temp1, vdim_indx1, varvals1)
+                np.put(temp2, vdim_indx2, varvals2)
+                temp1 = np.expand_dims(temp1, axis=0)
+                temp2 = np.expand_dims(temp2, axis=0)
+                tmp  = np.nanmean(np.concatenate((temp1, temp2), axis=0), axis=0)
+                #
+            #
+            dst[name][...] = np.copy(tmp)
+        #
+        
     #            
     print('done!')
 
@@ -467,7 +578,7 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 
 #geotiff2nc(file, bandinfos)
 
-#varmeanby1dim
+#varmeanby1dim - examples for surface data generation to check single variable
 #varmeanby1dim('surfdata_pft.nc', 'surfdata_VIC.nc','gridcell', \
 #              var_name='ALL', \
 #              var_excl='LONGXY,LATIXY,AREA,Ds,Dsmax,Ws,binfl')
@@ -480,4 +591,10 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
               #
               #var_name='ALL', # all variables averaged, but excluding in 'var_excl'
               #var_excl='PCT_CROP,PCT_GLACIER,PCT_LAKE,PCT_NATVEG,PCT_NAT_PFT,PCT_URBAN,PCT_WETLAND,PFTDATA_MASK') # only those averaged
+
+# overlayfiles - examples for joint 2 daymet nc files
+#ncfilein1 = 'ELM_sim_for_NSIDC_yearly_dayssnowfree_1997-2019_1WestAlaskaArctic.nc'
+#ncfilein2 = 'ELM_sim_for_NSIDC_yearly_dayssnowfree_1997-2019_2NorthAlaskaArctic.nc'
+#ncfileout = 'merged.nc'
+#overlayfiles(ncfilein1, ncfilein2, ncfileout)
 

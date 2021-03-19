@@ -73,15 +73,19 @@ def Prep_ims_grid(res, minlat=None, lonlat2xy=False):
         # projection used in output data layer
         # Polar stereographic ellipsoidal projection with WGS-84 ellipsoid
         #Proj4: +proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs
-        out_proj_str = "+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs"
+        #out_proj_str = "+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs"
+        
+        # for testing daymet projection
+        out_proj_str = "+proj=lcc +lon_0=-100 +lat_0=42.5 +lat_1=25 +lat_2=60 +x_0=0 +y_0=0 +R=6378137 +f=298.257223563 +units=m +no_defs"
+
         outProj = CRS.from_proj4(out_proj_str)
 
         # EPSG: 4326
         # Proj4: +proj=longlat +datum=WGS84 +no_defs
         inProj = CRS.from_epsg(4326)
     
-        lonlat2xy = Transformer.from_proj(inProj, outProj, always_xy=True)
-        imsxm,imsym = lonlat2xy.transform(imslons,imslats)
+        lonlat2xyOP = Transformer.from_proj(inProj, outProj, always_xy=True)
+        imsxm,imsym = lonlat2xyOP.transform(imslons,imslats)
         
         # since in X/Y meters, it shall be equally intervalled as 'res', e.g. 4km
         imsxm = imsxm[0,:].astype(np.int) # grid-x nodes
@@ -91,16 +95,16 @@ def Prep_ims_grid(res, minlat=None, lonlat2xy=False):
         
         
         if minlat!=None:
-            return ix, iy, imsxm, imsym
+            return ix, iy, imsxm, imsym, imslons, imslats
         else:
-            return imsxm, imsym
+            return imsxm, imsym, imslons, imslats  # note: imsxm/imsym in 1D-axis, imslons/imslats in 2-D for each cell
     
     else:
         
         if minlat!=None:
-            return ix, iy, imslon, imslats
+            return ix, iy, imslons, imslats
         else:
-            return imslon, imslats  # this is in 2-D, and fully paired  lon/lat for each cells, But NOT evenly longitude-interval along latitudal-axis
+            return imslons, imslats  # this is in 2-D, and fully paired  lon/lat for each cells, But NOT evenly longitude-interval along latitudal-axis
 
 #------------------------------------------------------------
 # processing data file *.asc or *.tiff each a day
@@ -151,7 +155,7 @@ def Prep_ims_snowcov(ifile, fileheader, varname, alldata={}):
                 print ('Error: data reading from file')
                 return -1
             
-        # appears vardatas are in S-N/E-W ordered, so must be flip upside down to match with grids
+        # appears vardatas are in S-N ordered, so must be flip upside down to match with grids
         data = np.flipud(data)
         
 

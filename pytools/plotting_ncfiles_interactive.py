@@ -226,14 +226,17 @@ else:
 if ('lat' in varnames or 'lon' in varnames):
     lat1d = np.asarray(vars['lat'])
     lon1d = np.asarray(vars['lon'])
-    gdata = np.asarray(vars[vname])
-    gdata2= np.asarray(vars[vname+'_ims'])
 
 elif('geoy' in varnames or 'geox' in varnames):
     lat1d = np.asarray(vars['geoy'])
     lon1d = np.asarray(vars['geox'])
-    gdata2= np.asarray(vars[vname])
+
+if (vname+'_elm' in varnames):
     gdata = np.asarray(vars[vname+'_elm'])
+    gdata2= np.asarray(vars[vname])
+elif (vname+'_ims' in varnames):
+    gdata = np.asarray(vars[vname])
+    gdata2= np.asarray(vars[vname+'_ims'])
 
 t     = np.asarray(vars['time'])
 tunit = vars['time'].units

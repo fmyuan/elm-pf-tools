@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 
 from matplotlib.backends.backend_pdf import PdfPages
 from optparse import OptionParser
-from numpy import flipud
 
 import netCDF4
 from matplotlib.dates import date2num
@@ -229,7 +228,6 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
             DONE_time = True
         
         # 
-        # appears vardatas are in S-N/E-W ordered, so must be flip over
         data = vardatas[varname]
         data = np.int16(data) # data type is 'uint8', convert to short (othwise cannot be read by Visit)
         

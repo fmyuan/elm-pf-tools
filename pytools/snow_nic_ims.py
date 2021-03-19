@@ -81,12 +81,20 @@ else:
 if options.file2nc and not options.lookup_snowfreeseason:
     # grids
     if minlat==None:
-        imsx,imsy = \
-            nicims.Prep_ims_grid(res, minlat, lonlat2xy=lonlat2xy)
+        if lonlat2xy:
+            imsx,imsy, imslons, imslats = \
+                nicims.Prep_ims_grid(res, minlat, lonlat2xy=lonlat2xy)
+        else:
+            imsx,imsy = \
+                nicims.Prep_ims_grid(res, minlat, lonlat2xy=lonlat2xy)
 
     else:
-        xind, yind, imsx, imsy = \
-            nicims.Prep_ims_grid(res, minlat, lonlat2xy=lonlat2xy)
+        if lonlat2xy:
+            xind, yind, imsx,imsy, imslons, imslats = \
+                nicims.Prep_ims_grid(res, minlat, lonlat2xy=lonlat2xy)
+        else:
+            xind, yind, imsx, imsy = \
+                nicims.Prep_ims_grid(res, minlat, lonlat2xy=lonlat2xy)
     
     # daily files
     year_prv = -9999
@@ -95,9 +103,17 @@ if options.file2nc and not options.lookup_snowfreeseason:
         try: 
             mid_day, year, doy, snowdata = \
                 nicims.Prep_ims_snowcov(ifile, fileheader, varname, alldata={})
+
+            # test lon/lat --> geox/y conversion, if Not comment out
+            #if lonlat2xy: 
+            #    varname = 'ylat'
+            #    snowdata[varname] = deepcopy(imslons)
+            #    snowdata[varname] = deepcopy(imslats)
+
         except:
-            print (ifile + 'reading Error!')
+            print (ifile + ' reading Error!')
             continue
+        
         
         if minlat!=None:
             snowdata[varname] = snowdata[varname][:,xind,:]

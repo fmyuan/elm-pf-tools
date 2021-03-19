@@ -91,10 +91,13 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
     if(varname in ['SNOW_DEPTH','SNOWDP']):         
         varname=varname+' (m)'
 
-    #varname = varname+' (SWE, mm)'
     
     gridtext = []
 
+    #if manually offset time
+    #t0 = 735110 
+    #t = t - t0
+    
     # add a zero line for a few variables
     if(varname in ['GPP','NPP','NEE','MR','GR']):
         plt.plot([min(t),max(t)],[0.0,0.0],'k--')
@@ -117,19 +120,22 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
         plt.plot(t, sdata)
         
     
-    plt.legend((gridtext), loc=0, fontsize=12)
+    plt.legend((gridtext), loc=0, fontsize=16)
     
-    plt.xlabel(t_unit, fontsize=12, fontweight='bold')    
-    plt.ylabel(varname, fontsize=12, fontweight='bold')
+    # plot X/Y axis label, if manually change
+    #t_unit = 'DOY'
+    #varname = 'Snow depth (m)' #'Snow water equivalent (mm)'
+    plt.xlabel(t_unit, fontsize=24, fontweight='bold')
+    plt.ylabel(varname, fontsize=24, fontweight='bold')
     
     ax_user=plt.gca()
-    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 16)
+    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 24)
 
     lx = 0.10
     ly = 0.90
     plot_title = ''
-    #plot_title = 'ICB-Highlat_pt406x22' #plotlabel
-    plt.text(lx, ly, plot_title, transform=ax.transAxes,fontsize=14, fontweight='bold')
+    #plot_title = 'Daymet_Tile13868(Kougarok Site)' #plotlabel, if any
+    plt.text(lx, ly, plot_title, transform=ax.transAxes,fontsize=18, fontweight='bold')
 
 #-------------------Parse options-----------------------------------------------
 
@@ -234,9 +240,9 @@ if(options.yr0 != 1 and options.startyr != 1):
 else:
     startdays = (int(options.startyr)-1)*365.0
 if(options.clmout_ts=='daily'): 
-    startdays=startdays+1.0
+    startdays=startdays
 elif(options.clmout_ts=='monthly'): 
-    startdays=startdays-1.0
+    startdays=startdays+1.0
     
 enddays = -9999
 if(options.endyr !=""): enddays = int(options.endyr)*365.0
@@ -282,6 +288,12 @@ if(nvars==4): nrow=2; ncol=2
 if2dgrid = True
 if(len(varsdata['topo'].shape)==1): if2dgrid = False
 
+# time-invariant variables
+constdata = {}
+for v in vars_list:
+    if 'time' not in varsdims[v]: 
+        constdata[v]=varsdata[v]
+
 ivar = 0
 for var in varnames:
     if(sys.version_info[0]==3): 
@@ -312,7 +324,7 @@ for var in varnames:
     
     # processing original data, if needed
     t, gdata, sdata, zdim_indx, pdim_indx = \
-        CLMvar_1Dtseries(tt, vdims, vdata, nx, ny, ix, iy, if2dgrid, \
+        CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
                     annually=options.annually, \
                     seasonally=options.seasonally)
 
@@ -323,11 +335,13 @@ for var in varnames:
         GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, \
                         vname, '(a) All Grids')
     elif(zdim_indx>0):
-        if(len(layer_index)==1 and layer_index[0]<0): layer_index = range(0,nl)
+        if(len(layer_index)==1 and layer_index[0]<0): layer_index = range(0,nlgrnd)
         SoilLayeredVarPlotting(plt, nrow, ncol, ivar, t, tunit, layer_index, sdata, \
                         vname, '(a) Grid ( '+str(ix)+', '+str(iy)+')')
     
     elif(pdim_indx>0):
+        pwt1cell = constdata['pfts1d_wtgcell']
+        pft1vidx = constdata['pfts1d_itype_veg']
         if(len(pft_index)==1 and pft_index[0]<0): pft_index = range(0,npft)
         PFTVarPlotting(plt, nrow, ncol, ivar, t, tunit, pwt1cell, pft1vidx, pft_index, sdata, \
                         vname, '(a) Grid ( '+str(ix)+', '+str(iy)+')')

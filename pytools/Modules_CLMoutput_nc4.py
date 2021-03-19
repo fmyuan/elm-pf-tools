@@ -527,7 +527,7 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
 
 #----------------------------------------------------------------
 # processing originally-readin CLM data (1,2,3D) into t-series 1D collpased dataset
-def CLMvar_1Dtseries(tt, vdims, vdata, nx, ny, ix, iy, if2dgrid, \
+def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
                     annually=False, seasonally=False):
 
     t  = sorted(tt)
@@ -555,9 +555,9 @@ def CLMvar_1Dtseries(tt, vdims, vdata, nx, ny, ix, iy, if2dgrid, \
     if('pft' in vdims):
         pdim_indx = vdims.index('pft')
         npft = vdata.shape[pdim_indx] # this actually is nxy*npft
-        pwt1cell = varsdata['pfts1d_wtgcell']
-        pft1vidx = varsdata['pfts1d_itype_veg']
-        pft1active = varsdata['pfts1d_active']
+        pwt1cell = constdata['pfts1d_wtgcell']
+        pft1vidx = constdata['pfts1d_itype_veg']
+        pft1active = constdata['pfts1d_active']
 
         if(nxy>1):
             npft = npft/nxy
@@ -615,8 +615,8 @@ def CLMvar_1Dtseries(tt, vdims, vdata, nx, ny, ix, iy, if2dgrid, \
     if('column' in vdims):
         cdim_indx = vdims.index('column')  
         ncolumn = vdata.shape[cdim_indx] # this actually is nxy*ncolumn
-        colwt1cell = varsdata['cols1d_wtgcell']
-        col1active = varsdata['cols1d_active']
+        colwt1cell = constdata['cols1d_wtgcell']
+        col1active = constdata['cols1d_active']
 
         if(nxy>1):
             ncolumn = ncolumn/nxy
@@ -698,9 +698,14 @@ def CLMvar_1Dtseries(tt, vdims, vdata, nx, ny, ix, iy, if2dgrid, \
         t=np.asarray(t)/365.0
         dim_yr=int(math.ceil(max(t))-math.floor(min(t)))
         t=(t-np.floor(t))*365.0 # still in days
+        if (t[0]!=0): # there is a case that doy 0 with a new-year start, which actually should be old year and doy 365 
+            idx = np.where(t==0)
+            t[idx] = 365.0-1.0e-8
+        if(abs(t[1]-t[0])<1.0):
+            t = t + 1                  # convert to 1-based DOY, if sub-daily data
+        
         t=t.reshape(dim_yr,-1)
         t=np.mean(t,axis=0)
-        t=np.where(t==0,365.0,t)  # day 0 shall be day 365, otherwise plotting X axis not good
         
         if(len(gdata)>0):
             shp=np.hstack(([dim_yr,-1],gdata.shape[1:]))
@@ -713,7 +718,12 @@ def CLMvar_1Dtseries(tt, vdims, vdata, nx, ny, ix, iy, if2dgrid, \
     elif(annually):
         t=np.asarray(t)/365.0
         dim_yr=int(math.ceil(max(t))-math.floor(min(t)))
+        td = (t-np.floor(t))*365.0
         t=np.floor(t)*365.0 # still in days
+        if (td[0]!=0): # there is a case that doy 0 with a new-year start, which actually should be old year 
+            idx = np.where(td==0)
+            t[idx] = t[idx]-1
+        
         t=t.reshape(dim_yr,-1)
         dim_season = t.shape[1]
         t=np.mean(t,axis=1)

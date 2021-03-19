@@ -78,6 +78,105 @@ def calcFLDS(tk, pres_pa, q_kgkg=[], rh_100=[]):
     return FLDS
 
 
+# ---------------------------------------------------------------
+# extract a set of met variables from CPL_BYPASS directory 
+def clm_metdata_cplbypass_extranction(filedir,met_type, lon, lat, ncopath=''):
+    #
+    if('GSWP3' in met_type):
+        # zone_mapping.txt
+        f_zoning = filedir+'/zone_mappings.txt'
+        all_lons=[]
+        all_lats=[]
+        all_zones=[]
+        all_lines=[]
+        with open(f_zoning) as f:
+            dtxt=f.readlines()
+            dtxt=filter(lambda x: x.strip(), dtxt)
+            for d in dtxt:
+                all=np.array(d.split(),dtype=float)
+                if(all[0]<0.0): all[0]=360.0+all[0] # convert longitude in format of 0 - 360
+                all_lons.append(all[0])
+                all_lats.append(all[1])
+                all_zones.append(int(all[2]))
+                all_lines.append(int(all[3]))
+        f.close()
+        all_lons = np.asarray(all_lons)
+        all_lats = np.asarray(all_lats)
+        all_zones= np.asarray(all_zones)
+        all_lines= np.asarray(all_lines)
+        
+        
+        if(lon<0.0): lon=360.0+lon # convert longitude in format of 0 - 360
+        dist2 = (all_lats-lat)*(all_lats-lat) + \
+                (all_lons-lon)*(all_lons-lon)
+        ni=np.argmin(dist2)
+        print('Nearest grid: ', ni, 
+              'dist:', math.sqrt(np.min(dist2)),
+              'xdist:', all_lons[ni]-lon,
+              'ydist:', all_lats[ni]-lat)
+
+        zone = np.array(all_zones)[ni]
+        line = np.array(all_lines)[ni]
+    
+    elif ('Site' in met_type):
+        zone=[1]
+        line=[1]
+
+    #files
+    filedir_new = filedir+'/subset'
+    if (os.path.isdir(filedir_new)):
+        os.system('rm -rf '+filedir_new)
+    os.system('mkdir '+filedir_new)
+    # new zone_mappings
+    line_new = 1
+    f_zoning = filedir_new+'/zone_mappings.txt'
+    f = open(f_zoning, 'w')
+    f.write("%12.5f " % all_lons[ni])
+    f.write("%12.6f " % all_lats[ni])
+    f.write("%5i " % all_zones[ni])
+    f.write("%5i\n" % line_new)
+    f.write("%5i\n" % line)
+    f.close()
+    
+    # domain.nc/surfdata.nc/surfdata.nc, if for GSWP3_daymet4
+    if ('GSWP3' in met_type and 'daymet4' in met_type):
+        os.system(ncopath+'ncks --no_abc -O -d ni,'+str(ni)+','+str(ni)+ \
+                        ' '+'domain.nc '+filedir_new+'/domain.nc')
+        os.system(ncopath+'ncks --no_abc -O -d gridcell,'+str(ni)+','+str(ni)+ \
+                        ' '+'surfdata.nc '+filedir_new+'/surfdata.nc')
+        os.system(ncopath+'ncks --no_abc -O -d gridcell,'+str(ni)+','+str(ni)+ \
+                        ' '+'surfdata.pftdyn.nc '+filedir_new+'/surfdata.pftdyn.nc')
+
+      
+    if('GSWP3' in met_type or 'Site' in met_type):
+        varlist=['FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
+        if 'Site' in met_type:
+            varlist=['FLDS','FSDS','PRECTmms','PSRF','RH','TBOT','WIND']
+        
+        for v in varlist:
+            if ('GSWP3' in met_type):
+                if('v1' in met_type):
+                    file='./GSWP3_'+v+'_1901-2010_z'+str(int(zone)).zfill(2)+'.nc'
+                elif('daymet' in met_type):
+                    file='./GSWP3_daymet4_'+v+'_1980-2014_z'+str(int(zone)).zfill(2)+'.nc'
+                else:
+                    file='./GSWP3_'+v+'_1901-2014_z'+str(int(zone)).zfill(2)+'.nc'
+            
+            elif('Site' in met_type):
+                file='./all_hourly.nc'
+            
+            file_new = filedir_new+'/'+file
+            file=filedir+'/'+file
+            #
+            #
+            #extracting data
+            print('extracting file: '+file + '  =======>  '+file_new)
+            
+            os.system(ncopath+'ncks --no_abc -O -d n,'+str(ni)+','+str(ni)+ \
+                                  ' '+file+' '+file_new)
+
+        # all vars done
+        print('DONE!')
 
 #
 # ------- GSWP3 met forcing data extraction for site or sites ------------------------------------
@@ -605,7 +704,7 @@ def singleNCDCReadCsvfile(filename, ncdc_type, missing):
 
 # ---------------------------------------------------------------
 # read a met variables from CPL_BYPASS directory 
-def clm_metdata_cplbypass_read(filedir,fileheader, met_type, lon, lat, vars):
+def clm_metdata_cplbypass_read(filedir,met_type, lon, lat, vars):
     #
     if('GSWP3' in met_type):
         # zone_mapping.txt
@@ -677,7 +776,7 @@ def clm_metdata_cplbypass_read(filedir,fileheader, met_type, lon, lat, vars):
                 if('v1' in met_type):
                     file=filedir+'/GSWP3_'+v+'_1901-2010_z'+str(int(zone[0])).zfill(2)+'.nc'
                 elif('daymet' in met_type):
-                    file=filedir+'/GSWP3_Daymet4_'+v+'_1980-2014_z'+str(int(zone[0])).zfill(2)+'.nc'
+                    file=filedir+'/GSWP3_daymet4_'+v+'_1980-2014_z'+str(int(zone[0])).zfill(2)+'.nc'
                 else:
                     file=filedir+'/GSWP3_'+v+'_1901-2014_z'+str(int(zone[0])).zfill(2)+'.nc'
             
@@ -903,7 +1002,8 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
 ##################################################################################
 # test modules
 
-#clm_metdata_extraction()
+#clm_metdata_cplbypass_extranction('./', 'GSWP3_daymet4', 203.1241, 70.5725,ncopath='/usr/local/nco/bin/') #BEO
+#clm_metdata_cplbypass_extranction('./', 'GSWP3_daymet4', -157.4089, 70.4696,ncopath='/usr/local/nco/bin/')  #ATQ
 
 #odata = \
 #    subsetDaymetReadNCfile('daymet_v3_prcp_1980_na.nc', lon_range=[-170.0,-141.0], lat_range=[60.0, 90.0], SUBSETNC=True)
