@@ -407,7 +407,16 @@ def DataSimilarity(data1, data2, t=None, t_unit='', v_name='', v_unit='', plt=No
     rmse=np.nanmean([x*x for x in (data1-data2)])
     rmse=np.sqrt(rmse)
 
-    fit_model = np.polyfit(data1, data2, 1, cov=True)
+    idx1=np.where(np.isnan(data1))
+    if len(idx1[0]>0):
+        dd1=np.delete(data1,idx1)
+        dd2=np.delete(data2,idx1)
+    idx2=np.where(np.isnan(dd2))
+    if len(idx2[0]>0):
+        dd1=np.delete(dd1,idx2)
+        dd2=np.delete(dd2,idx2)
+
+    fit_model = np.polyfit(dd1, dd2, 1, cov=True)
     slope = fit_model[0]
     intcp = fit_model[1]
 
@@ -421,13 +430,13 @@ def DataSimilarity(data1, data2, t=None, t_unit='', v_name='', v_unit='', plt=No
         # 1:1 plotting
         isub = 1
         plotlabel = '1:1 PLOT'
-        One2OnePlotting(plt, nrow, ncol, isub, data1, data2, datalabel, plotlabel)
+        One2OnePlotting(plt, nrow, ncol, isub, dd1, dd2, datalabel, plotlabel)
 
         
         # T-series or NONE
         isub = isub + 1
         plotlabel = 'T-series'
-        if (t==None):
+        if (len(t)<=0):
             t_unit = 'none'
             t = range(0,len(data1)-1)
         
@@ -438,7 +447,7 @@ def DataSimilarity(data1, data2, t=None, t_unit='', v_name='', v_unit='', plt=No
 
 
     # return indicators, if any
-    return rmse, me
+    return rmse, me, intcp, slope
 
 ##*****************************************************************************
 
@@ -489,6 +498,8 @@ parser.add_option("--yrmin", dest="yrmin", default=-9999, \
                   help = " longitude to be reading/plotting, default -999 for first one")
 parser.add_option("--yrmax", dest="yrmax", default=-9999, \
                   help = " latitude to be reading/plotting, default -999 for first one")
+parser.add_option("--similarity", dest="datasimilarity", default=False, \
+                  help = "comparing 2 datasets", action="store_true")
 parser.add_option("--plotting", dest="plotting", default=False, \
                   help = "plotting data for checking", action="store_true")
 #
@@ -526,6 +537,7 @@ if (options.met_dir != '' and options.met_type != ''):
             DataTimeAggregation(t_elm, sdata_elm, DWMY=DWM)
         t_elm = deepcopy(tt)
         sdata_elm = deepcopy(sdata)
+        del tt, sdata
     
 #--------------------------------------------------------------------------------------
 # read-in 2nd metdata in ELM standard forms 
@@ -541,6 +553,7 @@ if (options.met_dir2 != '' and options.met_type2 != ''):
             DataTimeAggregation(t_elm2, sdata_elm2, DWMY=DWM)
         t_elm2 = deepcopy(tt)
         sdata_elm2 = deepcopy(sdata)
+        del tt, sdata
 
 #--------------------------------------------------------------------------------------
 # read-in 3rd metdata in ELM standard forms 
@@ -556,6 +569,7 @@ if (options.user_metdir != '' and options.user_mettype != ''):
             DataTimeAggregation(t_elm3, sdata_elm3, DWMY=DWM)
         t_elm3 = deepcopy(tt)
         sdata_elm3 = deepcopy(sdata)
+        del tt, sdata
 
 #--------------------------------------------------------------------------------------
 
@@ -608,18 +622,25 @@ if (vname3!=''):
     
 
 #--------------------------------------------------------------------------------------
-# Year Matching
 
-# by comparing statistics/regression fitting
-#rmse, se, r2, offset, slope = DataSimilarity(data1, data2, t=t, t_unit=time_unit, v_name='PRECP', v_unit='mm/day', plt=plt)
-#plt.show()
+# 
+# comparing statistics/regression fitting
+if options.datasimilarity and (vname1!='' and vname2!='' and vname3==''):
+    tt, idx1, idx2 = np.intersect1d(t1,t2, return_indices=True)
+    dd1 = data1[idx1]
+    dd2 = data2[idx2]
+    idx1=np.where(np.isnan(dd1))
+    
+    rmse, se, offset, slope = DataSimilarity(dd1, dd2, t=tt, t_unit=tunit1, v_name=vname1, v_unit='', plt=plt)
+    plt.show()
+
 
 #--------------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------------
 # printing plot in PDF
 if (options.plotting):
-    snames = ['NOAA Station', 'GSWP3']
-    if(vname3!=''): snames = ['NOAA Station', 'GSWP3', 'GSWP3-Daymet4']
+    snames = ['Station', 'GSWP3']
+    if(vname3!=''): snames = ['Station', 'GSWP3', 'GSWP3-Daymet4']
     
     tt={}
     tt[snames[0]] = deepcopy(t_elm)

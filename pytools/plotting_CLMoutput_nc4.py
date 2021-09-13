@@ -32,16 +32,17 @@ def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, layer_index, sd
         layertext.append(("Layer "+str(il)))
         plt.plot(t, sdata[:,il])
  
-    plt.legend((layertext), loc=0, fontsize=12)
-    plt.xlabel(t_unit, fontsize=12, fontweight='bold')
-    plt.ylabel(varname, fontsize=12, fontweight='bold')
+    plt.legend((layertext), loc=0, fontsize=14)
+    plt.xlabel(t_unit, fontsize=18, fontweight='bold')
+    plt.ylabel(varname, fontsize=18, fontweight='bold')
 
     ax_user=plt.gca()
-    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 16)
+    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 18)
 
     lx = 0.10
     ly = 0.90
-    plt.text(lx, ly, plotlabel, transform=ax.transAxes)
+    plot_title = '' #plotlabel
+    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=18, fontweight='bold')
 
 # Plot PFT fractioned data with layers for ONE specific grid
 def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, pftvidx, pft_index, sdata, varname, plotlabel):
@@ -61,16 +62,17 @@ def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, pftvidx, pft_ind
                 active_pfts.append(("PFT "+str(ip)))
                 plt.plot(t, sdata[:,ip])
     
-    plt.legend((active_pfts), loc=0, fontsize=12)
-    plt.xlabel(t_unit, fontsize=12, fontweight='bold')
-    plt.ylabel(varname, fontsize=12, fontweight='bold')
+    plt.legend((active_pfts), loc=0, fontsize=14)
+    plt.xlabel(t_unit,  fontsize=18, fontweight='bold')
+    plt.ylabel(varname, fontsize=18, fontweight='bold')
 
     ax_user=plt.gca()
-    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 16)
+    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 18)
 
     lx = 0.10
     ly = 0.90
-    plt.text(lx, ly, plotlabel, transform=ax.transAxes)
+    plot_title = '' #plotlabel
+    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=18, fontweight='bold')
 
 
 # Plot Grided data
@@ -94,9 +96,6 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
     
     gridtext = []
 
-    #if manually offset time
-    #t0 = 735110 
-    #t = t - t0
     
     # add a zero line for a few variables
     if(varname in ['GPP','NPP','NEE','MR','GR']):
@@ -113,29 +112,29 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
             #gridtext.append(("GRID "+str(igrd)))
             plt.plot(t, sdata[:,igrd])
         #gridtext.append(["NAMC","DSLT","AS","WBT","TT-WBT","TT"])
-        gridtext.append("Daymet_Tile13868 (Kougarok Site")
+        #gridtext.append("Daymet_Tile13868 (Kougarok Site")
 
     else:
         #gridtext.append(("GRID "+str(0)))
         plt.plot(t, sdata)
         
     
-    plt.legend((gridtext), loc=0, fontsize=16)
+    plt.legend((gridtext), loc=0, fontsize=14)
     
     # plot X/Y axis label, if manually change
     #t_unit = 'DOY'
     #varname = 'Snow depth (m)' #'Snow water equivalent (mm)'
-    plt.xlabel(t_unit, fontsize=24, fontweight='bold')
-    plt.ylabel(varname, fontsize=24, fontweight='bold')
+    plt.xlabel(t_unit, fontsize=18, fontweight='bold')
+    plt.ylabel(varname, fontsize=18, fontweight='bold')
     
     ax_user=plt.gca()
-    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 24)
+    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 18)
 
     lx = 0.10
     ly = 0.90
     plot_title = ''
     #plot_title = 'Daymet_Tile13868(Kougarok Site)' #plotlabel, if any
-    plt.text(lx, ly, plot_title, transform=ax.transAxes,fontsize=18, fontweight='bold')
+    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=18, fontweight='bold')
 
 #-------------------Parse options-----------------------------------------------
 
@@ -331,6 +330,12 @@ for var in varnames:
     #plotting
     vname = varnames[varnames.index(var)]
     t = np.asarray(t)*day_scaling + tunit0
+
+    #if manually offset time
+    t0 = 735110 
+    t = t - t0
+    tunit = tunit.upper()
+
     if(zdim_indx<0 and pdim_indx<0):
         GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, \
                         vname, '(a) All Grids')

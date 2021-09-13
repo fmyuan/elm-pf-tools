@@ -309,9 +309,9 @@ if (options.elmheader != ""):
             for dir2 in workdir2:
                 file_matched = False
                 if file_timestr == '':
-                    ncfile2 = sorted(glob.glob("%s*.%s" % (dir2.strip()+'/', ftype)))
+                    ncfile2 = sorted(glob.glob("%s*.%s" % (dir2.strip()+'/'+elmpathfileheader, ftype)))
                 else:
-                    ncfile2 = sorted(glob.glob("%s*.%s.%s" % (dir2.strip()+'/', file_timestr,ftype)))
+                    ncfile2 = sorted(glob.glob("%s*.%s.%s" % (dir2.strip()+'/', file_timestr+elmpathfileheader,ftype)))
                 if len(ncfile2)==1: 
                     file_matched = True
                     file_names=np.append(file_names,ncfile2)
@@ -386,8 +386,12 @@ if (options.elmheader != ""):
             #if(ncfile == alldirfiles[0]): print(name)
             
             src_dims = var.dimensions
+            # if merge tile domain.nc, it's dims are (ni,nj)
+            if 'domain' in ncfile:
+                dim_domain = 'ni'
+                if (src.dimensions['nj'].size>1 and src.dimensions['ni'].size==1): dim_domain='nj'
                 
-            if ('gridcell' in src_dims or 'lndgrid' in src_dims \
+            if ('gridcell' in src_dims or 'lndgrid' in src_dims  or dim_domain in src_dims \
                 or 'landunit' in src_dims \
                 or 'column' in src_dims \
                 or 'pft' in src_dims):
@@ -401,7 +405,7 @@ if (options.elmheader != ""):
                 i = -1
                 for dim in src_dims:
                     i = i + 1
-                    if dim in ('gridcell','lndgrid'): 
+                    if dim in ('gridcell','lndgrid',dim_domain): 
                         idim = i
                         new_dims.append('geoy')
                         new_dims.append('geox')

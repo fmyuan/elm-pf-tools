@@ -9,13 +9,14 @@ from calendar import isleap
 from numpy import intersect1d
 from matplotlib.pyplot import axis
 import glob
+import dask.dataframe as dd
 
 #ncopath = '/usr/local/nco/bin/'
 #####################################################################################################
 
 # ---------------------------------------------------------------
 # vapor pressure (pa) at saturated from air temperature (K)
-def vpsat_pa(tk):
+def vpsat_pa(tk, freezing_eff=True):
     a = (6.107799961, 4.436518521e-01, \
          1.428945805e-02,2.650648471e-04, \
          3.031240396e-06, 2.034080948e-08, \
@@ -27,13 +28,12 @@ def vpsat_pa(tk):
          1.838826904e-10)
 
     vpsat = np.zeros_like(tk)
-    idx=np.where(tk>273.15)
-    if (len(idx[0])>0):
-        tc = tk[idx]-273.15
-        vpsat[idx] = 100.*(a[0]+tc*(a[1]+tc*(a[2]+tc*(a[3]+tc*(a[4]+tc*(a[5]+tc*a[6]))))))
+    
+    tc = tk-273.15
+    vpsat = 100.*(a[0]+tc*(a[1]+tc*(a[2]+tc*(a[3]+tc*(a[4]+tc*(a[5]+tc*a[6]))))))
     
     idx=np.where(tk<=273.15)
-    if (len(idx[0])>0):
+    if (len(idx[0])>0 and freezing_eff):
         tc = tk[idx]-273.15
         vpsat[idx] = 100.*(b[0]+tc*(b[1]+tc*(b[2]+tc*(b[3]+tc*(b[4]+tc*(b[5]+tc*b[6]))))))
 
@@ -112,8 +112,20 @@ def clm_metdata_cplbypass_extranction(filedir,met_type, lon, lat, ncopath=''):
         ni=np.argmin(dist2)
         print('Nearest grid: ', ni, 
               'dist:', math.sqrt(np.min(dist2)),
-              'xdist:', all_lons[ni]-lon,
-              'ydist:', all_lats[ni]-lat)
+              'xdist:', all_lons[ni]-lon, 
+              'xdist max:', max(np.fabs(np.diff(np.sort(all_lons)))),
+              'ydist:', all_lats[ni]-lat,
+              'ydist max:', max(np.fabs(np.diff(np.sort(all_lats)))))
+        
+        #out of bounds
+        d=all_lons[ni]-lon
+        dmax=np.fabs(np.diff(np.sort(all_lons)))
+        if lon>np.max(all_lons) or lon<np.min(all_lons):
+            if math.fabs(d)>max(dmax): return
+        d=all_lats[ni]-lat
+        dmax=np.fabs(np.diff(np.sort(all_lats)))
+        if lat>np.max(all_lats) or lat<np.min(all_lats):
+            if math.fabs(d)>max(dmax): return
 
         zone = np.array(all_zones)[ni]
         line = np.array(all_lines)[ni]
@@ -135,17 +147,17 @@ def clm_metdata_cplbypass_extranction(filedir,met_type, lon, lat, ncopath=''):
     f.write("%12.6f " % all_lats[ni])
     f.write("%5i " % all_zones[ni])
     f.write("%5i\n" % line_new)
-    f.write("%5i\n" % line)
+    #f.write("%5i\n" % line)
     f.close()
     
     # domain.nc/surfdata.nc/surfdata.nc, if for GSWP3_daymet4
     if ('GSWP3' in met_type and 'daymet4' in met_type):
         os.system(ncopath+'ncks --no_abc -O -d ni,'+str(ni)+','+str(ni)+ \
-                        ' '+'domain.nc '+filedir_new+'/domain.nc')
+                        ' '+filedir+'/domain.nc '+filedir_new+'/domain.nc')
         os.system(ncopath+'ncks --no_abc -O -d gridcell,'+str(ni)+','+str(ni)+ \
-                        ' '+'surfdata.nc '+filedir_new+'/surfdata.nc')
+                        ' '+filedir+'/surfdata.nc '+filedir_new+'/surfdata.nc')
         os.system(ncopath+'ncks --no_abc -O -d gridcell,'+str(ni)+','+str(ni)+ \
-                        ' '+'surfdata.pftdyn.nc '+filedir_new+'/surfdata.pftdyn.nc')
+                        ' '+filedir+'/surfdata.pftdyn.nc '+filedir_new+'/surfdata.pftdyn.nc')
 
       
     if('GSWP3' in met_type or 'Site' in met_type):
@@ -172,9 +184,14 @@ def clm_metdata_cplbypass_extranction(filedir,met_type, lon, lat, ncopath=''):
             #extracting data
             print('extracting file: '+file + '  =======>  '+file_new)
             
-            os.system(ncopath+'ncks --no_abc -O -d n,'+str(ni)+','+str(ni)+ \
+            if ('Site' in met_type):
+                os.system(ncopath+'ncks --no_abc -O -d n,'+str(ni)+','+str(ni)+ \
                                   ' '+file+' '+file_new)
-
+            else:
+                os.system(ncopath+'ncks --no_abc -O -d n,'+str(line)+','+str(line)+ \
+                                  ' '+file+' '+file_new)
+                
+                
         # all vars done
         print('DONE!')
 
@@ -830,7 +847,12 @@ def clm_metdata_cplbypass_read(filedir,met_type, lon, lat, vars):
                     print('NC file not writable')
 
             if(v in fnc.variables.keys()): 
-                d=np.asarray(fnc.variables[v])[line[0]-1,:]
+                d = fnc.variables[v][...]
+                if (fnc.variables[v][...].dtype==np.float): 
+                    d[np.where(d.mask)] = np.nan
+                else:
+                    d[np.where(d.mask)] = -9999
+                d=np.asarray(d[line[0]-1,:])
                 met[v] = d # 'scale_factor' and 'add_offset' have already used when reading nc data.
                 if(v not in vdims.keys()):
                     vdims[v] = fnc.variables[v].dimensions
@@ -998,6 +1020,170 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
         
     return ix,iy, vdims,met
     
+####################################################################################################
+#
+# -------Read 1 site met data, *.csv, TOTALLY user-defined ----------------
+#
+
+def singleReadCsvfile(filename):
+    
+    
+    # headers to be extracted from 'data_header', for ELM offline forcing 
+    
+    # Toolik '5_minute_data_v21.csv'
+    #std_header = ('date', 'hour', \
+    #              'air_temp_3m_5min', 'air_temp_5m_5min', \
+    #              'lw_dn_avg_5min', \
+    #              'sw_dn_avg_5min', \
+    #              'rh_3m_5min', 'rh_5m_5min', \
+    #              'wind_sp_5m_5min')
+    
+    # Toolik '1_hour_data.csv'
+    std_header = ('date', 'hour', \
+                  'air_temp_1m', 'air_temp_3m', 'air_temp_5m', \
+                  'lw_dn_avg', \
+                  'sw_dn_avg', \
+                  'rain', 'rain2', \
+                  'rh_1m','rh_3m', 'rh_5m', \
+                  'wind_sp_1m','wind_sp_5m')
+    
+    # WERC-ATLAS data in SP,AK
+    #std_header = ('date', 'hour', \
+    #'Air Temperature @ 1 m (C)', 'Air Temperature @ 3 m (C)', \
+    #'Relative Humidity @ 1 m (%)', 'Relative Humidity @ 3 m (%)', \
+    #'Wind Speed (m/s)', \
+    #'Wind Direction (degrees from true North)', 'standard deviation of Wind Direction', \
+    #'Rainfall(mm)')
+
+    
+    missing ='nan'
+    #
+    try:
+        f0 = dd.read_csv(filename, dtype={'hour': 'float'})
+        
+        indx_data =[]
+        key_data=[]
+
+        data_header = f0.columns.values
+        for j in data_header:
+            if (len(j.strip())>0)  and (j.strip() in std_header):
+                jidx = std_header.index(j.strip())
+                indx = np.argwhere(data_header==j)[0]
+                if (indx[0]>=0): 
+                    indx_data.append(indx[0])
+                    j_std = std_header[jidx] # the standard header corresponding to 'data_header'
+                    key_data.append(j_std)
+        
+        data_value = {}
+        for i,indx in enumerate(indx_data):
+            key = key_data[i]
+            val = np.asarray(f0[key])
+            if (not key in data_value.keys()):
+                data_value[key] = val
+            else:
+                data_value[key] = np.append(data_value[key],val)
+                
+
+    except ValueError:
+        print("Error in reading data")
+    #
+
+    #
+    del f0
+    
+    # timing coversion
+    ymd=[int(s.split('/')[0]) for s in data_value['date']]
+    data_value['MONTH']=np.asarray(ymd)
+    ymd=[int(s.split('/')[1]) for s in data_value['date']]
+    data_value['DAY']=np.asarray(ymd)
+    ymd=[int(s.split('/')[2]) for s in data_value['date']]
+    data_value['YEAR']=np.asarray(ymd)
+    data_value['HOUR']=np.asarray([math.floor(t/100.0) for t in data_value['hour']])
+    data_value['MM']=np.asarray([math.fmod(t,100.0) for t in data_value['hour']])
+    ix=np.argwhere(data_value['HOUR']==24)
+    if (len(ix)>0): # data @24:00 is dated as day of @00:00, so have to do the following hack
+        data_value['HOUR'][ix]=23
+        data_value['MM'][ix]=59
+    
+
+    # 
+    yrmin=int(np.min(data_value['YEAR']))
+    yrmax=int(np.max(data_value['YEAR']))
+    tdata={}
+    for ivar in data_value.keys(): 
+        if (ivar not in ['date', 'hour','MM']): tdata[ivar] = []
+    if 'DOY' not in data_value.keys(): tdata['DOY']=[]
+    hrly=3  # 3-hourly data aggregation
+    for yr in range(yrmin,yrmax):
+        days = 365
+        if(isleap(yr)): days=366
+        for doy in range(1,days+1):
+            for hour in range(0,24,hrly):
+                tdata['YEAR'] = np.append(tdata['YEAR'],yr)
+                tdata['DOY'] = np.append(tdata['DOY'],doy)
+                curdate=datetime(yr,1,1)+timedelta(doy-1)
+                tdata['MONTH'] = np.append(tdata['MONTH'],curdate.month)
+                tdata['DAY'] = np.append(tdata['DAY'],curdate.day)
+                tdata['HOUR'] = np.append(tdata['HOUR'],hour)
+    
+                yridx = np.argwhere(data_value['YEAR']==yr)
+                dayidx = np.argwhere((data_value['MONTH']==curdate.month) & \
+                                     (data_value['DAY']==curdate.day))
+                tidx = np.argwhere((data_value['HOUR']>=hour) & \
+                                   (data_value['HOUR']<(hour+hrly)))   # So 3-hrly is the starting time
+                idx=intersect1d(yridx, dayidx)
+                idx=intersect1d(idx, tidx)
+                for ivar in tdata.keys():
+                    if ivar not in ['YEAR','MONTH','DAY','DOY','HOUR']:
+                        if (len(idx)>0): 
+                            if(len(idx)>1): 
+                                ivar_val = np.nanmean(data_value[ivar][idx])
+                            else:
+                                ivar_val = data_value[ivar][idx[0]]
+                                                    
+                            tdata[ivar] = np.append(tdata[ivar],ivar_val)
+                        else:
+                            tdata[ivar] = np.append(tdata[ivar],np.nan)
+    
+    #
+    # pass to clm data format
+    del data_value
+
+    # standard varlists from ELM offline forcing
+    # ['DTIME'], ['tunit']='days since 1901-01-01 00:00:00'
+    #clm_header = ('DTIME','tunit', \
+    #              'FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND')
+
+    clm_data = {}
+    clm_data['YEAR'] = tdata['YEAR']
+    clm_data['MONTH'] = tdata['MONTH']
+    clm_data['DAY'] = tdata['DAY']
+    clm_data['HOUR'] = tdata['HOUR']
+    clm_data['DOY'] = tdata['DOY']
+    #clm_data['TBOT'] = np.nanmean([tdata['Air Temperature @ 1 m (C)'], \
+                       #            tdata['Air Temperature @ 3 m (C)']], axis=0)+273.15
+    clm_data['TBOT'] = np.nanmean([tdata['air_temp_1m'], tdata['air_temp_3m'], \
+                                    tdata['air_temp_5m']], axis=0)+273.15
+
+    clm_data['FLDS'] = np.empty_like(clm_data['TBOT']); clm_data['FLDS']= tdata['lw_dn_avg']
+    clm_data['FSDS'] = np.empty_like(clm_data['TBOT']); clm_data['FSDS']=tdata['sw_dn_avg']
+    
+    #clm_data['PRECTmms'] = tdata['Rainfall(mm)']
+    clm_data['PRECTmms'] = np.nanmean([tdata['rain'], tdata['rain2']], axis=0)
+    
+    clm_data['PSRF'] = np.empty_like(clm_data['TBOT']); clm_data['PSRF'][:]=101325.0
+    
+    #clm_data['RH'] = np.nanmean([tdata['Relative Humidity @ 1 m (%)'], \
+    #                             tdata['Relative Humidity @ 3 m (%)']], axis=0)
+    clm_data['RH'] = np.nanmean([tdata['rh_1m'], tdata['rh_3m'], \
+                                 tdata['rh_5m']], axis=0)
+
+    #clm_data['WIND'] = tdata['Wind Speed (m/s)']
+    clm_data['WIND'] = np.nanmean([tdata['wind_sp_1m'],tdata['wind_sp_5m']], axis=0)
+
+    clm_header = clm_data.keys()
+
+    return clm_header, clm_data
     
 ##################################################################################
 # test modules
@@ -1024,7 +1210,8 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
 #    singleNCDCReadCsvfile('2016100_initproc.csv')
 
 
-    
+#odata_header,odata = \
+#    singleReadCsvfile('5_minute_data_v21.csv')
     
     
 

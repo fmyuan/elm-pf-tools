@@ -77,14 +77,21 @@ def putvar(ncfile, varname, varvals, varatts=''):
             
             if isinstance(varvals, dict): #multiple dataset for corresponding same numbers of varname
                 for v in varname:
-                    val=np.asarray(varvals[v])
                     if v in f.variables.keys():
-                        f.variables[v][...]=np.copy(val)
+                        if f.variables[v].dtype!=np.float:
+                            val=np.ma.masked_where(np.isnan(varvals[v]), varvals[v])
+                        else:
+                            val=np.copy(varvals[v])
+                        f.variables[v][...]=val
             else:                        #exactly 1 dataset in np.array for 1 varname
-                val=np.asarray(varvals)
                 v=varname[0]
                 if v in f.variables.keys():
-                    f.variables[v][...]=np.copy(val)
+                    if f.variables[v].dtype!=np.float:
+                        # nan is not dtype of integers
+                        val=np.ma.masked_where(np.isnan(varvals), varvals)
+                    else:
+                        val=np.copy(varvals)
+                    f.variables[v][...]=val
 
             #
                 

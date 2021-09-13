@@ -386,7 +386,7 @@ if (not options.metdir.strip()==''):
         indx=[]; indy=[]
         # in metdata directory
         if(os.path.isfile(metdir+'/'+dirfile)): # file names
-            if(filehead in dirfile):
+            if(filehead in dirfile and dirfile.endswith('.nc')):
             
                 print('\n file: '+dirfile)
     
@@ -394,24 +394,24 @@ if (not options.metdir.strip()==''):
                 dirfile_new = dirfile.replace(filehead,filehead_new)
                 metfile_new = metdir_new+'/'+ dirfile_new
 
-                print('INFO: extracting met-data - \n', metfile_old, '\n -->', metfile_new)
                 #
-                if(len(indx)<=0):#only needed from the first metfile
-                    [alllats, vdim, vattr]=nfmod.getvar(metfile_old,['LATIXY'])
-                    alllats = list(alllats.values())[0] # dict --> list
-                    [alllons, vdim, vattr]=nfmod.getvar(metfile_old,['LONGXY'])
-                    alllons = list(alllons.values())[0]
-                    dim_names = list(vdim['LONGXY']) # must be same for 'LATIXY' and 'LONGXY'
-                    is2d=True
-                    if(len(dim_names)<=1): is2d=False
-                    #indx/indy: 2-D array with paired [startindex, numpts]
-                    [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat, is2d)            
+                [alllats, vdim, vattr]=nfmod.getvar(metfile_old,['LATIXY'])
+                alllats = list(alllats.values())[0] # dict --> list
+                [alllons, vdim, vattr]=nfmod.getvar(metfile_old,['LONGXY'])
+                alllons = list(alllons.values())[0]
+                dim_names = list(vdim['LONGXY']) # must be same for 'LATIXY' and 'LONGXY'
+                is2d=True
+                if(len(dim_names)<=1): is2d=False
+                #indx/indy: 2-D array with paired [startindex, numpts]
+                [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat, is2d)            
                 
-                for pt in range(len(indx)):
-                    pts_idx=[indx[pt][0],indy[pt][0]]
-                    pts_num=[indx[pt][1],indy[pt][1]]
-                    nfmod.nco_extract(metfile_old, metfile_new, \
-                            dim_names, pts_idx, pts_num,ncksdir=options.ncobinpath)
+                if(len(indx)<=0):#only needed from the first metfile
+                    print('INFO: extracting met-data - \n', metfile_old, '\n -->', metfile_new)
+                    for pt in range(len(indx)):
+                        pts_idx=[indx[pt][0],indy[pt][0]]
+                        pts_num=[indx[pt][1],indy[pt][1]]
+                        nfmod.nco_extract(metfile_old, metfile_new, \
+                                dim_names, pts_idx, pts_num,ncksdir=options.ncobinpath)
 
         # in subdirectory of metdata directory
         elif(os.path.isdir(metdir+'/'+dirfile)): # subdirectories
@@ -419,33 +419,33 @@ if (not options.metdir.strip()==''):
             for subfile in subfiles:
     
                 if(os.path.isfile(metdir+'/'+dirfile+'/'+subfile)):
-                    if(filehead in subfile):
+                    if(filehead in subfile and subfile.endswith('.nc')):
      
                         metfile_old = metdir+'/'+dirfile+'/'+subfile                        
                         subfile_new = subfile.replace(filehead,filehead_new)
                         metfile_new = metdir_new+'/'+subfile_new
                         
-                        print('INFO: extracting met-data - \n', metfile_old, '\n -->', metfile_new)
                         #
-                        if(len(indx)<=0):#only needed from the first metfile
-                            [alllats, vdim, vattr]=nfmod.getvar(metfile_old,['LATIXY'])
-                            alllats = list(alllats.values())[0] # dict --> list
-                            [alllons, vdim, vattr]=nfmod.getvar(metfile_old,['LONGXY'])
-                            alllons = list(alllons.values())[0]
-                            dim_names = list(vdim['LONGXY']) # must be same for 'LATIXY' and 'LONGXY'
-                            #indx/indy: 2-D array with paired [startindex, numpts]
-                            is2d=False
-                            if(len(alllons.shape)==2 or len(alllats.shape)==2):
-                                is2d=True
-                                alllons=alllons[0,:]
-                                alllats=alllats[:,0]
-                            [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat, is2d)            
+                        [alllats, vdim, vattr]=nfmod.getvar(metfile_old,['LATIXY'])
+                        alllats = list(alllats.values())[0] # dict --> list
+                        [alllons, vdim, vattr]=nfmod.getvar(metfile_old,['LONGXY'])
+                        alllons = list(alllons.values())[0]
+                        dim_names = list(vdim['LONGXY']) # must be same for 'LATIXY' and 'LONGXY'
+                        #indx/indy: 2-D array with paired [startindex, numpts]
+                        is2d=False
+                        if(len(alllons.shape)==2 or len(alllats.shape)==2):
+                            is2d=True
+                            alllons=alllons[0,:]
+                            alllats=alllats[:,0]
+                        [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat, is2d)            
                         
-                        for pt in range(len(indx)):
-                            pts_idx=[indx[pt][0],indy[pt][0]]
-                            pts_num=[indx[pt][1],indy[pt][1]]
-                            nfmod.nco_extract(metfile_old, metfile_new, \
-                                    dim_names, pts_idx, pts_num,ncksdir=options.ncobinpath)
+                        if(len(indx)>0):
+                            print('INFO: extracting met-data - \n', metfile_old, '\n -->', metfile_new)
+                            for pt in range(len(indx)):
+                                pts_idx=[indx[pt][0],indy[pt][0]]
+                                pts_num=[indx[pt][1],indy[pt][1]]
+                                nfmod.nco_extract(metfile_old, metfile_new, \
+                                        dim_names, pts_idx, pts_num,ncksdir=options.ncobinpath)
 
 #------------END of pointCLM_data -----------------------------------------------------------------------
     
