@@ -390,6 +390,11 @@ for imet in range(len(mettype)):
         else:
             if (vname_elm=='RH' or vname_elm=='estFLDS'): 
                 vnames=['QBOT','TBOT','PSRF']
+        if(imet_type=='cplbypass_GSWP3' or imet_type=='cplbypass_GSWP3v1'):
+            # GSWP3 data QBOT needs redo, because its RH is NOT freezing adjusted
+            # (When calculating RH from QBOT, RH often over 100 in freezing winter)
+            if (vname_elm=='QBOT'):
+                vnames=['QBOT','TBOT','PSRF']
         
         #if (vname_elm=='PRECT'): # for excluding data in winter
         #    vnames=['PRECT','TBOT']
@@ -428,6 +433,17 @@ for imet in range(len(mettype)):
             print('e3sm met. directory is the current')
         else:
             print('e3sm met.  directory: '+ imet_dir)
+
+        if('Site' in imet_type): 
+            if (vname_elm=='QBOT' or vname_elm=='estFLDS'): 
+                vnames=['RH','TBOT','PSRF']
+        elif (vname_elm=='RH' or vname_elm=='estFLDS'): 
+                vnames=['QBOT','TBOT','PSRF']
+        if(imet_type=='GSWP3' or imet_type=='GSWP3v1'):
+            # GSWP3 data QBOT needs redo, because its RH is NOT freezing adjusted
+            # (When calculating RH from QBOT, RH often over 100 in freezing winter)
+            if (vname_elm=='QBOT'):
+                vnames=['QBOT','TBOT','PSRF']
     
         # read in
         ix,iy, varsdims, vardatas = \
@@ -476,7 +492,10 @@ for imet in range(len(mettype)):
                         pres_pa = np.squeeze(vardatas['PSRF'])
                     else:
                         pres_pa = 101325.0
-                    sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, q_kgkg=qbot)
+                    if ('GSWP3' in met_type and 'daymet' not in met_type):
+                        sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, q_kgkg=qbot, vpsat_frz=False)
+                    else:
+                        sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, q_kgkg=qbot)
                 else:
                     print('ERROR: for RH coverting from QBOT, air temperature is required')
                     sys.exit(-1)
@@ -493,6 +512,22 @@ for imet in range(len(mettype)):
                     print('ERROR: for RH coverting from QBOT, air temperature is required')
                     sys.exit(-1)
                 sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, rh_100=rh)
+            #
+            if 'QBOT' in vars_list and ('GSWP3' in met_type and 'daymet' not in met_type):
+                #correction for GSWP3 QBOT data
+                qbot = np.squeeze(vardatas['QBOT'])
+                if 'TBOT' in vars_list:
+                    tk = np.squeeze(vardatas['TBOT'])
+                    if 'PSRF' in vars_list:
+                        pres_pa = np.squeeze(vardatas['PSRF'])
+                    else:
+                        pres_pa = 101325.0
+                else:
+                    print('ERROR: for RH coverting from QBOT, air temperature is required')
+                    sys.exit(-1)
+                rh = Modules_metdata.convertHumidity(tk, pres_pa, q_kgkg=qbot,vpsat_frz=False) # restore RH to orginal
+                sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, rh_100=rh)  # re-cal. QBOT for GSWP3 dataset
+
         # if FLDS estimated from humidity and temperature
         elif (vname_elm=='estFLDS'):
             #Longwave radiation (calculated from air temperature, humidity)

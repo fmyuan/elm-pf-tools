@@ -42,9 +42,9 @@ def vpsat_pa(tk, freezing_eff=True):
 # ---------------------------------------------------------------
 # conversion btw specific (kg/kg) and relative humidity (percentage), 
 # known air temperature (K) and pressure (pa)
-def convertHumidity(tk, pres_pa, q_kgkg=[], rh_100=[]):
+def convertHumidity(tk, pres_pa, q_kgkg=[], rh_100=[], vpsat_frz=True):
     
-    vpsat = vpsat_pa(tk)
+    vpsat = vpsat_pa(tk, vpsat_frz)
     d_pres = pres_pa - 0.378*vpsat
     qsat = 0.622*vpsat / d_pres
     if len(rh_100)>0:

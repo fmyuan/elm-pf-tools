@@ -64,14 +64,17 @@ def ELMmet_1vardatas(vars, met_dir, met_type, met_fileheader='', met_domain='',l
     t_elm = []
     vardatas = []
     # read-in metdata from CPL_BYPASS_FULL
-    if ('cplbypass' in met_type or 'cplbypass_site' in met_type):
+    if ('cplbypass_' in met_type):
         cplbypass_dir=met_dir
+        
+        #cplbypass subtype
         cplbypass_mettype='GSWP3'
-        if ('daymet' in met_type): cplbypass_mettype='GSWP3_daymet'
         if ('v1' in met_type): cplbypass_mettype='GSWP3v1'
+        if ('daymet' in met_type): cplbypass_mettype='GSWP3_daymet'
+        if ('v1' in met_type and 'daymet' in met_type): cplbypass_mettype='GSWP3v1_daymet'
         
         vnames=[vname_elm]
-        if('cplbypass_Site' in met_type): 
+        if(met_type=='cplbypass_Site'): 
             cplbypass_mettype='Site'
             if (vname_elm=='QBOT' or vname_elm=='estFLDS'): 
                 vnames=['RH','TBOT','PSRF']
@@ -79,7 +82,12 @@ def ELMmet_1vardatas(vars, met_dir, met_type, met_fileheader='', met_domain='',l
             if (vname_elm=='RH' or vname_elm=='estFLDS'): 
                 vnames=['QBOT','TBOT','PSRF']
     
-
+        if(met_type=='cplbypass_GSWP3' or met_type=='cplbypass_GSWP3v1'):
+            # GSWP3 data QBOT needs redo, because its RH is NOT freezing adjusted
+            # (When calculating RH from QBOT, RH often over 100 in freezing winter)
+            if (vname_elm=='QBOT'):
+                vnames=['QBOT','TBOT','PSRF']
+        
         # read in
         ix,iy, varsdims, vardatas = \
             Modules_metdata.clm_metdata_cplbypass_read( \
@@ -103,11 +111,23 @@ def ELMmet_1vardatas(vars, met_dir, met_type, met_fileheader='', met_domain='',l
     elif (('CRU' in met_type or \
            'GSWP3' in met_type or \
            'Site' in met_type) and \
-           ('cplbypass' not in met_type and 'cplbypass_Site' not in met_type)):
+           ('cplbypass_' not in met_type)):
         if (met_dir == './'):
             print('e3sm met. directory is the current')
         else:
             print('e3sm met.  directory: '+ met_dir)
+
+        if(met_type=='Site'): 
+            if (vname_elm=='QBOT' or vname_elm=='estFLDS'): 
+                vnames=['RH','TBOT','PSRF']
+        elif (vname_elm=='RH' or vname_elm=='estFLDS'): 
+                vnames=['QBOT','TBOT','PSRF']
+        if(met_type=='GSWP3' or met_type=='GSWP3v1'):
+            # GSWP3 data QBOT needs redo, because its RH is NOT freezing adjusted
+            # (When calculating RH from QBOT, RH often over 100 in freezing winter)
+            if (vname_elm=='QBOT'):
+                vnames=['QBOT','TBOT','PSRF']
+
 
         # read in
         ix,iy, varsdims, vardatas = \
@@ -131,14 +151,17 @@ def ELMmet_1vardatas(vars, met_dir, met_type, met_fileheader='', met_domain='',l
         
         t = vardatas[tvarname] # days since 1901-01-01 00:00
         tunit = vardatas['tunit']
-        tunit = tunit.replace('1901-','0001-')
-        t0 = 1901*365 # converted from 'days-since-1901-01-01-00:00' to days since 0001-01-01 00:00
+        t0 = 0.0
+        if ('1901-01-01' in tunit):
+            tunit = tunit.replace('1901-','0001-')
+            t0 = 1901*365 # converted from 'days-since-1901-01-01-00:00' to days since 0001-01-01 00:00
 
         for varname in vars_list:
             if vname_elm not in varname: continue
         
             if 'PRECTmms' in varname: 
-                sdata_elm = deepcopy(vardatas[varname])*86400 # mm/s -> mm/day
+                sdata_elm = deepcopy(vardatas[varname])*86400 # mm/s -> mm/d for convenient plotting
+                varunit = 'mm/d'
             else:
                 sdata_elm = deepcopy(vardatas[varname])
             sdata_elm = np.squeeze(sdata_elm)
@@ -161,7 +184,10 @@ def ELMmet_1vardatas(vars, met_dir, met_type, met_fileheader='', met_domain='',l
                         pres_pa = np.squeeze(vardatas['PSRF'])
                     else:
                         pres_pa = 101325.0
-                    sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, q_kgkg=qbot)
+                    vpsat_frzing=True
+                    if 'GSWP3' in met_type and 'daymet' not in met_type: vpsat_frzing=False
+                    #GSWP3 data of QBOT is NOT calculated from RH with vpsat adjusted for freezing air
+                    sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, q_kgkg=qbot,vpsat_frz=vpsat_frzing)
                 else:
                     print('ERROR: for RH coverting from QBOT, air temperature is required')
                     sys.exit(-1)
@@ -178,6 +204,22 @@ def ELMmet_1vardatas(vars, met_dir, met_type, met_fileheader='', met_domain='',l
                     print('ERROR: for RH coverting from QBOT, air temperature is required')
                     sys.exit(-1)
                 sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, rh_100=rh)
+            #
+            if 'QBOT' in vars_list and ('GSWP3' in met_type and 'daymet' not in met_type):
+                #correction for GSWP3 QBOT data
+                qbot = np.squeeze(vardatas['QBOT'])
+                if 'TBOT' in vars_list:
+                    tk = np.squeeze(vardatas['TBOT'])
+                    if 'PSRF' in vars_list:
+                        pres_pa = np.squeeze(vardatas['PSRF'])
+                    else:
+                        pres_pa = 101325.0
+                else:
+                    print('ERROR: for RH coverting from QBOT, air temperature is required')
+                    sys.exit(-1)
+                rh = Modules_metdata.convertHumidity(tk, pres_pa, q_kgkg=qbot,vpsat_frz=False) # restore RH to orginal
+                sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, rh_100=rh)  # re-cal. QBOT for GSWP3 dataset
+            
         # if FLDS estimated from humidity and temperature
         elif (vname_elm=='estFLDS'):
             #Longwave radiation (calculated from air temperature, humidity)
@@ -206,18 +248,6 @@ def ELMmet_1vardatas(vars, met_dir, met_type, met_fileheader='', met_domain='',l
         # clean-up
         del vardatas, vars_list
         
-        # in case when needs cut-off (TO comment out, change the 'if True' to 'if False'
-        if False:
-            idx=np.where(t_elm>=1985*365.0)
-            t_elm = t_elm[idx]
-            sdata_elm = sdata_elm[idx]
-        # aggregate half-hourly to 3-hourly (e.g. to GSWP3 datasets)
-        if False:
-            t_elm = np.reshape(t_elm, [-1,6])
-            t_elm = np.squeeze(t_elm[:,0])
-            sdata_elm = np.reshape(sdata_elm, [-1,6])
-            sdata_elm = np.mean(sdata_elm,axis=1)
-            
     #
     #
     return vname_elm, t_elm, tunit_elm, sdata_elm, LONGXY, LATIXY
@@ -458,7 +488,7 @@ parser = OptionParser()
 
 # E3SM met data 
 parser.add_option("--mettype", dest="met_type", default="CRU", \
-                  help="e3sminput met data type (default = 'CRU', options: CRU, GSWP3, GSWP3v1, Site, cplbypass, cplbypass_Site")
+                  help="e3sminput met data type (default = 'CRU', options: CRU, GSWP3, GSWP3v1, Site, GSWP3_daymet, cplbypass_*")
 parser.add_option("--metdir", dest="met_dir", default="./", \
                   help="e3sminput met directory (default = ./, i.e., under current directory)")
 parser.add_option("--metdomain", dest="met_domain", default="", \
@@ -469,7 +499,7 @@ parser.add_option("--varname", dest="vars", default="", \
                   help = "variable name to be merged/jointed: ONLY one of 'TBOT, PRECT, QBOT, RH, FSDS, FLDS, PSRF, WIND' ")
 #2nd ELM met data
 parser.add_option("--mettype2", dest="met_type2", default="", \
-                  help="e3sminput met data type 2 (default = '', options: CRU, GSWP3, GSWP3v1, Site, cplbypass, cplbypass_Site")
+                  help="e3sminput met data type 2 (default = '', options: CRU, GSWP3, GSWP3v1, Site, GSWP3_daymet, cplbypass_*")
 parser.add_option("--metdir2", dest="met_dir2", default="./", \
                   help="e3sminput met directory 2 (default = ./, i.e., under current directory)")
 parser.add_option("--metdomain2", dest="met_domain2", default="", \
@@ -480,7 +510,7 @@ parser.add_option("--varname2", dest="vars2", default="", \
                   help = "variable name to be merged/jointed: ONLY one of 'TBOT, PRECT, QBOT, RH, FSDS, FLDS, PSRF, WIND' ")
 # other sources of data
 parser.add_option("--user_mettype", dest="user_mettype", default="", \
-                  help="user met data type (default = '', options: CRU, cplbypass, GSWP3, GSWP3v1, Site, ATS_h5, NCDC, daymet_nc4)")
+                  help="user met data type (default = '', options: CRU, GSWP3, GSWP3v1, Site, GSWP3_daymet, cplbypass_*, ATS_h5, NCDC, daymet_nc4)")
 parser.add_option("--user_metdir", dest="user_metdir", default="./", \
                   help="user-defined met directory (default = ./, i.e., under current directory)")
 parser.add_option("--user_metfile", dest="user_metfile", default="", \
