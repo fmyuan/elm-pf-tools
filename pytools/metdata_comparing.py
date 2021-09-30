@@ -89,13 +89,18 @@ def ELMmet_1vardatas(vars, met_dir, met_type, met_fileheader='', met_domain='',l
                 vnames=['QBOT','TBOT','PSRF']
         
         # read in
-        ix,iy, varsdims, vardatas = \
+        zones,zlines, varsdims, vardatas = \
             Modules_metdata.clm_metdata_cplbypass_read( \
-                            cplbypass_dir,cplbypass_mettype, lon, lat, vnames)
+                            cplbypass_dir,cplbypass_mettype, vnames, lons=[lon], lats=[lat])
 
         # assign data to plotting variables
-        nx=len(ix)
-        ny=len(iy)
+        nx=1
+        ny=0
+        for iz in zlines.keys():
+            if np.isscalar(zlines[iz]):
+                ny=ny+1
+            else:
+                ny=ny+len(zlines[iz])
         if2dgrid = False
         nxy=nx*ny
 
@@ -441,10 +446,14 @@ def DataSimilarity(data1, data2, t=None, t_unit='', v_name='', v_unit='', plt=No
     if len(idx1[0]>0):
         dd1=np.delete(data1,idx1)
         dd2=np.delete(data2,idx1)
-    idx2=np.where(np.isnan(dd2))
-    if len(idx2[0]>0):
-        dd1=np.delete(dd1,idx2)
-        dd2=np.delete(dd2,idx2)
+        
+        idx2=np.where(np.isnan(dd2))
+        if len(idx2[0]>0):
+            dd1=np.delete(dd1,idx2)
+            dd2=np.delete(dd2,idx2)
+    else:
+        dd1=data1
+        dd2=data2
 
     fit_model = np.polyfit(dd1, dd2, 1, cov=True)
     slope = fit_model[0]
@@ -561,6 +570,9 @@ if (options.met_dir != '' and options.met_type != ''):
         ELMmet_1vardatas(options.vars, options.met_dir, options.met_type, \
                          options.met_header, options.met_domain, \
                          options.lon, options.lat)
+    while (len(sdata_elm.shape)>1): #2-D data, requring aggregating over spatial dimension
+        idim = np.where(np.asarray(sdata_elm.shape)!=len(t_elm))[0]
+        sdata_elm = np.nanmean(sdata_elm, axis=idim[0])
 
     if ts_yrly > 0:
         tt, sdata = \
@@ -577,6 +589,9 @@ if (options.met_dir2 != '' and options.met_type2 != ''):
         ELMmet_1vardatas(options.vars2, options.met_dir2, options.met_type2, \
                          options.met_header2, options.met_domain2, \
                          options.lon, options.lat)
+    while (len(sdata_elm2.shape)>1): #2-D data, requring aggregating over spatial dimension
+        idim = np.where(np.asarray(sdata_elm2.shape)!=len(t_elm2))[0]
+        sdata_elm2 = np.nanmean(sdata_elm2, axis=idim[0])
 
     if ts_yrly > 0:
         tt, sdata = \
@@ -593,6 +608,10 @@ if (options.user_metdir != '' and options.user_mettype != ''):
         ELMmet_1vardatas(options.user_vars, options.user_metdir, options.user_mettype, \
                          options.user_metfile, options.user_metdomain, \
                          options.lon, options.lat)
+    while (len(sdata_elm3.shape)>1): #2-D data, requring aggregating over spatial dimension
+        idim = np.where(np.asarray(sdata_elm3.shape)!=len(t_elm3))[0]
+        sdata_elm3 = np.nanmean(sdata_elm3, axis=idim[0])
+        
 
     if ts_yrly >0:
         tt, sdata = \
@@ -669,8 +688,9 @@ if options.datasimilarity and (vname1!='' and vname2!='' and vname3==''):
 #--------------------------------------------------------------------------------------
 # printing plot in PDF
 if (options.plotting):
-    snames = ['Station', 'GSWP3']
-    if(vname3!=''): snames = ['Station', 'GSWP3', 'GSWP3-Daymet4']
+    snames = ['1-'+options.met_type, '2-'+options.met_type2]
+    if(vname3!=''): 
+        snames = ['1-'+options.met_type, '2-'+options.met_type2, '3-'+options.user_mettype]
     
     tt={}
     tt[snames[0]] = deepcopy(t_elm)

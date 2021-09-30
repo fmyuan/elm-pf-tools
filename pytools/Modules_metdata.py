@@ -49,11 +49,15 @@ def convertHumidity(tk, pres_pa, q_kgkg=[], rh_100=[], vpsat_frz=True):
     qsat = 0.622*vpsat / d_pres
     if len(rh_100)>0:
         q_kgkg = qsat*rh_100/100.0
+        idx=np.where(rh_100>100.0)
+        if (len(idx[0])>0): q_kgkg[idx]=qsat[idx]
         
         return q_kgkg
     
     elif len(q_kgkg)>0:
         rh_100 = q_kgkg/qsat*100.0
+        idx=np.where(rh_100>100.0)
+        if (len(idx[0])>0): rh_100[idx]=100.0
         
         return rh_100
     else:
@@ -227,8 +231,8 @@ def clm_metdata_extraction(metdomainfile, metfiles, sites, ncopath=''):
     try:
         f = Dataset(ncfile,'r')
         print('\n FILE: '+ncfile+' ------- ')
-    except:
-        print('\n Error in READING File: '+ncfile)
+    except Exception as e:
+        print(e)
             
     allx=[]
     if('LONGXY' in f.variables.keys()):
@@ -426,8 +430,8 @@ def subsetDaymetRead1NCfile(ncfile, lat_range=[], lon_range=[],SUBSETNC=False, n
         f0 = Dataset(ncfile,'r')
         print('\n read nc FILE: '+ncfile+' ------- ')
         
-    except:
-        print('\n Error in READING File: '+ncfile)
+    except Exception as e:
+        print(e)
 
     for ivar in f0.variables.keys():
         if ivar in daymet_vars:
@@ -569,11 +573,12 @@ def singleDaymetReadCsvfile(filename):
                     data_value=np.vstack((temp,data))
                     try: 
                         dataline=next(f0).strip()
-                    except:
+                    except Exception as e:
+                        print(e)
                         break
 
-    except ValueError:
-        print("Error in reading data")
+    except Exception as e:
+        print(e)
 
     
     #
@@ -721,7 +726,11 @@ def singleNCDCReadCsvfile(filename, ncdc_type, missing):
 
 # ---------------------------------------------------------------
 # read a met variables from CPL_BYPASS directory 
-def clm_metdata_cplbypass_read(filedir,met_type, lon, lat, vars):
+def clm_metdata_cplbypass_read(filedir,met_type, vars, lons=[-999], lats=[-999]):
+    #
+    if (len(lons)!=len(lats)):
+        print('paired "lons=,lats=" must be in same length', len(lons), len(lats) )
+        sys.exit(-1)
     #
     if('GSWP3' in met_type):
         # zone_mapping.txt
@@ -746,127 +755,157 @@ def clm_metdata_cplbypass_read(filedir,met_type, lon, lat, vars):
         all_zones= np.asarray(all_zones)
         all_lines= np.asarray(all_lines)
         
+        # look-up zone/line to extract
+        zone = []; zline = {}
+        i={}; j={}
+        if(lons[0]==-999):
+            i[0] = np.asarray(range(len(all_lons)))
+        else:
+            idx=np.where(lons<0.0)
+            if len(idx[0])>0: lons[idx]=360.0+lons[idx] # convert longitude in format of 0 - 360
+            for ix in range(len(lons)):
+                lon_i=all_lons[np.argmin(abs(all_lons-lons[ix]))]
+                i[ix]=np.where(all_lons == lon_i)[0]# in general, there are many numbers of 'lon' in 'all_lons' 
         
-        if(lon==-999):
-            i = 0
+        if(lats[0]==-999):
+            j[0] = np.asarray(range(len(all_lats)))
         else:
-            if(lon<0.0): lon=360.0+lon # convert longitude in format of 0 - 360
-            i=np.argmin(abs(all_lons-lon))
-        lon_i=all_lons[i]
-        i=np.where(all_lons == lon_i)[0]# in general, there are many numbers of 'lon' in 'all_lons' 
-    
-        if(lon==-999):
-            j = 0
+            for iy in range(len(lats)):
+                lat_j=all_lats[np.argmin(abs(all_lats-lats[iy]))]
+                j[iy]=np.where(all_lats == lat_j)[0]# in general, there are many numbers of 'lat' in 'all_lats' 
+        
+        if(len(i[0])>0 and len(j[0])>0): 
+            for ixy in range(len(i)):
+                if ixy==0:
+                    ij = np.intersect1d(i[ixy], j[ixy])
+                else:
+                    ij = np.hstack((ij,np.intersect1d(i[ixy], j[ixy])))
         else:
-            j=np.argmin(abs(all_lats-lat))
-        lat_j=all_lats[j]
-        j=np.where(all_lats == lat_j)[0]# in general, there are many numbers of 'lat' in 'all_lats' 
-            
-        if(len(i)>0 and len(j)>0): 
-            ij = np.intersect1d(i, j)
-        else:
-            print('NOT found point: lon - '+str(lon)+ ' lat - '+str(lat))
+            print('NOT found point: lon - '+str(lons)+ ' lat - '+str(lats))
             sys.exit()
-        zone = np.array(all_zones)[ij]
-        line = np.array(all_lines)[ij]
-        #because extraction going to do for zone/line, the grid is orderly cleared
-        ix=np.asarray(range(len(ij))) 
-        iy=np.asarray(range(len(ij))) 
+        ij=np.unique(ij)
+        zone = np.unique(np.array(all_zones)[ij])
+        for iz in zone:
+            idx = np.where(np.array(all_zones)[ij]==iz)[0]
+            zline[iz] = np.unique(np.array(all_lines)[ij][idx])
     
     elif ('Site' in met_type):
         zone=[1]
-        line=[1]
-        ix=[0]
-        iy=[0]
+        zline={}; zline[1]=1
 
     #file
     met ={}
     vdims={}
+    
+    # the following is for testing
+    #met['DTIME']= []
+    #met['tunit']='days since 1901-01-01 00:00:00'
+    #met['LATIXY']=[]
+    #met['LONGXY']=[]
+    #for iv in range(len(vars)):
+    #    v = vars[iv]
+    #    met[v] = []
+    #    for iz in zone:
+    #        if iv==0: 
+    #            idx=np.where((all_zones==iz) & (np.isin(all_lines,zline[iz])))
+    #            met['LONGXY']=np.hstack((met['LONGXY'], all_lons[idx]))
+    #            met['LATIXY']=np.hstack((met['LATIXY'], all_lats[idx]))
+    #return zone, zline, vdims, met
+    
+    
     mdoy=[0,31,59,90,120,151,181,212,243,273,304,334]#monthly starting DOY
-    if('GSWP3' in met_type or 'Site' in met_type):
-        varlist=['FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
-        if 'Site' in met_type:
-            varlist=['FLDS','FSDS','PRECTmms','PSRF','RH','TBOT','WIND']
-        
-        for v in vars:
-            if ('GSWP3' in met_type):
-                if('v1' in met_type):
-                    file=filedir+'/GSWP3_'+v+'_1901-2010_z'+str(int(zone[0])).zfill(2)+'.nc'
-                elif('daymet' in met_type):
-                    file=filedir+'/GSWP3_daymet4_'+v+'_1980-2014_z'+str(int(zone[0])).zfill(2)+'.nc'
-                else:
-                    file=filedir+'/GSWP3_'+v+'_1901-2014_z'+str(int(zone[0])).zfill(2)+'.nc'
-            
-            elif('Site' in met_type):
-                file=filedir+'/all_hourly.nc'
-
+    for iv in range(len(vars)):
+        v = vars[iv]
+        if('GSWP3' in met_type or 'Site' in met_type):
+            varlist=['FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
+            if 'Site' in met_type:
+                varlist=['FLDS','FSDS','PRECTmms','PSRF','RH','TBOT','WIND']
             if v not in varlist:
                 print('NOT found variable:  '+ v)
                 sys.exit()
                 
             #
-            fnc = Dataset(file,'r')
-
-            if ('LATIXY' not in met.keys()):
-                met['LATIXY']=np.asarray(fnc.variables['LATIXY'])[line[0]-1]
-            if ('LONGXY' not in met.keys()):
-                met['LONGXY']=np.asarray(fnc.variables['LONGXY'])[line[0]-1]
-        
-            if ('DTIME' not in met.keys()):
-                t=np.asarray(fnc.variables['DTIME'])
-                vdims['DTIME'] = fnc.variables['DTIME'].dimensions
-                if('units' in fnc.variables['DTIME'].ncattrs()):
-                    tunit= fnc.variables['DTIME'].getncattr('units')
-                    tunit=tunit.lower()
-                    if ('days since' in tunit):
-                        t0=str(tunit).strip('days since')
-                        if (t0.endswith(' 00:00')): t0=t0+':00' # in case time written NOT exactly in 00:00:00
-                        if (t0.endswith(' 00')): t0=t0+':00:00'
-                        t0=datetime.strptime(t0,'%Y-%m-%d %X')
-                        y0=t0.year
-                        m0=t0.month
-                        d0=t0.day-1.0
-                        days0 = (y0-1901)*365+mdoy[m0-1]+d0+t0.second/86400.0 # force days since 1901-01-01 00:00:00
-                        t = t + days0
-                        met['DTIME']=t
-                        met['tunit']='days since 1901-01-01 00:00:00'
+            for iz in zone:
                 
-            #correct 'DTIME' (when do this modify fnc to be 'r+')
-            if ('GSWP3' in met_type):
-                try:
-                    dt=np.diff(met['DTIME'])
-                    idx=np.where(dt!=0.125)
-                    if len(idx)>1:
-                        dt[idx]=0.125
-                        dt=np.insert(dt, 0, met['DTIME'][0])
-                        dt=np.add.accumulate(dt)
-                        met['DTIME']=dt
-                        daysnum = fnc.variables['DTIME']
-                        daysnum[:] = dt
-                except:
-                    print('NC file not writable')
-
-            if(v in fnc.variables.keys()): 
-                d = fnc.variables[v][...]
-                if (fnc.variables[v][...].dtype==np.float): 
-                    d[np.where(d.mask)] = np.nan
-                else:
-                    d[np.where(d.mask)] = -9999
-                d=np.asarray(d[line[0]-1,:])
-                met[v] = d # 'scale_factor' and 'add_offset' have already used when reading nc data.
-                if(v not in vdims.keys()):
-                    vdims[v] = fnc.variables[v].dimensions
-
-            # when done ncfile, close it.
-            fnc.close()
+                if ('GSWP3' in met_type):
+                    if('v1' in met_type):
+                        file=filedir+'/GSWP3_'+v+'_1901-2010_z'+str(int(iz)).zfill(2)+'.nc'
+                    elif('daymet' in met_type):
+                        file=filedir+'/GSWP3_daymet4_'+v+'_1980-2014_z'+str(int(iz)).zfill(2)+'.nc'
+                    else:
+                        file=filedir+'/GSWP3_'+v+'_1901-2014_z'+str(int(iz)).zfill(2)+'.nc'
+                
+                elif('Site' in met_type):
+                    file=filedir+'/all_hourly.nc'
+                
+                #
+                fnc = Dataset(file,'r')
+    
+                if ('LATIXY' not in met.keys() and iv==0):
+                    met['LATIXY']=np.asarray(fnc.variables['LATIXY'])[zline[iz]-1]
+                elif(iv==0):
+                    met['LATIXY']=np.hstack((met['LATIXY'],np.asarray(fnc.variables['LATIXY'])[zline[iz]-1]))
+                if ('LONGXY' not in met.keys() and iv==0):
+                    met['LONGXY']=np.asarray(fnc.variables['LONGXY'])[zline[iz]-1]
+                elif(iv==0):
+                    met['LONGXY']=np.hstack((met['LONGXY'],np.asarray(fnc.variables['LONGXY'])[zline[iz]-1]))
             
-        # all vars done
-        
-    #because extraction going to do for zone/line, the grid is orderly cleared
-    ix=np.asarray(range(len(ix))) 
-    iy=np.asarray(range(len(iy))) 
-
-    return ix,iy, vdims,met
+                if ('DTIME' not in met.keys()):
+                    t=np.asarray(fnc.variables['DTIME'])
+                    vdims['DTIME'] = fnc.variables['DTIME'].dimensions
+                    if('units' in fnc.variables['DTIME'].ncattrs()):
+                        tunit= fnc.variables['DTIME'].getncattr('units')
+                        tunit=tunit.lower()
+                        if ('days since' in tunit):
+                            t0=str(tunit).strip('days since')
+                            if (t0.endswith(' 00:00')): t0=t0+':00' # in case time written NOT exactly in 00:00:00
+                            if (t0.endswith(' 00')): t0=t0+':00:00'
+                            t0=datetime.strptime(t0,'%Y-%m-%d %X')
+                            y0=t0.year
+                            m0=t0.month
+                            d0=t0.day-1.0
+                            days0 = (y0-1901)*365+mdoy[m0-1]+d0+t0.second/86400.0 # force days since 1901-01-01 00:00:00
+                            t = t + days0
+                            met['DTIME']=t
+                            met['tunit']='days since 1901-01-01 00:00:00'
+                    
+                    #correct 'DTIME' (when do this modify fnc to be 'r+')
+                    if ('GSWP3' in met_type):
+                        try:
+                            dt=np.diff(met['DTIME'])
+                            idx=np.where(dt!=0.125)
+                            if len(idx)>1:
+                                dt[idx]=0.125
+                                dt=np.insert(dt, 0, met['DTIME'][0])
+                                dt=np.add.accumulate(dt)
+                                met['DTIME']=dt
+                                daysnum = fnc.variables['DTIME']
+                                daysnum[:] = dt
+                        except Exception as e:
+                            print(e)
+    
+                if(v in fnc.variables.keys()): 
+                    d = fnc.variables[v][zline[iz]-1,:]
+                    if (d.dtype==np.float or d.dtype==np.float32): 
+                        d[np.where(d.mask)] = np.nan
+                    else:
+                        d[np.where(d.mask)] = -9999
+                    d=np.asarray(d)
+                    if(v not in met.keys()):
+                        met[v] = d # 'scale_factor' and 'add_offset' have already used when reading nc data.
+                    else:
+                        met[v] = np.vstack((met[v],d))
+                    if(v not in vdims.keys()):
+                        vdims[v] = fnc.variables[v].dimensions
+    
+                # when done ncfile, close it.
+                fnc.close()
+                #
+            # all vars done
+        # end if of met-type
+    # end of for loop of zone(s)
+    #    
+    return zone, zline, vdims,met
     
 # ---------------------------------------------------------------
 # read a met variables from CLM full met directory 
@@ -1190,6 +1229,7 @@ def singleReadCsvfile(filename):
 
 #clm_metdata_cplbypass_extranction('./', 'GSWP3_daymet4', 203.1241, 70.5725,ncopath='/usr/local/nco/bin/') #BEO
 #clm_metdata_cplbypass_extranction('./', 'GSWP3_daymet4', -157.4089, 70.4696,ncopath='/usr/local/nco/bin/')  #ATQ
+#clm_metdata_cplbypass_extranction('./', 'GSWP3_daymet4', 210.39903, 68.639023, ncopath='/usr/local/nco/bin/')  #test
 
 #odata = \
 #    subsetDaymetReadNCfile('daymet_v3_prcp_1980_na.nc', lon_range=[-170.0,-141.0], lat_range=[60.0, 90.0], SUBSETNC=True)
@@ -1204,7 +1244,7 @@ def singleReadCsvfile(filename):
 #cplbypass_mettype='GSWP3'
 #lon = 195.25
 #lat = 65.25  
-#met_cplbypass = clm_metdata_cplbypass_read(cplbypass_dir,cplbypass_fileheader, cplbypass_mettype, lon, lat)
+#met_cplbypass = clm_metdata_cplbypass_read(cplbypass_dir,cplbypass_fileheader, cplbypass_mettype, 'TBOT', lon, lat)
 
 #site,odata_header,odata = \
 #    singleNCDCReadCsvfile('2016100_initproc.csv')

@@ -115,7 +115,8 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
     mid_day = vardatas['date']
     try:
         nt = len(date2num(mid_day))
-    except:
+    except Exception as e:
+        print(e)
         nt = 1
 
     # Construct the grid in lat/lon.

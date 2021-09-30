@@ -292,7 +292,8 @@ for chunk in chunks:
         filename = "%s.%s.%s.nc" % (clmhead,inc,chunk)
         try:
             f = Dataset(filename,'r')
-        except:
+        except Exception as e:
+            print(e)
             continue
 
         #grids mapping

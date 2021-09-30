@@ -161,7 +161,8 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True, FillValue=None)
     if(np.min(doy) == np.max(doy)): YEARLY = True
     try:
         nt = len(date2num(mid_day))
-    except:
+    except Exception as e:
+        print(e)
         nt = 1
 
     # Construct the grid in lat/lon.

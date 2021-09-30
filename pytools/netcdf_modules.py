@@ -92,10 +92,7 @@ def putvar(ncfile, varname, varvals, varatts=''):
                     else:
                         val=np.copy(varvals)
                     f.variables[v][...]=val
-
             #
-                
-                
             f.sync()
             f.close()
             

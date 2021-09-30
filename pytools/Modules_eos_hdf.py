@@ -135,7 +135,8 @@ def Prep_modis_snowcov(vars, vardatas, ptxy=[]):
     mid_day = vardatas['RANGEBEGINNINGDATE']+ (vardatas['RANGEENDINGDATE']-vardatas['RANGEENDINGDATE'])/2.0
     try:
         nt = len(date2num(mid_day))
-    except:
+    except Exception as e:
+        print(e)
         nt = 1
 
     
@@ -248,7 +249,8 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True):
     mid_day = vardatas['date']
     try:
         nt = len(date2num(mid_day))
-    except:
+    except Exception as e:
+        print(e)
         nt = 1
 
     # Construct the grid in lat/lon.

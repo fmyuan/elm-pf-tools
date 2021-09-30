@@ -199,12 +199,17 @@ if (options.met_type=='cplbypass' or options.met_type=='CPL'):
     lat = float(options.lat)
 
     # read in
-    ix,iy, varsdims, varsdata = \
-        clm_metdata_cplbypass_read(cplbypass_dir,cplbypass_fileheader, cplbypass_mettype, lon, lat, varnames)
+    zones,zlines, varsdims, varsdata = \
+        clm_metdata_cplbypass_read(cplbypass_dir,cplbypass_fileheader, cplbypass_mettype, varnames, lons=[lon], lats=[lat])
 
     # assign data to plotting variables
-    nx=len(ix)
-    ny=len(iy)
+    nx=1
+    ny=0
+    for iz in zlines.keys():
+        if np.isscalar(zlines[iz]):
+            ny=ny+1
+        else:
+            ny=ny+len(zlines[iz])
     if2dgrid = False
     nxy=nx*ny
 

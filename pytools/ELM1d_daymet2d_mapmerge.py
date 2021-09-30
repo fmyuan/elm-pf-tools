@@ -29,7 +29,8 @@ def Daymet_ELM_mapinfo(mapfile):
         
         try:
             data = [x.strip().split() for x in f]
-        except:
+        except Exception as e:
+            print(e)
             print('Error in reading - '+mapfile)
             sys.exit(-1)
     data = np.asarray(data,np.float)

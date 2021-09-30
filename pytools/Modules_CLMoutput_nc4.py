@@ -70,12 +70,14 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
     
     try:
         startdays = float(startdays)
-    except ValueError:
+    except Exception as e:
+        print(e)
         startdays = -9999
 
     try:
         enddays = float(enddays)
-    except ValueError:
+    except Exception as e:
+        print(e)
         enddays = -9999
 
     try:
@@ -83,7 +85,8 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
         if varnames_print: 
             print('FILE: '+ncfile+' ------- ')
 
-    except:
+    except Exception as e:
+        print(e)
         return odata,odata_dims
         
         
@@ -269,12 +272,14 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
 
     try:
         startdays = float(startdays)
-    except ValueError:
+    except Exception as e:
+        print(e)
         startdays = -9999
 
     try:
         enddays = float(enddays)
-    except ValueError:
+    except Exception as e:
+        print(e)
         enddays = -9999
 
 #--------------------------------------------------------------------------------------

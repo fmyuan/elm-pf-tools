@@ -190,7 +190,8 @@ if (options.elmheader != ""):
         next(f)
         try:
             data = [x.strip().split() for x in f]
-        except:
+        except Exception as e:
+            print(e)
             print('Error in reading - '+mapfile)
             sys.exit(-1)
     data = np.asarray(data,np.float)
@@ -236,6 +237,12 @@ if (options.elmheader != ""):
         idx = i[ii]
         geoy = geoy[idx]
 
+
+    # some tests, should be commented out normally
+    #gidx=gidx[10460:]-10460
+    #yidx=yidx[10460:]
+    #xidx=xidx[10460:]
+
     # read-in datasets one by one
     for ncfile in alldirfiles:
 
@@ -253,10 +260,12 @@ if (options.elmheader != ""):
     
         # copy dimensions
         for name, dimension in src.dimensions.items():
-            dst.createDimension(name, (len(dimension) if not dimension.isunlimited() else None))
+            dname=name
+            if name=='DTIME': dname='time'# rename 'DTIME' to 'time' so that VISIT can regcon. it
+            dst.createDimension(dname, (len(dimension) if not dimension.isunlimited() else None))
             # unlimited dimension name to be included dst output
             if dimension.isunlimited:
-                unlimited_dim = name
+                unlimited_dim = dname
     
         # add geox/geoy dimensions
         geox_dim = dst.createDimension('geox',  len(geox))
@@ -286,7 +295,9 @@ if (options.elmheader != ""):
 
         # copy all data in src, and do 1D-grid --> 2D-geox/geoy copy
         for name, variable in src.variables.items():
-            
+            vname = name
+            if name=='DTIME': vname='time' # rename 'DTIME' to 'time' so that VISIT can regcon. it
+
             if ('ALL' not in elm_varname) and (name not in elm_varname.split(',')): 
                 # Must include 'unlimited_dim' variable, otherwise output NC is empty
                 if (name!=unlimited_dim): continue
@@ -295,28 +306,34 @@ if (options.elmheader != ""):
             #if(ncfile == alldirfiles[0]): print(name)
             
             src_dims = variable.dimensions
-                
-            if ('gridcell' in src_dims or 'lndgrid' in src_dims \
+            
+            #
+            if ('gridcell' in src_dims or 'lndgrid' in src_dims or 'n' in src_dims \
                 or 'landunit' in src_dims \
                 or 'column' in src_dims \
                 or 'pft' in src_dims):
                 try:
                     FillValue = variable._FillValue
-                except:
+                except Exception as e:
+                    print(e)
                     FillValue = -9999
                 src_data = np.asarray(src[name])# be ready for original data to re-shape if any below 
 
                 new_dims = []
                 i = -1
-                for dim in src_dims:
+                SKIPPED = False
+                for vdim in src_dims:
+                    dim=vdim
+                    if vdim=='DTIME': dim='time'# rename 'DTIME' to 'time' so that VISIT can regcon. it
                     i = i + 1
-                    if dim in ('gridcell','lndgrid'): 
+                    if dim in ('gridcell','lndgrid', 'n'): 
                         idim = i
                         new_dims.append('geoy')
                         new_dims.append('geox')
-                    elif dim in ('landunit','column','pft') and \
-                                ('gridcell' in src.dimensions.keys() \
-                                 or 'lndgrid' in src.dimensions.keys()):
+                    elif (dim in ('landunit','column','pft')) and \
+                         ('gridcell' in src.dimensions.keys() \
+                           or 'lndgrid' in src.dimensions.keys()
+                           or 'n' in src.dimensions.keys()):
                         # in ELM output, column/pft dims are gridcells*col/patch
                         idim = i
                         #new_dims.append('geoy')
@@ -360,53 +377,63 @@ if (options.elmheader != ""):
 
                     else:
                         new_dims.append(dim)
-                x = dst.createVariable(name, variable.datatype, \
+                
+                if SKIPPED: continue
+                vdtype = variable.datatype
+                if(vdtype!=src_data.dtype):
+                    vdtype=src_data.dtype
+                x = dst.createVariable(vname, vdtype, \
                                         dimensions=new_dims, \
                                         zlib=True, fill_value=FillValue)
                 
                 # re-assign data from gidx to (yidx,xidx)
                 # gidx should be in order already
-                dst_data = np.asarray(dst[name])
+                dst_data = np.asarray(dst[vname])
+                
                 if idim == 0:
                     dst_data[yidx,xidx,] = src_data[gidx,]
-                    dst[name][:,] = dst_data
+                    dst[vname][:,] = dst_data
                 elif idim == 1:
                     dst_data[:,yidx,xidx,] = src_data[:,gidx,]
-                    dst[name][:,:,] = dst_data
+                    dst[vname][:,:,] = dst_data
                 elif idim == 2:
                     dst_data[:,:,yidx,xidx,] = src_data[:,:,gidx,]
-                    dst[name][:,:,:,] = dst_data
+                    dst[vname][:,:,:,] = dst_data
                 elif idim == 3:
                     dst_data[:,:,:,yidx,xidx,] = src_data[:,:,:,gidx,]
-                    dst[name][:,:,:,:,] = dst_data
+                    dst[vname][:,:,:,:,] = dst_data
                 elif idim == 4:
                     dst_data[:,:,:,:,yidx,xidx,] = src_data[:,:,:,:,gidx,]
-                    dst[name][:,:,:,:,:,] = dst_data
+                    dst[vname][:,:,:,:,:,] = dst_data
                 else:
                     print('Error - more than at least 4 dimension variable, not supported yet')
                     sys.exit(-1)
 
                 #for g in gidx:  # this is not good way
                 #    if i==0:
-                #        dst[name][yidx[g],xidx[g],] = src[name][g,]
+                #        dst[vname][yidx[g],xidx[g],] = src[name][g,]
                 #    elif i==1:
-                #        dst[name][:,yidx[g],xidx[g-1]-1,] = src[name][:,g-1,]
+                #        dst[vname][:,yidx[g],xidx[g-1]-1,] = src[name][:,g-1,]
                 #    elif i==2:
-                #        dst[name][:,:,yidx[g]-1,xidx[g-1]-1,] = src[name][:,:,g-1,]
+                #        dst[vname][:,:,yidx[g]-1,xidx[g-1]-1,] = src[name][:,:,g-1,]
                 #    elif i==3:
-                #        dst[name][:,:,:,yidx[g-1]-1,xidx[g-1]-1,] = src[name][:,:,g-1,]
+                #        dst[vname][:,:,:,yidx[g-1]-1,xidx[g-1]-1,] = src[name][:,:,g-1,]
                 #    else:
                 #        print('Error - more than at least 4 dimension variable, not supported yet')
                 #        sys.exit(-1)
                      
             else:
-                x = dst.createVariable(name, variable.datatype, \
-                                        dimensions = variable.dimensions, \
+                vdims = src_dims
+                if 'DTIME' in src_dims: 
+                    i=src_dims.index('DTIME')
+                    vdims = src_dims[:i]+('time',)+src_dims[i+1:]
+                x = dst.createVariable(vname, variable.datatype, \
+                                        dimensions = vdims, \
                                         zlib=True)
-                dst[name][:] = src[name][:]
+                dst[vname][:] = src[name][:]
         
             # copy variable attributes all at once via dictionary
-            dst[name].setncatts(src[name].__dict__)
+            dst[vname].setncatts(src[name].__dict__)
         
         #
         src.close()

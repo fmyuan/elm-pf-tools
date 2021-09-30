@@ -227,8 +227,8 @@ variables = {}
 
 try:
     f = Dataset(clmsurf,'r')
-except:
-    print('CLM surface data file NOT exists! ')
+except Exception as e:
+    print(e)
     sys.exit()
 
 # If key is on the keep list, uniquely add to a dictionary

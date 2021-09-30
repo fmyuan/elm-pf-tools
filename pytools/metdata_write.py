@@ -213,7 +213,8 @@ if (options.nc_create or options.nc_write):
                                 tunit = tunit.replace('-'+str(t0.month).zfill(2)+'-', '-'+str(imon).zfill(2)+'-')
                                 if(tunit.endswith(' 00') and not tunit.endswith(' 00:00:00')):
                                     tunit=tunit+':00:00'
-                            except:
+                            except Exception as e:
+                                print(e)
                                 tunit = ''
                             error=nfmod.putvar(ncfileout, [tname], t, varatts=tname+'::units='+tunit)
                             error=nfmod.putvar(ncfileout,['LONGXY'], LONGXY)
@@ -265,7 +266,8 @@ if (options.nc_create or options.nc_write):
                         tunit = tunit.replace('-'+str(t0.month).zfill(2)+'-', '-01-')
                         if(tunit.endswith(' 00') and not tunit.endswith(' 00:00:00')):
                             tunit=tunit+':00:00'
-                    except:
+                    except Exception as e:
+                        print(e)
                         tunit = ''
                     error=nfmod.putvar(ncfileout_cplbypass, [tname], t, varatts=tname+'::units='+tunit)
                     # varatts must in format: 'varname::att=att_val; varname::att=att_val; ...'

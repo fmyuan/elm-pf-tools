@@ -30,7 +30,8 @@ def Daymet_ELM_mapinfo(mapfile):
         next(f)
         try:
             data = [x.strip().split() for x in f]
-        except:
+        except Exception as e:
+            print(e)
             print('Error in reading - '+mapfile)
             sys.exit(-1)
     data = np.asarray(data,np.float)
@@ -397,7 +398,8 @@ if (options.elmheader != ""):
                 or 'pft' in src_dims):
                 try:
                     FillValue = var._FillValue
-                except:
+                except Exception as e:
+                    print(e)
                     FillValue = -9999
                 src_data = np.asarray(src[name])# be ready for original data to re-shape if any below 
 

@@ -332,7 +332,7 @@ for var in varnames:
     t = np.asarray(t)*day_scaling + tunit0
 
     #if manually offset time
-    t0 = 735110 
+    t0 = 0 
     t = t - t0
     tunit = tunit.upper()
 

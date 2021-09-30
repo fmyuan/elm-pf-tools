@@ -68,7 +68,7 @@ def DataTimeDown(sdata_jointting, src, target, data_method='offset'):
     
     if (len(src) != len(target)):
         print('Error: src/target data size different: ', len(src), len(target))
-        os.exit(-1)
+        sys.exit(-1)
     
     if (data_method == 'offset'):
         offset = target - src# 
@@ -81,7 +81,7 @@ def DataTimeDown(sdata_jointting, src, target, data_method='offset'):
             sdata_jointting = sdata_jointting*ratio
         else:
             print('Error: ratio cannot calculated duo to 0.0 value in data ')
-            os.exit(-2)
+            sys.exit(-2)
     else:
         print('Error: not supported method - ',  data_method)
     
@@ -273,11 +273,13 @@ parser.add_option("--e3sm_metheader", dest="met_header", default="", \
                   help="e3sminput directory (default = '', i.e., standard file name)")
 parser.add_option("--varname", dest="vars", default="", \
                   help = "variable name to be merged/jointed: ONLY one of 'TBOT, PRECT, QBOT, RH, FSDS, FLDS, estFLDS, PSRF, WIND' ")
+parser.add_option("--var_depended", dest="var_depended", default="", \
+                  help = "variable name to be merged/jointed: ONLY one of 'TBOT, PRECT, QBOT, RH, FSDS, FLDS, estFLDS, PSRF, WIND' ")
 parser.add_option("--lon", dest="lon", default=-999, \
                   help = " longitude to be reading/plotting, default -999 for first one")
 parser.add_option("--lat", dest="lat", default=-999, \
                   help = " latitude to be reading/plotting, default -999 for first one")
-# other sources of data
+# other sources of data to be pull into merged E3SM data
 parser.add_option("--user_mettype", dest="user_mettype", default="", \
                   help="e3sminput met data type (default = 'CRU', options: CRU, GSWP3, GSWP3v1, GSWP3, Site, and *_daymet/cplbypass_*, ATS_h5, NCDC, daymet, None)")
 parser.add_option("--user_metdir", dest="user_metdir", default="./", \
@@ -352,8 +354,8 @@ else:
     sys.exit(-1)
 
 elmmettype = ['CRU', 'GSWP3', 'GSWP3v1', 'Site', \
-              'GSWP3_Daymet3', 'GSWP3_Daymet4']
-  # + 'cplbypass_*' of above first 4 elmmettype
+              'GSWP3v1_Daymet','GSWP3_Daymet', 'GSWP3_daymet4']  # v1 is from 1980-2010, _Daymet is in half-degree, and _daymet4 is in 1km res, and NA only
+  # + 'cplbypass_*' of above all elmmettype
 lon = float(options.lon)
 lat = float(options.lat)
 met_domain=options.met_domain
@@ -365,7 +367,10 @@ mettype=options.met_type
 # if for merging mets are both ELM met-type
 if options.user_mettype in elmmettype or 'cplbypass_' in options.user_mettype:
     metdir=[options.met_dir, options.user_metdir]
-    metfileheader=[options.met_header, options.user_metfile]
+    if(options.met_header=='' and options.user_metfile==''):
+        metfileheader=[' ', ' ']
+    else:
+        metfileheader=[options.met_header, options.user_metfile]
     mettype=[options.met_type, options.user_mettype]
     
     
@@ -379,8 +384,9 @@ for imet in range(len(mettype)):
     if ('cplbypass_' in imet_type):
         cplbypass_dir=imet_dir
         cplbypass_mettype='GSWP3'
-        if ('daymet' in imet_type): cplbypass_mettype='GSWP3_daymet'
+        if ('daymet' in imet_type.lower()): cplbypass_mettype='GSWP3_daymet'
         if ('v1' in imet_type): cplbypass_mettype='GSWP3v1'
+        if ('v1' in imet_type and 'daymet' in imet_type.lower()): cplbypass_mettype='GSWP3v1_daymet'
         
         vnames=[vname_elm]
         if('cplbypass_Site' in imet_type): 
@@ -396,13 +402,16 @@ for imet in range(len(mettype)):
             if (vname_elm=='QBOT'):
                 vnames=['QBOT','TBOT','PSRF']
         
+        if(options.var_depended!='' and options.var_depended not in vnames): 
+            vnames=vnames+[options.var_depended]
+        
         #if (vname_elm=='PRECT'): # for excluding data in winter
         #    vnames=['PRECT','TBOT']
     
         # read in
-        ix,iy, varsdims, vardatas = \
+        zones, zlines, varsdims, vardatas = \
             Modules_metdata.clm_metdata_cplbypass_read( \
-                                cplbypass_dir, cplbypass_mettype, lon, lat, vnames)
+                                cplbypass_dir, cplbypass_mettype, vnames, lons=[lon], lats=[lat])
         
         # in case PRECT is actually rainfall only
         if 'TBOT' in vardatas.keys() and 'PRECT' in vardatas.keys():
@@ -411,8 +420,13 @@ for imet in range(len(mettype)):
         
     
         # assign data to plotting variables
-        nx=len(ix)
-        ny=len(iy)
+        nx=1
+        ny=0
+        for iz in zlines.keys():
+            if np.isscalar(zlines[iz]):
+                ny=ny+1
+            else:
+                ny=ny+len(zlines[iz])
         if2dgrid = False
         nxy=nx*ny
     
@@ -492,10 +506,11 @@ for imet in range(len(mettype)):
                         pres_pa = np.squeeze(vardatas['PSRF'])
                     else:
                         pres_pa = 101325.0
-                    if ('GSWP3' in met_type and 'daymet' not in met_type):
+                    if ('GSWP3' in imet_type and 'daymet' not in imet_type):
                         sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, q_kgkg=qbot, vpsat_frz=False)
                     else:
                         sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, q_kgkg=qbot)
+                    del qbot#, tk, pres_pa
                 else:
                     print('ERROR: for RH coverting from QBOT, air temperature is required')
                     sys.exit(-1)
@@ -512,8 +527,9 @@ for imet in range(len(mettype)):
                     print('ERROR: for RH coverting from QBOT, air temperature is required')
                     sys.exit(-1)
                 sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, rh_100=rh)
+                del rh #, tk, pres_pa
             #
-            if 'QBOT' in vars_list and ('GSWP3' in met_type and 'daymet' not in met_type):
+            if 'QBOT' in vars_list and ('GSWP3' in imet_type and 'daymet' not in imet_type):
                 #correction for GSWP3 QBOT data
                 qbot = np.squeeze(vardatas['QBOT'])
                 if 'TBOT' in vars_list:
@@ -527,6 +543,7 @@ for imet in range(len(mettype)):
                     sys.exit(-1)
                 rh = Modules_metdata.convertHumidity(tk, pres_pa, q_kgkg=qbot,vpsat_frz=False) # restore RH to orginal
                 sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, rh_100=rh)  # re-cal. QBOT for GSWP3 dataset
+                del qbot, rh #, tk, pres_pa
 
         # if FLDS estimated from humidity and temperature
         elif (vname_elm=='estFLDS'):
@@ -552,7 +569,12 @@ for imet in range(len(mettype)):
             sdata_elm = \
                 Modules_metdata.calcFLDS(tk, pres_pa, q_kgkg=qbot, rh_100=rh)
             vname_elm='FLDS'
-            
+            del pres_pa, qbot, rh
+        
+        #
+        if(options.var_depended!=''): 
+            sdata_depended = vardatas[options.var_depended]
+        
         # clean up large data in memory
         del vardatas
         
@@ -562,6 +584,10 @@ for imet in range(len(mettype)):
             t_elm = np.squeeze(t_elm[:,0])
             sdata_elm = np.reshape(sdata_elm, [-1,6])
             sdata_elm = np.mean(sdata_elm,axis=1)
+            if(options.var_depended!=''): 
+                sdata_depended = np.reshape(sdata_depended, [-1,6])
+                sdata_depended = np.mean(sdata_depended,axis=1)
+
         
         if len(imet_type)>1:
             if imet == 0:
@@ -570,6 +596,10 @@ for imet in range(len(mettype)):
                 tvarname_elm1 = tvarname_elm
                 vname_elm1 = vname_elm
                 sdata_elm1 = deepcopy(sdata_elm)
+                if(options.var_depended!=''): 
+                    sdata_depended1 = deepcopy(sdata_depended)
+                    pres_elm = deepcopy(pres_pa)
+                    tk_elm = deepcopy(tk)
             
             elif imet == 1: # if this is the case, the following user_mettype won't read
                 t_user = deepcopy(t_elm)
@@ -577,14 +607,18 @@ for imet in range(len(mettype)):
                 tvarname_user = tvarname_elm
                 vname_user = vname_elm
                 sdata_user = deepcopy(sdata_elm)
-                
+                if(options.var_depended!=''): sdata_depended_user = deepcopy(sdata_depended)
+                 
                 #copy back elm1
                 t_elm = deepcopy(t_elm1)
                 tunit_elm = deepcopy(tunit_elm1)
                 tvarname_elm = tvarname_elm1
                 vname_elm = vname_elm1
                 sdata_elm = deepcopy(sdata_elm1)
-                del t_elm1, tunit_elm1, tvarname_elm1, vname_elm1, sdata_elm1
+                if(options.var_depended!=''): 
+                    sdata_depended_elm = deepcopy(sdata_depended1)
+
+                del t_elm1, tunit_elm1, tvarname_elm1, vname_elm1, sdata_elm1, sdata_depended1
             
 #--------------------------------------------------------------------------------------
 # read-in metdata from NCDC daily Tmax/Tmin, Precipitation data
@@ -833,6 +867,9 @@ if ('NONE' in options.user_mettype):
 # 2 data sets for similiarity and temporal up-scaling/down-scaling
 if (options.user_mettype !=''):
     data1 = sdata_user
+    if (options.var_depended!=''): 
+        data1_depended=np.squeeze(sdata_depended_user)
+        #del sdata_depended_user
     t1 = t_user
     vname1=vname_user
     tunit1 = tunit_user
@@ -850,6 +887,9 @@ else:
 
 if options.met_type in elmmettype or 'cplbypass_' in options.met_type:
     data2 = np.squeeze(sdata_elm)
+    if (options.var_depended!=''): 
+        data2_depended=np.squeeze(sdata_depended_elm)
+        #del sdata_depended_elm
     t2 = t_elm
     vname2=vname_elm
     tunit2=tunit_elm
@@ -873,10 +913,7 @@ ANNUALLY=True
 # max. timesteps in a year
 dts1 = np.max(np.diff(t1))  # must be in 'days'
 dts2 = np.max(np.diff(t2))  # must be in 'days'
-if dts1>0 and dts2>0:
-    ts_yrly = int(365/max(dts1,dts2))
-else:
-    ts_yrly = 365
+ts_yrly = 365
 #
 detrending='yearly'
 if (vname1=='NONE' or vname2=='NONE' or (not options.src_adj)): detrending=''
@@ -895,9 +932,16 @@ else:
     if (vname1!=''):
         t1, data1, t1_yrly, data1_yrly, t1_seasonally, data1_seasonally = \
             DataTimePatterns(t1, data1, SEASONALLY, ANNUALLY, ts_yrly=ts_yrly)
+        if(options.var_depended!=''): 
+            t1, data1_depended, t1_yrly, data1_depended_yrly, t1_seasonally, data1_depended_seasonally = \
+                DataTimePatterns(t1, data1_depended, SEASONALLY, ANNUALLY, ts_yrly=ts_yrly)
     if (vname2!=''):
         t2, data2, t2_yrly, data2_yrly, t2_seasonally, data2_seasonally = \
             DataTimePatterns(t2, data2, SEASONALLY, ANNUALLY, ts_yrly=ts_yrly)
+        if(options.var_depended!=''): 
+            t2, data2_depended, t2_yrly, data2_depended_yrly, t2_seasonally, data2_depended_seasonally = \
+                DataTimePatterns(t2, data2_depended, SEASONALLY, ANNUALLY, ts_yrly=ts_yrly)
+
     noted = 'orig'
     
     
@@ -912,7 +956,7 @@ else:
 #--------------------------------------------------------------------------------------
 # Merging
 
-# by jointing 2 datasets directly
+# by jointing 2 datasets directly, from data1-->data2
 if(vname1!='' and vname2!=''):
     BY_JOINTING=True
 else:
@@ -951,7 +995,8 @@ if (BY_JOINTING):
                 # humidity, radiations, wind speedy
                 try:
                     ratio12_yrly = np.nanmean(data1_yrly)/np.nanmean(data2_yrly)
-                except:
+                except Exception as e:
+                    print(e)
                     # in case np.nanmen(data2_yrly) = 0
                     ratio12_yrly = 1.0
                 sdata_src2 = sdata_src2*ratio12_yrly
@@ -985,7 +1030,7 @@ if (BY_JOINTING):
         jointgap_seasonally = 0.0
     
     
-    # to be jointed/temporally-scaling (from data1 into data2)
+    # to be jointed/temporally-scaling (pulling data1 into data2)
     t_jointed = deepcopy(t_src2[t_src2<t_user[0]])
     sdata_jointed = deepcopy(sdata_src2[t_src2<t_user[0]])
     
@@ -998,9 +1043,9 @@ if (BY_JOINTING):
         for it in range(len(t1_seasonally)):
             iday = t1_seasonally[it]  # so dts1 is the common time-interval
             td0_t1 = iyr*365.0+it*dts1                  # starting point of a day in t1
-            td0_t2 = t2_yrly[iyr_t_src]*365.0+it*dts2   # starting point of a day in t2
+            td0_t2 = t2_yrly[iyr_t_src]*365.0+it*dts1   # starting point of a day in t2
         
-            idx_src = np.where((t_src2>=td0_t2) & (t_src2<(td0_t2+dts1)))
+            idx_src = np.where((t_src2>=td0_t2) & (t_src2<=(td0_t2+dts1)))
             
             t_jointting = td0_t1 + (t_src2[idx_src]-td0_t2) # the second portion is sub-daily (fraction) time
             t_jointed = np.hstack((t_jointed, t_jointting))
@@ -1009,19 +1054,31 @@ if (BY_JOINTING):
             sdata_jointting = sdata_src2[idx_src]
             # 'sdata_jointing' - in/out (for sub-time variation), 
             # 'src/target' are time-sync'ed datasets to provide scalors (a moving window)
-            twidth = dts1  # 1-d moving-window (for 'data_method' of 'smooth', t spans 2 or more timesteps -TODO)
-            idx = np.where((t2>=td0_t2) & (t2<(td0_t2+twidth)))
+            twidth = 1.0  # 1-d moving-window (for 'data_method' of 'smooth', t spans 2 or more timesteps -TODO)
+            idx = np.where((t2>td0_t2) & (t2<=(td0_t2+twidth)))
             src = data2[idx]
+            if(options.var_depended!=''): src_depended = data2_depended[idx]
             
             if (vname1!='NONE'):
-                idx = np.where((t1>=td0_t1) & (t1<(td0_t1+twidth)))
+                idx = np.where((t1>td0_t1) & (t1<=(td0_t1+twidth)))
                 target = data1[idx]
+                if(options.var_depended!=''): target_depended = data1_depended[idx]
+                
+                if(len(src)!=len(target)):
+                    print('Error: src/target data NOT in same length!')
+                    sys.exit(-1)
                 
                 # 'data_method': 'offset' (default),'nanmean', 'ratio', etc
                 if detrending != '':
                     sdata_jointting = DataTimeDown(sdata_jointting, src, target, data_method='offset')
                 else:
                     sdata_jointting = DataTimeDown(sdata_jointting, src, target, data_method='nanmean')
+                    # very specific to correct daymet-derived QBOT or RH datasets
+                    if((options.vars=='QBOT' or options.vars=='RH') \
+                       and options.var_depended=='TBOT' and 'daymet' in options.met_type.lower()):
+                        idx=np.where(target_depended>273.15) # i.e. if air NOT freezing, pick the merging data, otherwise averaging as above
+                        if len(idx[0])>0: sdata_jointting[idx]=target[idx]
+                    
                 
             #else:
                 # do nothing if 'data1' not exists, then just simply copy data
@@ -1035,6 +1092,11 @@ if (BY_JOINTING):
     
     #DONE 'for iyr in np.floor(t1_yrly)'
     # some simple checkings
+    if (options.vars=='RH' and 'Site' not in options.nc_write_mettype):
+        # var name has modified for non-Site met-type
+        options.vars='QBOT'
+        sdata_jointed = Modules_metdata.convertHumidity(tk_elm, pres_elm, rh_100=sdata_jointed)
+
     if(options.vars.strip()=='RH'):
         idx=np.where(sdata_jointed>100.0)
         sdata_jointed[idx]=100.0
@@ -1157,15 +1219,14 @@ if (options.nc_create or options.nc_write):
         t_jointed = t_jointed[idx]
         sdata_jointed = sdata_jointed[idx]
     
-    varname = vname_elm
     
     met_type = options.nc_write_mettype
     if met_type =='': met_type = options.met_type
-    if met_type==options.met_type:
+    if met_type==options.met_type and 'cplbypass_' not in options.met_type:
         NCOUT_ORIGINAL=True
     else:
         NCOUT_ORIGINAL=False
-    if 'cplbypass' in options.nc_write_mettype:
+    if 'cplbypass_' in options.nc_write_mettype:
         NCOUT_CPLBYPASS=True
     else:
         NCOUT_CPLBYPASS=False
@@ -1180,6 +1241,8 @@ if (options.nc_create or options.nc_write):
     
     # get a template ELM forcing data nc file
     # 
+    varname = vname_elm
+    if('Site' not in met_type and varname=='RH'): varname='QBOT'
     ncfilein_cplbypass = ''
     metdir = options.nc_write_stdmetdir
     if metdir=='': metdir=options.met_idir
@@ -1192,6 +1255,12 @@ if (options.nc_create or options.nc_write):
             fdir = metdir+'/TPHWL3Hrly/'
         
         fdirheader = metdir+'/GSWP3_'+varname+'_'
+        if ('daymet4' in met_type.lower()):# from 1980-2014, and 1km resolution
+            fdirheader = metdir+'/GSWP3_daymet4_'+varname+'_'
+        elif('daymet' in met_type.lower() and 'v1' in met_type.lower()):# from 1980-2010, half-degree
+            fdirheader = metdir+'/GSWP3v1_Daymet_'+varname+'_'
+        elif('daymet' in met_type.lower()):# from 1980-2014, half-degree
+            fdirheader = metdir+'/GSWP3_Daymet_'+varname+'_'
         ncfilein_cplbypass = sorted(glob.glob("%s*.*" % fdirheader))
         ncfilein_cplbypass = ncfilein_cplbypass[0]
         
@@ -1204,10 +1273,10 @@ if (options.nc_create or options.nc_write):
     
     # (1) if in original output format
     if NCOUT_ORIGINAL:
-        if (metfileheader==''):
+        if (options.met_header==''):
             dirfiles = sorted(os.listdir(fdir))
         else:
-            fdirheader=fdir+metfileheader.strip()
+            fdirheader=fdir+options.met_header.strip()
             dirfiles = sorted(glob.glob("%s*.*" % fdirheader))  # maybe file pattern in 'fileheader'
         if (os.path.isfile(dirfiles[0]) and str(dirfiles[0]).endswith('.nc')):
             ncfilein = dirfiles[0]
@@ -1254,7 +1323,8 @@ if (options.nc_create or options.nc_write):
                         if(tunit.endswith(' 00') and not tunit.endswith(' 00:00:00')):
                             tunit=tunit+':00:00'
     
-                    except:
+                    except Exception as e:
+                        print(e)
                         tunit = tunit_elm
                     error=nfmod.putvar(ncfileout, [tvarname], t, varatts=tvarname+'::units='+tunit)
                     # varatts must in format: 'varname::att=att_val; varname::att=att_val; ...'
@@ -1304,7 +1374,8 @@ if (options.nc_create or options.nc_write):
                     tunit = tunit.replace('-'+str(t0.month).zfill(2)+'-', '-01-')
                     if(tunit.endswith(' 00') and not tunit.endswith(' 00:00:00')):
                         tunit=tunit+':00:00'
-                except:
+                except Exception as e:
+                    print(e)
                     tunit = tunit_elm
                 error=nfmod.putvar(ncfileout_cplbypass, [tvarname], t, varatts=tvarname+'::units='+tunit)
                 # varatts must in format: 'varname::att=att_val; varname::att=att_val; ...'
