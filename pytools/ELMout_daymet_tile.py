@@ -336,10 +336,30 @@ if (options.elmheader != ""):
                            or 'n' in src.dimensions.keys()):
                         # in ELM output, column/pft dims are gridcells*col/patch
                         idim = i
-                        #new_dims.append('geoy')
-                        #new_dims.append('geox')
+                        #
                         # reshape of dim column/pft
-                        len_dim = src.dimensions[dim].size
+                        # note: have to exclude NON-vegetated/bare land unit (i.e. lunit=1)
+                        lunit=1
+                        if (dim == 'landunit'): 
+                            idx_lun = np.where(src.variables['land1d_ityplun'][...]==lunit)[0]
+                        if (dim == 'column'): 
+                            idx_lun = np.where(src.variables['cols1d_ityplun'][...]==lunit)[0]
+                        if (dim == 'pft'): 
+                            idx_lun = np.where(src.variables['pfts1d_ityplun'][...]==lunit)[0]
+                        len_dim = idx_lun.size
+                        if idim==0:
+                            src_data = src_data[idx_lun,...]
+                        elif idim==1:
+                            src_data = src_data[:,idx_lun,...]
+                        elif idim==2:
+                            src_data = src_data[:,:,idx_lun,...]
+                        elif idim==3:
+                            src_data = src_data[:,:,:,idx_lun,...]
+                        else:
+                            print('Error - more than 4 dimension variable, not supported yet')
+                            sys.exit(-1)
+                        
+                        
                         if('gridcell' in src.dimensions.keys()):
                             len_grid = src.dimensions['gridcell'].size
                         elif('lndgrid' in src.dimensions.keys()):
@@ -354,23 +374,21 @@ if (options.elmheader != ""):
                                 dst.createDimension(name_dim, len_dim)
                             new_dims.append(name_dim)
                             
-                            #reshape original data to be like from (totalpft=gidx*col/pft) --> (gidx,col/pft)
+                            #reshape original data to be like from (totalpft=gidx*col/pft) --> (gidx,lunit/col/pft)
                             src_shp = src_data.shape
                             if idim == 0:
                                 re_shp = (len(gidx),len_dim,)+src_shp[1:]
                             elif idim >= 1:
                                 re_shp = src_shp[0:idim-1]+(len(gidx),len_dim,)+src_shp[idim+1:]
-                            else:
-                                print('Error - more than at least 4 dimension variable, not supported yet')
-                                sys.exit(-1)
                             src_data = np.reshape(src_data, re_shp)
                             # better move col/pft dim forward, so that in order of (col/pft, gidx), 
                             # then when remapping gidx --> y/x, it's in order of (col/pft, geoy, geox) which VISIT can plot correctly
                             src_data = np.swapaxes(src_data, idim, idim+1)
                             idim = idim + 1 #swaping above actually moved 'gidx' 1 dimension backwardly
                         else:
-                            print('Error in size of ', dim.name)
-                            sys.exit(-1)
+                            print('size of', dim, len_dim,'is NOT multiple of grids',len_grid)
+                            print('variable', name,'excluded in 2-D merging')
+                            SKIPPED=True
                         
                         new_dims.append('geoy')
                         new_dims.append('geox')

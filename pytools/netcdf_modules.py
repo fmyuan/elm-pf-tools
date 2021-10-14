@@ -531,8 +531,11 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 
 #####################################################################
 # module testing
+
 #varname=['PCT_NATVEG','natpft','PCT_NAT_PFT']
-#odata, odata_dims, odata_attr = getvar('test01.nc',varname)
+#varname=['PCT_NAT_PFT','PCT_NATVEG','PCT_LAKE','PCT_WETLAND','PCT_GLACIER','PCT_URBAN','PCT_CROP']
+#odata, odata_dims, odata_attr = getvar('surfdata.nc',varname)
+#print('WAITING for a while to check ...')
 
 #os.system('cp test01.nc test02.nc')
 #vardata=odata
