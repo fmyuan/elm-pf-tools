@@ -7,10 +7,9 @@ import re
 import math
 from optparse import OptionParser
 import numpy as np
-import matplotlib.pyplot as plt
 from netCDF4 import Dataset
-from matplotlib.backends.backend_pdf import PdfPages
 from copy import deepcopy
+from scipy import interpolate
 
 # customized modules
 import Modules_metdata
@@ -68,7 +67,7 @@ parser.add_option("--varname", dest="vars", default="QBOT", \
                   help = "variable name to be merged/jointed: ONLY one of 'TBOT, PRECT, QBOT, RH, FSDS, FLDS, PSRF, WIND' ")
 # other sources of data to be pull into merged E3SM data
 parser.add_option("--user_mettype", dest="user_mettype", default="cplbypass_GSWP3", \
-                  help="e3sminput met data type (default = 'cplbypass_GSWP3', options: cplbypass_GSWP3, GSWP3, GSWP3v1, GSWP3)")
+                  help="e3sminput met data type (default = 'cplbypass_GSWP3', options: cplbypass_GSWP3, GSWP3, GSWP3v1)")
 parser.add_option("--user_metdir", dest="user_metdir", default="./", \
                   help="user-defined met directory (default = ./, i.e., under current directory)")
 parser.add_option("--user_metfile", dest="user_metfile", default="", \
@@ -108,7 +107,8 @@ elif(not options.vars in ['TBOT', 'PRECT', 'QBOT', 'RH', 'FSDS', 'FLDS', 'PSRF',
 #_Daymet is in half-degree, and _daymet4 is in 1km res, and NA only
 elmmettype = ['cplbypass_GSWP3', 'cplbypass_GSWP3v1', \
             'cplbypass_GSWP3_daymet4', \
-            'cplbypass_GSWP3v1_Daymet','cplbypass_GSWP3_Daymet']
+            'cplbypass_GSWP3v1_Daymet','cplbypass_GSWP3_Daymet', \
+            'GSWP3', 'GSWP3v1']
 
 met_domain=options.met_domain
 
@@ -132,6 +132,7 @@ if options.user_mettype in elmmettype:
     
     
 for imet in range(len(mettype)):
+    
     imet_type = mettype[imet]
     if imet_type not in elmmettype:
         print(imet_type, 'NOT yet supported! Must be one of followint -')
@@ -186,7 +187,32 @@ for imet in range(len(mettype)):
         tvarname = 'DTIME'
         LATIXY = vardatas['LATIXY']
         LONGXY = vardatas['LONGXY']
-    
+        #--------------------------------------------------------------------------------------
+    # read-in metdata from full met directory, except for CPL_BYPASS
+    # E3SM met data
+    elif ('GSWP3' in imet_type and \
+           ('cplbypass_' not in imet_type)):
+        
+        # GSWP3 data QBOT needs redo, because its RH is NOT freezing adjusted
+        # (When calculating RH from QBOT, RH often over 100 in freezing winter)
+        if (vname_elm=='QBOT'):
+            vnames=['QBOT','TBOT','PSRF']
+        
+        # read in
+        #
+        ix,iy, varsdims, vardatas = \
+            Modules_metdata.clm_metdata_read(imet_dir, imet_header, imet_type, met_domain, lon, lat,vnames)
+        # 
+        nx=1
+        ny=len(iy)
+        nxy=nx*ny
+
+        tvarname = 'time'    # variable name for time/timing
+        #vars =  ['time','tunit','LONGXY','LATIXY',
+        #            'FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
+        LATIXY = vardatas['LATIXY']
+        LONGXY = vardatas['LONGXY']
+
     #--------------------------------------------------------------------------------------
     
     #------------------------------
@@ -196,6 +222,7 @@ for imet in range(len(mettype)):
         
         t_elm = vardatas[tvarname]
         tunit_elm = vardatas['tunit']
+        t0 = 0.0
         if ('1901-01-01' in tunit_elm):
             tunit_elm = tunit_elm.replace('1901-','0001-')
             t0 = 1901*365 # converted from 'days-since-1901-01-01-00:00' to days since 0001-01-01 00:00
@@ -217,7 +244,7 @@ for imet in range(len(mettype)):
 
             sdata_elm = np.squeeze(vardatas['QBOT'])
             
-            if ('GSWP3' in imet_type and 'daymet' not in imet_type):
+            if ('GSWP3' in imet_type) and ('daymet' not in imet_type):
                 #correction for GSWP3 QBOT data, 
                 # especially during winter freezing period, RH from original QBOT often over 100%
                 # a possible reason: RH-->QBOT using 1 single QSAT function for freezing air
@@ -226,7 +253,8 @@ for imet in range(len(mettype)):
                     sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, rh_100=sdata_elm)  # re-cal. QBOT for GSWP3 dataset
             elif(vname_elm=='RH'):
                 sdata_elm = Modules_metdata.convertHumidity(tk, pres_pa, q_kgkg=sdata_elm,vpsat_frz=True)
-            
+        
+        
         else:
             sdata_elm = deepcopy(vardatas[varname])
             sdata_elm = np.squeeze(sdata_elm)
@@ -238,12 +266,15 @@ for imet in range(len(mettype)):
         #
         idx=np.where(LONGXY<=0)
         if (len(idx[0])>0): LONGXY[idx]=360.0+LONGXY[idx]
+        #
+        
         if len(sdata_elm.shape)==1:
-            if 'cplbypass' in imet_type: 
-                sdata_elm = np.reshape(sdata_elm, (1,-1)) # 1D --> 2D (n,DTIME), if only 1 grid data
-                if(vname_elm=='QBOT' or vname_elm=='RH'): 
-                    tk = np.reshape(tk, (1,-1))
-                    pres_pa = np.reshape(pres_pa, (1,-1))
+            sdata_elm = np.reshape(sdata_elm, (1,-1)) # 1D --> 2D (n,DTIME/time)
+            if(vname_elm=='QBOT' or vname_elm=='RH'): 
+                tk = np.reshape(tk, (1,-1))
+                pres_pa = np.reshape(pres_pa, (1,-1))
+        elif imet_type=='GSWP3' or imet_type=='GSWP3v1':
+            sdata_elm = np.swapaxes(sdata_elm, 0, 1) # data in (time,n) --> (n,time)
             
         if len(imet_type)>1:
             if imet == 0:
@@ -267,10 +298,11 @@ for imet in range(len(mettype)):
             elif imet == 1: # if this is the case, the following user_mettype won't read
                 if (len(t_elm1))>0:
                     dt=max(np.diff(t_elm1))
-                    idx=np.where((t_elm>t_elm1[0]-dt/2.0) & (t_elm<=t_elm1[-1]+dt/2.0))
+                    idx=np.where((t_elm>=t_elm1[0]-dt/2.0) & (t_elm<=t_elm1[-1]+dt/2.0))
                     if (len(idx[0])>0):
-                        t_elm=t_elm[idx[0]]
                         sdata_elm=sdata_elm[:,idx[0]]
+                        t_elm=t_elm[idx[0]]
+                        
                 if(len(t_elm)>0):
                     dt=max(np.diff(t_elm))
                     idx=np.where((t_elm1>=t_elm[0]-dt/2.0) & (t_elm1<=t_elm[-1]+dt/2.0))
@@ -284,8 +316,9 @@ for imet in range(len(mettype)):
                 
                 lon_user=LONGXY
                 lat_user=LATIXY
-                zones_user=deepcopy(zones)
-                zlines_user=deepcopy(zlines)
+                if('cplbypass' in options.user_mettype):
+                    zones_user=deepcopy(zones)
+                    zlines_user=deepcopy(zlines)
                 nxy_user=nxy
                 is2d_user = True
                 if(nx==1 or ny==1):is2d_user=False
@@ -337,8 +370,8 @@ for i in range(len(gidx)):
     #
     ig = gidx[i]
     if (options.user_mettype !=''): # assuming this data covering half-degree range
-        sdata1 = sdata_user[ig,:]
         t1 = t_user
+        sdata1 = sdata_user[ig,:]
     else:
         print('Must have user met-data')
         sys.exit(-1)
@@ -346,9 +379,9 @@ for i in range(len(gidx)):
     ic = cidx_elm[i][0]
     if options.met_type in elmmettype:
         sdata2 = sdata_elm[ic,:]
-        sdata2 = np.nanmean(sdata2, axis=0)  # averaging over data within half-degree range
         t2 = t_elm
         sdata2_tk = tk_elm[ic,:]
+        sdata2 = np.nanmean(sdata2, axis=0)  # averaging over data within half-degree range
         sdata2_tk = np.nanmean(sdata2_tk, axis=0)
     else:
         print('Must have met-data')
@@ -361,77 +394,62 @@ for i in range(len(gidx)):
     # Merging
     dts1 = np.max(np.diff(t1))
     dts2 = np.max(np.diff(t2))
-    twidth = max(dts1,dts2)  # if > dts1 implies a moving-window (for 'data_method' of 'smooth', t spans 2 or more timesteps -TODO)
     
     # by jointing 2 datasets directly, from data1-->data2
-    BY_JOINTING=False
-    if(twidth>max(dts1,dts2)): BY_JOINTING=True # this will apply for a daily smoothing window 
-    
-    if (BY_JOINTING):
+    T_SMOOTHING = False
+    if (T_SMOOTHING):
         
         # to be jointed/temporally-scaling (pulling data1 into data2)
         t_jointed = deepcopy(t2[t2<t1[0]])  # probably empty initially
-        sdata_jointed = deepcopy(sdata2[t2<t1[0]])
+        sdata_jointed = deepcopy(sdata2[:,[t2<t1[0]][0]])
         
-        # loop through 't1'
-        
+        # loop through 't2'
         for it in range(len(t2)):
             
-                td0_t1 = t1[it]
-                td0_t2 = t2[it]
+            td0_t1 = t1[it]
+            td0_t2 = t2[it]
+            t_jointting = t2[it]
+            tidx = np.where((t1>=td0_t2-dts2/2.0) & (t1<td0_t2+dts2/2.0))
+            if len(tidx[0])>0:
+                it1=tidx[0][0]  #usually only 1, but just in case
+                sdata=sdata1[:,it:it+1]
+                sdata=np.asarray(sdata)
+                sdata_jointting = np.nanmean([sdata2[:,it:it+1],sdata], axis=0)
+                sdata_jointting[sdata<=0.0] = sdata[sdata<=0.0]
+                # very specific to correct daymet-derived QBOT
+                if((options.vars=='QBOT' or options.vars=='RH') \
+                    and 'daymet' in options.met_type.lower()):
+                        idx=np.where(sdata2_tk[:,it:it+1]>273.15) # i.e. if air NOT freezing, pick the merging data, otherwise averaging as above
+                        if len(idx[0])>0: 
+                            sdata_jointting[idx]=sdata[idx]
+            else:
+                sdata_jointting = sdata2[:,it:it+1]
             
-                idx_src = np.where((t2>=td0_t2) & (t2<(td0_t2+dts2)))
-                #
-                t_jointting = td0_t1 + (t2[idx_src]-td0_t2)
-                t_jointed = np.hstack((t_jointed, t_jointting))
-                # 
-                sdata_jointting = sdata2[idx_src]
-                # 'sdata_jointing' - in/out (for sub-time variation), 
-                # 'src/target' are time-sync'ed datasets to provide scalors (a moving window)
-                idx = np.where((t2>td0_t2) & (t2<=(td0_t2+twidth)))
-                src = sdata2[idx]
-                if(isinstance(data2_tk, np.ndarray)): 
-                    src_tk = data2_tk[idx]
-                #
-                idx = np.where((t1>td0_t1) & (t1<=(td0_t1+twidth)))
-                target = sdata1[idx]
-                
-                if ((td0_t1+twidth)<=t1[-1] and (td0_t2+twidth)<=t2[-1]):
-                    if(len(src)!=len(target)):
-                        print('Error: src/target data NOT in same length!')
-                        sys.exit(-1)
-                        
-                    # 'data_method': 'offset' (default),'nanmean', 'ratio', etc
-                    else:
-                        sdata_jointting = DataTimeDown(sdata_jointting, src, target, data_method='nanmean')
-                         # very specific to correct daymet-derived QBOT
-                        if((options.vars=='QBOT' or options.vars=='RH') \
-                            and 'daymet' in options.met_type.lower()):
-                            idx=np.where(src_tk>273.15) # i.e. if air NOT freezing, pick the merging data, otherwise averaging as above
-                            if len(idx[0])>0: sdata_jointting[idx]=target[idx]
-                #else: do nothing, because already copied sdata_jointing    
-                #
-                sdata_jointed = np.hstack((sdata_jointed, sdata_jointting))
+            t_jointed = np.hstack((t_jointed, t_jointting))
+            sdata_jointed = np.hstack((sdata_jointed, sdata_jointting))
         
-        #DONE 'for it in range(t1)'
+        #DONE 'for it in range(t2)'
         
     else: # no jointing of datasets
         t_jointed = deepcopy(t2)
         idx1=np.where(t1<=t2[-1]+dt/2.0)[0]
-        sdata1=sdata1[...,idx1]
-        sdata_jointed = np.nanmean([sdata2,sdata1], axis=0)
+        sdata=sdata1[...,idx1]
+        sdata_jointed = np.nanmean([sdata2,sdata], axis=0)
+        sdata_jointed[sdata<=0.0] = sdata[sdata<=0.0]  # just in case some negative values as filling
         # very specific to correct daymet-derived QBOT
         if((options.vars=='QBOT' or options.vars=='RH') \
             and 'daymet' in options.met_type.lower()):
                 idx=np.where(sdata2_tk>273.15) # i.e. if air NOT freezing, pick the merging data, otherwise averaging as above
                 if len(idx[0])>0: sdata_jointed[idx]=sdata1[idx]
-    
+        
     # end of if
+    #
+    
     r=sdata_jointed/sdata2
-    idx=np.where((sdata2<=0.0) | (sdata1<=0.0))
+    idx=np.where((sdata2<=0.0) | (sdata_jointed<=0.0))
     if (len(idx[0])>0): r[idx]=1.0
     ratio_elm[ic,...] = r
-    print('checking adjusting ratio:',i, ig, np.nanmean(ratio_elm[ic,...]), np.mean(ratio_elm), r.shape)
+    print('checking adjusting ratio:',i, ig, np.nanmean(ratio_elm[ic,...]), np.nanmean(ratio_elm), r.shape)
     
 # end of for i in range(len(gidx))
 

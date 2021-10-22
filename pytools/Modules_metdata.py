@@ -928,26 +928,41 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
     except ValueError:
         print("Error in reading datm domain file:" + met_domain)
         
-    if(lon==-999):
-        i = 0
+    i={}; j={}
+    if(lon[0]==-999):
+        i[0] = np.asarray(range(all_lons.size))
     else:
-        if(lon<0.0): lon=360.0+lon # convert longitude in format of 0 - 360
-        i=np.argmin(abs(all_lons-lon))
-    lon_i=all_lons[i]
-    i=np.where(all_lons == lon_i)[0]# in general, there are many numbers of 'lon' in 'all_lons' 
-
-    if(lon==-999):
-        j = 0
-    else:
-        j=np.argmin(abs(all_lats-lat))
-    lat_j=all_lats[j]
-    j=np.where(all_lats == lat_j)[0]# in general, there are many numbers of 'lat' in 'all_lats' 
+        idx=np.where(lon<0.0)
+        if len(idx[0])>0: lon[idx]=360.0+lon[idx] # convert longitude in format of 0 - 360
+        for ix in range(len(lon)):
+            idx=np.unravel_index(np.argmin(abs(all_lons-lon[ix])), all_lons.shape)
+            i[ix]=np.ravel_multi_index(np.where(all_lons == all_lons[idx]), all_lons.shape)
+            # in general, there are many numbers of 'lon' in 'all_lons' 
         
-    if(len(i)>0 and len(j)>0): 
-        ij,ix,iy = np.intersect1d(i, j, return_indices=True)
+    if(lat[0]==-999):
+        j[0] = np.asarray(range(all_lats.size))
+    else:
+        for iy in range(len(lat)):
+            jdx=np.unravel_index(np.argmin(abs(all_lats-lat[iy])), all_lats.shape)
+            j[iy]=np.ravel_multi_index(np.where(all_lats == all_lats[jdx]), all_lats.shape)
+            # in general, there are many numbers of 'lat' in 'all_lats' 
+        
+    if(len(i[0])>0 and len(j[0])>0): 
+        for ixy in range(len(i)):
+            if ixy==0:
+                ij = np.intersect1d(i[ixy], j[ixy])
+            else:
+                ij = np.hstack((ij,np.intersect1d(i[ixy], j[ixy])))
     else:
         print('NOT found point: lon - '+str(lon)+ ' lat - '+str(lat))
         sys.exit()
+    ij=np.unique(ij)
+    ij=np.unravel_index(ij, all_lats.shape)
+    iy=ij[0]
+    if len(all_lats.shape)>1: 
+        ix=ij[1]
+    else:
+        ix=[0]
 
     #files data-reading
     met ={}
@@ -996,9 +1011,9 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
 
                     # only need to read once for all files
                     if ('LATIXY' not in met.keys()):
-                        met['LATIXY']=np.asarray(fnc.variables['LATIXY'])
+                        met['LATIXY']=np.asarray(fnc.variables['LATIXY'])[iy,ix]
                     if ('LONGXY' not in met.keys()):
-                        met['LONGXY']=np.asarray(fnc.variables['LONGXY'])
+                        met['LONGXY']=np.asarray(fnc.variables['LONGXY'])[iy,ix]
         
                     # non-time variables from multiple files
                     if(v in fnc.variables.keys()): 
@@ -1025,9 +1040,9 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
                             
                         # values
                         if(len(vdata)<=0):
-                            vdata=np.asarray(fnc.variables[v])[:,ix,iy]
+                            vdata=np.asarray(fnc.variables[v])[:,iy,ix]
                         else:                                              
-                            d=np.asarray(fnc.variables[v])[:,ix,iy]
+                            d=np.asarray(fnc.variables[v])[:,iy,ix]
                             vdata=np.vstack((vdata,d))
         
                         if(v not in vdims.keys()):

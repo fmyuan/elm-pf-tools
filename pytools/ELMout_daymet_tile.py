@@ -239,9 +239,15 @@ if (options.elmheader != ""):
 
 
     # some tests, should be commented out normally
-    #gidx=gidx[10460:]-10460
-    #yidx=yidx[10460:]
-    #xidx=xidx[10460:]
+    #zone=0
+    #if zone==1:
+    #    gidx=gidx[:10460]
+    #    yidx=yidx[:10460]
+    #    xidx=xidx[:10460]
+    #elif zone==2:
+    #    gidx=gidx[10460:]-10460
+    #    yidx=yidx[10460:]
+    #    xidx=xidx[10460:]
 
     # read-in datasets one by one
     for ncfile in alldirfiles:
