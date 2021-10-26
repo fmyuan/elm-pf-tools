@@ -10,6 +10,7 @@ import numpy as np
 from netCDF4 import Dataset
 from copy import deepcopy
 from scipy import interpolate
+from scipy.ndimage import gaussian_filter
 
 # customized modules
 import Modules_metdata
@@ -81,6 +82,8 @@ parser.add_option("--ncout_mettype", dest="nc_write_mettype", default="", \
                   help = "output to nc files in defined format (default = '', i.e., as original)")
 parser.add_option("--ncout_stdmetdir", dest="nc_write_stdmetdir", default="", \
                   help = "output nc met files templates directory (default = '', i.e., as in original)")
+parser.add_option("--gaussian_sigma", dest="sigma", default="5.0", \
+                  help = "smoothing by gaussian_filter with a sigma (default = 5.0")
 #
 (options, args) = parser.parse_args()
 
@@ -432,7 +435,7 @@ for i in range(len(gidx)):
         
     else: # no jointing of datasets
         t_jointed = deepcopy(t2)
-        idx1=np.where(t1<=t2[-1]+dt/2.0)[0]
+        idx1=np.where(t1<t2[-1]+dt/2.0)[0]
         sdata=sdata1[...,idx1]
         sdata_jointed = np.nanmean([sdata2,sdata], axis=0)
         sdata_jointed[sdata<=0.0] = sdata[sdata<=0.0]  # just in case some negative values as filling
@@ -440,22 +443,69 @@ for i in range(len(gidx)):
         if((options.vars=='QBOT' or options.vars=='RH') \
             and 'daymet' in options.met_type.lower()):
                 idx=np.where(sdata2_tk>273.15) # i.e. if air NOT freezing, pick the merging data, otherwise averaging as above
-                if len(idx[0])>0: sdata_jointed[idx]=sdata1[idx]
+                if len(idx[0])>0: sdata_jointed[idx]=sdata[idx]
         
     # end of if
     #
     
-    r=sdata_jointed/sdata2
+    r=np.ones_like(sdata_jointed)
+    r[:]=sdata_jointed/sdata2
     idx=np.where((sdata2<=0.0) | (sdata_jointed<=0.0))
     if (len(idx[0])>0): r[idx]=1.0
     ratio_elm[ic,...] = r
-    print('checking adjusting ratio:',i, ig, np.nanmean(ratio_elm[ic,...]), np.nanmean(ratio_elm), r.shape)
+    print('checking adjusting ratio:',i, ig, len(ic), np.mean(ratio_elm[ic,...]), np.mean(ratio_elm), r.shape)
     
 # end of for i in range(len(gidx))
 
-
 # by this point, ratio_elm shall be filled values fully
 sdata_jointed = ratio_elm*sdata_elm
+del r, ratio_elm
+
+# gaussian-filtering for smoothing blockness from half-degree GSWP3 data
+# read-in mapping file (1d <==> 2d)
+if sdata_jointed.shape[0]>5 and not T_SMOOTHING:
+    mapfile = options.met_dir+'/daymet_elm_mappings.txt'
+    with open(mapfile, 'r') as f:
+        # remove header txts
+        next(f)
+        try:
+            data = [x.strip().split() for x in f]
+        except Exception as e:
+            print(e)
+            print('Error in reading - '+mapfile)
+            sys.exit(-1)
+    data = np.asarray(data,np.float)
+    geox=data[:,2]
+    geoy=data[:,3]
+    xidx=np.asanyarray(data[:,4],np.int)-1  # in mappings.txt, those index are 1-based
+    yidx=np.asanyarray(data[:,5],np.int)-1
+    gidx=np.asanyarray(data[:,6],np.int)-1
+    xmin = np.min(geox)
+    xmax = np.max(geox)
+    x = np.arange(xmin, xmax+1000.0, 1000.0)
+    ymin = np.min(geoy)
+    ymax = np.max(geoy)
+    y = np.arange(ymin, ymax+1000.0, 1000.0)
+    # re-do yidx/xidx, which from orginal file are error due to a bug 
+    for idx in range(len(gidx)):
+        ii=np.argmin(abs(geox[idx]-x))
+        jj=np.argmin(abs(geoy[idx]-y))
+        xidx[idx] = ii
+        yidx[idx] = jj
+    r2d = np.empty((max(yidx)+1,max(xidx)+1), dtype=np.float)
+    r2d[:,:]=np.nan
+    #
+    for it in range(len(t_jointed)):
+        r = deepcopy(sdata_jointed[:,it])
+        r2d[yidx,xidx] = r[gidx] #1d --> 2d for filtering
+        nanv = r2d.copy(); nanv[np.isnan(r2d)]=0.0
+        nanv = gaussian_filter(nanv, sigma=float(options.sigma))
+        nanw = np.ones_like(r2d); nanw[np.isnan(r2d)] = 0.0
+        nanw = gaussian_filter(nanw, sigma=float(options.sigma))
+        r2d = deepcopy(nanv/nanw)
+        r[gidx] = deepcopy(r2d[yidx,xidx]) # converting back to 1d, after filtering
+        sdata_jointed[:,it] = deepcopy(r)
+    
 
 #-------------------------------------------------------------------------------------    
 # some simple checkings

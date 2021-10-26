@@ -482,7 +482,7 @@ do v=myid+1,7,np
 
                            ! xindex, yindex for 2D <--> 1-D transformat
                            if (zoffset_n<=0) then
-                               xindx = starti(1)+i-1+i
+                               xindx = starti(1)+i-1
                                yindx = j
                            else
                                xindx = -9999  ! when joint tiles, the x/y index need to be re-done

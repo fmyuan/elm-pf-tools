@@ -206,7 +206,8 @@ if (options.elmheader != ""):
     #xidx/yidx may be missing (<0)
     resx = 1000.0 #daymet cell resolution in meters
     resy = 1000.0
-    if any(xidx<=0) or any(yidx<=0):
+    #if any(xidx<0) or any(yidx<0): The original daymet_elm_mappings.txt has a bug, os re-do anyway
+    if True:
         #
         xmin = np.min(geox)
         xmax = np.max(geox)
@@ -239,7 +240,7 @@ if (options.elmheader != ""):
 
 
     # some tests, should be commented out normally
-    #zone=0
+    #zone=1
     #if zone==1:
     #    gidx=gidx[:10460]
     #    yidx=yidx[:10460]
@@ -255,7 +256,7 @@ if (options.elmheader != ""):
         src = Dataset(ncfile,'r')
         ncformat = src.file_format
         
-        ncfile_out = 'daymet-'+ncfile
+        ncfile_out = 'daymet-'+ncfile.split('/')[-1]
         dst = Dataset(ncfile_out, mode='w',format=ncformat)
 
         print ('Processing - ', ncfile, '==> ', ncfile_out)
