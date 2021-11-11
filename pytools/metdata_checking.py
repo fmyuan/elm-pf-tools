@@ -131,12 +131,12 @@ if(options.met_type == 'ELM'):
 
 startdays = -9999
 if(options.yr0 != 1 and options.startyr != 1):
-    startdays = (int(options.startyr)-int(options.yr0))*365.0+1.0
+    startdays = (int(options.startyr)-int(options.yr0)+1)*365.0+1.0
 else:
-    startdays = (int(options.startyr)-1)*365.0+1.0
+    startdays = int(options.startyr)*365.0+1.0
     
 enddays = -9999
-if(options.endyr !=""): enddays = int(options.endyr)*365.0
+if(options.endyr !=""): enddays = (int(options.endyr)+1)*365.0
 
 tunit = str.capitalize(options.t_unit)
 if(options.annually): tunit = 'YEAR'
@@ -190,17 +190,21 @@ if (options.clmncheader != '' and options.met_type == 'ELM'):
 
 #--------------------------------------------------------------------------------------
 # read-in metdata from CPL_BYPASS_FULL
-if (options.met_type=='cplbypass' or options.met_type=='CPL'):
+if ('cplbypass' in options.met_type):
     cplbypass_dir=options.met_idir
-    cplbypass_fileheader=''
+
     cplbypass_mettype='GSWP3'
     #cplbypass_mettype='GSWP3_daymet'
+    if ('v1' in options.met_type): cplbypass_mettype='GSWP3v1'
+    if ('daymet' in options.met_type): cplbypass_mettype='GSWP3_daymet'
+    if ('v1' in options.met_type and 'daymet' in options.met_type): cplbypass_mettype='GSWP3v1_daymet'
+    if ('Site' in options.met_type): cplbypass_mettype = 'Site'
     lon = float(options.lon)
     lat = float(options.lat)
 
     # read in
     zones,zlines, varsdims, varsdata = \
-        clm_metdata_cplbypass_read(cplbypass_dir,cplbypass_fileheader, cplbypass_mettype, varnames, lons=[lon], lats=[lat])
+        clm_metdata_cplbypass_read(cplbypass_dir,cplbypass_mettype, varnames, lons=[lon], lats=[lat])
 
     # assign data to plotting variables
     nx=1
@@ -213,17 +217,32 @@ if (options.met_type=='cplbypass' or options.met_type=='CPL'):
     if2dgrid = False
     nxy=nx*ny
 
+    ix = -1
+    iy = -1
+
     tvarname = 'DTIME'    # variable name for time/timing
     #cplvars =  ['DTIME','tunit','t0_datetime','LONGXY','LATIXY',
     #            'FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
     vars_list = list(varsdata.keys())
-    tunit0 = 0.0
-
+    tunit0 = 1901*365*day_scaling # to convert from 'days-since-1901-01-01-00:00' to days since 0001-01-01 00:00
+    if options.seasonally: tunit0 = 0.0 # this is better for plotting
+    
+    if startdays!=-9999:
+        idx=np.where(varsdata[tvarname]>=startdays-1901*365.0-1.0)  # both in 'days', but one from 1901, one from 1
+        varsdata[tvarname] = varsdata[tvarname][idx]
+        for iv in varnames:
+            varsdata[iv] = varsdata[iv][idx]
+    if enddays!=-9999:
+        idx=np.where(varsdata[tvarname]<=enddays-1901*365.0)
+        varsdata[tvarname] = varsdata[tvarname][idx]
+        for iv in varnames:
+            varsdata[iv] = varsdata[iv][idx]
+    
 
 
 #--------------------------------------------------------------------------------------
 # read-in metdata from full met directory
-if (options.met_type == 'GSWP3' and options.met_type != 'cplbypass'):
+if (options.met_type == 'GSWP3' and 'cplbypass' not in options.met_type):
     metdir=options.met_idir
     metfileheader=options.met_header
     met_type=options.met_type
@@ -244,7 +263,8 @@ if (options.met_type == 'GSWP3' and options.met_type != 'cplbypass'):
     #cplvars =  ['time','tunit','LONGXY','LATIXY',
     #            'FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
     vars_list = list(varsdata.keys())
-    tunit0 = 0.0
+    tunit0 = 1901*365*day_scaling # converted from 'days-since-1901-01-01-00:00' to days since 0001-01-01 00:00
+    if options.seasonally: tunit0 = 0.0
     
 
 
