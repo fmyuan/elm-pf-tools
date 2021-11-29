@@ -13,6 +13,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from copy import deepcopy
 
 # customized modules
+from Modules_CLMoutput_nc4 import CLM_NcRead_1simulation
 import Modules_metdata
 #from Modules_metdata import clm_metdata_cplbypass_read    # CPL_BYPASS
 #from Modules_metdata import clm_metdata_read              # GSWP3
@@ -63,6 +64,7 @@ def ELMmet_1vardatas(vars, met_dir, met_type, met_fileheader='', met_domain='',l
     
     t_elm = []
     vardatas = []
+    vnames=[vname_elm]
     # read-in metdata from CPL_BYPASS_FULL
     if ('cplbypass_' in met_type):
         cplbypass_dir=met_dir
@@ -73,7 +75,6 @@ def ELMmet_1vardatas(vars, met_dir, met_type, met_fileheader='', met_domain='',l
         if ('daymet' in met_type): cplbypass_mettype='GSWP3_daymet'
         if ('v1' in met_type and 'daymet' in met_type): cplbypass_mettype='GSWP3v1_daymet'
         
-        vnames=[vname_elm]
         if(met_type=='cplbypass_Site'): 
             cplbypass_mettype='Site'
             if (vname_elm=='QBOT' or vname_elm=='estFLDS'): 
@@ -136,7 +137,7 @@ def ELMmet_1vardatas(vars, met_dir, met_type, met_fileheader='', met_domain='',l
 
         # read in
         ix,iy, varsdims, vardatas = \
-            Modules_metdata.clm_metdata_read(met_dir, met_fileheader, met_type, met_domain, lon, lat,'')
+            Modules_metdata.clm_metdata_read(met_dir, met_fileheader, met_type, met_domain, [lon], [lat],'')
         # assign data to plotting variables
         nx=len(ix)
         ny=len(iy)
@@ -148,7 +149,33 @@ def ELMmet_1vardatas(vars, met_dir, met_type, met_fileheader='', met_domain='',l
         #            'FLDS','FSDS','PRECTmms','PSRF','QBOT/RH','TBOT','WIND']
         LATIXY = vardatas['LATIXY']
         LONGXY = vardatas['LONGXY']
-
+    
+    
+    # read-in actual forcings from ELM simulation outputs
+    elif (met_fileheader != '' and met_type == 'ELM'):
+        tvarname = 'h0_time'    # variable name for time/timing
+        nx, ny, nlgrnd, nldcmp, ncolumn, npft, vardatas, vardims, var_tunits = \
+            CLM_NcRead_1simulation(met_dir, \
+                               met_fileheader, \
+                               'h0', \
+                               False, \
+                               vnames, \
+                               -9999, -9999, \
+                               False)
+        
+        vardatas['tunit'] = var_tunits
+        
+        # dimension max.
+        if2dgrid = False
+        if('topo' in vardatas.keys()):
+            if(len(vardatas['topo'].shape)==2): if2dgrid = True
+        
+        nxy = nx*ny
+        LATIXY = lat
+        LONGXY = lon
+        if('lat' in vardatas.keys()):LATIXY = vardatas['lat']
+        if('lon' in vardatas.keys()):LONGXY = vardatas['lon']
+    
     #------------------------------
     # if read-in ELM forcing data successfully
     if len(vardatas)>0:
@@ -265,6 +292,10 @@ def DataTimeAggregation(t, data, t_unit='Days',DWMY='daily'):
     # 'DWMY' - aggregation option: daily, weekly, monthly, or, yearly
     # "t_unit" is for 't', default 'Days' 
     # here 't' unit is 'Days' (i.e. default)
+    
+    # there is difference for float32 or double type
+    t=np.double(t)
+    data=np.double(data)
     if t_unit.startswith("H"): 
         t2 = t/24.0
     elif t_unit.startswith("Y"): 
@@ -273,17 +304,20 @@ def DataTimeAggregation(t, data, t_unit='Days',DWMY='daily'):
         t2 = deepcopy(t)
 
     #
-    t2=np.asarray(t2)/365
-    t3=np.floor(t2)               # in 'years'
-    t2=(t2-np.floor(t2))*365      # still in original time-unit, but in DOY only (zero-based here)
+    t2=np.asarray(t2)/365.0
+    t3=np.floor(t2)                 # in 'years'
+    t2=(t2-np.floor(t2))*365.0      # still in original time-unit, but in DOY only (zero-based here)
     # doy 0, if from above, implies it be 365 and years be previous year, when it's not the first.
     # when it's the starting, it's OK, otherwise it may cause issue for regrouping and plotting
+    t2 = np.round(t2,8)  # for unkown reason, t2 has some rounding error after conversions above
+    #if(abs(t2[1]-t2[0])<1.0):
+    #    t2 = t2 + 1                  # convert to 1-based DOY, if sub-daily data
     if (t2[0]!=0):  
         idx = np.where(t2==0)
         t3[idx] = t3[idx]-1
         t2[idx] = 365-1.0e-8
-    if(abs(t2[1]-t2[0])<1.0):
-        t2 = t2 + 1                  # convert to 1-based DOY, if sub-daily data
+    else:
+        t2 = t2 + 1
 
     
     if (DWMY=='daily' or DWMY =='d' or DWMY=='D'):
@@ -493,6 +527,9 @@ def DataSimilarity(data1, data2, t=None, t_unit='', v_name='', v_unit='', plt=No
 
 #-------------------Parse options-----------------------------------------------
 
+
+# ---------------------------------------------------------------
+
 parser = OptionParser()
 
 # E3SM met data 
@@ -585,10 +622,14 @@ if (options.met_dir != '' and options.met_type != ''):
 # read-in 2nd metdata in ELM standard forms 
 if (options.met_dir2 != '' and options.met_type2 != ''):
     if (options.vars2==''): options.vars2 = options.vars
+    if (options.met_header2==''): options.met_header2 = options.met_header
+    if (options.met_domain2==''): options.met_domain2 = options.met_domain
+    
     vname_elm2, t_elm2, tunit_elm2, sdata_elm2, LONGXY, LATIXY = \
         ELMmet_1vardatas(options.vars2, options.met_dir2, options.met_type2, \
                          options.met_header2, options.met_domain2, \
                          options.lon, options.lat)
+    
     while (len(sdata_elm2.shape)>1): #2-D data, requring aggregating over spatial dimension
         idim = np.where(np.asarray(sdata_elm2.shape)!=len(t_elm2))[0]
         sdata_elm2 = np.nanmean(sdata_elm2, axis=idim[0])
@@ -604,6 +645,9 @@ if (options.met_dir2 != '' and options.met_type2 != ''):
 # read-in 3rd metdata in ELM standard forms 
 if (options.user_metdir != '' and options.user_mettype != ''):
     if (options.user_vars==''): options.user_vars = options.vars
+    if (options.user_metfile==''): options.user_metfile = options.met_header
+    if (options.user_metdomain==''): options.user_metdomain = options.met_domain
+    
     vname_elm3, t_elm3, tunit_elm3, sdata_elm3, LONGXY, LATIXY = \
         ELMmet_1vardatas(options.user_vars, options.user_metdir, options.user_mettype, \
                          options.user_metfile, options.user_metdomain, \
@@ -676,12 +720,12 @@ if (vname3!=''):
 # comparing statistics/regression fitting
 if options.datasimilarity and (vname1!='' and vname2!='' and vname3==''):
     tt, idx1, idx2 = np.intersect1d(t1,t2, return_indices=True)
-    dd1 = data1[idx1]
-    dd2 = data2[idx2]
-    idx1=np.where(np.isnan(dd1))
-    
-    rmse, se, offset, slope = DataSimilarity(dd1, dd2, t=tt, t_unit=tunit1, v_name=vname1, v_unit='', plt=plt)
-    plt.show()
+    if (tt.size>5):
+        dd1 = data1[idx1]
+        dd2 = data2[idx2]
+        
+        rmse, se, offset, slope = DataSimilarity(dd1, dd2, t=tt, t_unit=tunit1, v_name=vname1, v_unit='', plt=plt)
+        plt.show()
 
 
 #--------------------------------------------------------------------------------------

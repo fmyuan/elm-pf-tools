@@ -338,7 +338,7 @@ def overlayfiles(ncfilein1, ncfilein2, ncfileout):
             dst[name][...] = np.copy(tmp)
         #
         
-    #            
+    #
     print('done!')
 
 #----------------------------------------------------------------------------             
@@ -604,4 +604,9 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 #ncfilein2 = 'ELM_sim_for_NSIDC_yearly_dayssnowfree_1997-2019_2NorthAlaskaArctic.nc'
 #ncfileout = 'merged.nc'
 #overlayfiles(ncfilein1, ncfilein2, ncfileout)
+
+# read 1 single variable from a nc file
+#ncfile = 'surfdata.nc'
+#varname = 'PCT_NATVEG'
+#odata, odata_dims, odata_attr = getvar(ncfile, varname)
 

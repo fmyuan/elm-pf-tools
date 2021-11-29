@@ -165,7 +165,7 @@ if (options.clmncheader != '' and options.met_type == 'ELM'):
     tvarname = 'time'    # variable name for time/timing
     varnames_print = False
     adspinup = False
-    nx, ny, nlgrnd, nldcmp, ncolumn, npft, varsdata, varsdims = \
+    nx, ny, nlgrnd, nldcmp, ncolumn, npft, varsdata, varsdims, vars_tunits = \
         CLM_NcRead_1simulation(options.clm_odir, \
                            options.clmncheader, \
                            'h0', \
@@ -177,8 +177,10 @@ if (options.clmncheader != '' and options.met_type == 'ELM'):
     vars_list = list(varsdata.keys())    # var_list is in format of 'h*_varname', in which 'varname' is the real variable names
 
     # dimension max.
-    if2dgrid = True
-    if(len(varsdata['topo'].shape)==1): if2dgrid = False
+    if2dgrid = False
+    if('topo' in varsdata.keys()):
+        if(len(varsdata['topo'].shape)==2): if2dgrid = True
+
     nxy = nx*ny
 
 
@@ -325,14 +327,13 @@ ivar = 0
 for var in varnames:
     print (ivar,var)
     # names for variable and its time-axis
+    vars_list = list(varsdata.keys())    # var_list is in format of 'h*_varname', in which 'varname' is the real variable names
     for hv in vars_list:
         if re.search(var, hv): 
-            # var name in hv has prefix 'h?_'
             var_h = hv
             hinc  = hv.replace(var,'')
             var_t = '%s' %hinc+tvarname
             break
-        
         
     vdata = varsdata[var_h]
     vdims = varsdims[var_h]
