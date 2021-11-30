@@ -141,6 +141,8 @@ parser.add_option("--daymet_elm_mapfile", dest="gridmap", default="daymet_elm_ma
                   help = "DAYMET tile 2D to 1D landmasked grid mapping file ")
 parser.add_option("--elm_varname", dest="elm_varname", default="ALL", \
                   help = "ELM output Netcdf file's variable name to process, ALL for all")
+parser.add_option("--mapfile_redoxy", dest="redoxy", default=False, \
+                  help = " redo x/y index in mapfile ", action="store_true")
 
 (options, args) = parser.parse_args()
 
@@ -190,6 +192,7 @@ if (options.elmheader != ""):
         next(f)
         try:
             data = [x.strip().split() for x in f]
+            f.close()
         except Exception as e:
             print(e)
             print('Error in reading - '+mapfile)
@@ -206,24 +209,38 @@ if (options.elmheader != ""):
     #xidx/yidx may be missing (<0)
     resx = 1000.0 #daymet cell resolution in meters
     resy = 1000.0
-    #if any(xidx<0) or any(yidx<0): The original daymet_elm_mappings.txt has a bug, os re-do anyway
-    if True:
+    redoxy = options.redoxy
+    if any(xidx<0) or any(yidx<0) or redoxy: 
+        #The original daymet_elm_mappings.txt has a bug, os re-do anyway
         #
         xmin = np.min(geox)
         xmax = np.max(geox)
-        x = np.arange(xmin, xmax+resx, resx)
+        xx = np.arange(xmin, xmax+resx, resx)
         ymin = np.min(geoy)
         ymax = np.max(geoy)
-        y = np.arange(ymin, ymax+resy, resy)
+        yy = np.arange(ymin, ymax+resy, resy)
         
-        for idx in range(len(gidx)):
-            ii=np.argmin(abs(geox[idx]-x))
-            jj=np.argmin(abs(geoy[idx]-y))
-            xidx[idx] = ii
-            yidx[idx] = jj
-        geox = deepcopy(x)
-        geoy = deepcopy(y)
-        
+        f = open(mapfile, 'w')
+        fheader='   lon          lat            geox            geoy        i     j     g '
+        f.write(fheader+'\n')
+        for ig in range(len(gidx)):
+            ii=np.argmin(abs(geox[ig]-xx))
+            jj=np.argmin(abs(geoy[ig]-yy))
+            xidx[ig] = ii
+            yidx[ig] = jj
+            
+            # re-write daymet_elm_mapping.txt    
+            #'(f12.5,1x,f12.6,1x, 2(f15.1, 1x),3(I5,1x))'
+            f.write('%12.5f ' % lon[ig] )
+            f.write('%12.6f ' % lat[ig] )
+            f.write('%15.1f ' % geox[ig] )
+            f.write('%15.1f ' % geoy[ig] )
+            f.write('%5d ' % (xidx[ig]+1) )  #x/yidx were 0-based, but need to 1-based for the mapping file
+            f.write('%5d ' % (yidx[ig]+1) )
+            f.write('%5d ' % (gidx[ig]+1) )
+            f.write('\n')
+        f.close()
+
     else:
         # xidx/yidx is really actual indices
         # geox/geoy need to sort by xidx/yidx and removal of duplicate
@@ -231,12 +248,15 @@ if (options.elmheader != ""):
         [idx, i] = np.unique(xidx, return_index=True)
         ii = np.argsort(idx)
         idx = i[ii]
-        geox = geox[idx]
+        xx = geox[idx]
 
         [idx, i] = np.unique(yidx, return_index=True)
         ii = np.argsort(idx)
         idx = i[ii]
-        geoy = geoy[idx]
+        yy = geoy[idx]
+    
+    if gidx[0]!=0: gidx = gidx - gidx[0]
+    
 
 
     # some tests, should be commented out normally
@@ -275,20 +295,20 @@ if (options.elmheader != ""):
                 unlimited_dim = dname
     
         # add geox/geoy dimensions
-        geox_dim = dst.createDimension('geox',  len(geox))
-        geoy_dim = dst.createDimension('geoy',  len(geoy))
+        geox_dim = dst.createDimension('geox',  len(xx))
+        geoy_dim = dst.createDimension('geoy',  len(yy))
         
         vgeox = dst.createVariable('geox', np.float32, ('geox',))
         vgeox.units = 'meters'
         vgeox.long_name = 'Easting (Lambert Conformal Conic projection)'
         vgeox.standard_name = "projection_x_coordinate"
-        vgeox[:] = geox
+        vgeox[:] = xx
             
         vgeoy = dst.createVariable('geoy', np.float32, ('geoy',))
         vgeoy.units = 'meters'
         vgeoy.long_name = 'Northing (Lambert Conformal Conic projection)'
         vgeoy.standard_name = "projection_y_coordinate"
-        vgeoy[:] = geoy
+        vgeoy[:] = yy
 
         vproj = dst.createVariable('lambert_conformal_conic', np.int32)
         vproj.grid_mapping_name = "lambert_conformal_conic"

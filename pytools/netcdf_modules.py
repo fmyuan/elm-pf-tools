@@ -277,9 +277,14 @@ def overlayfiles(ncfilein1, ncfilein2, ncfileout):
                     idx2[name] = np.asarray(np.where(np.isin(d12, d2))[0])
                     len_dimension = len(d12)
                 else:
-                    len_dimension = len(dimension) + len(dimension2)
+                    len_dimension = len(dimension) + len(dimension2)   # concatenating
+                    idx1[name] = np.asarray(range(len(dimension)))
+                    idx2[name] = len(dimension)+np.asarray(range(len(dimension2)))
+                    
             else:
                 len_dimension = len(dimension)
+                idx1[name] = np.asarray(range(len(dimension)))
+                idx2[name] = []
 
             if dimension.isunlimited(): # save current unlimited dim length for using below
                 udims[name] = len_dimension
@@ -313,12 +318,12 @@ def overlayfiles(ncfilein1, ncfilein2, ncfileout):
                         # unlimited length in 'dst_shape' from dst is default as 0
                         # must assign current length, otherwise 'tmp1'/'tmp2' below is incorrect in shape
                         dst_shape[udim_idx] = udims[udim]
-                temp1 = np.full(dst_shape, np.nan, dtype=dst[name].dtype) # nan-filled array for src1
-                temp2 = np.full(dst_shape, np.nan, dtype=dst[name].dtype) # nan-filled array for src2
+                temp1 = np.full(dst_shape, np.nan, dtype=np.double) # nan-filled array for src1
+                temp2 = np.full(dst_shape, np.nan, dtype=np.double) # nan-filled array for src2
                 
                 vdim = np.asarray(variable.dimensions)
                 temp_indx1 = np.asarray(np.where(np.isnan(temp1)))
-                temp_indx2 = np.asarray(np.where(np.isnan(temp2))) # whole-set multi-tuples indices
+                temp_indx2 = np.asarray(np.where(np.isnan(temp2))) # whole-set multi-tuples indices, with 0 dim as indice for 'vdim'
                 for i in range(len(vdim)):
                     if vdim[i] in idx1.keys():  # dimension to be merge/overlay
                         idx = np.asarray(np.where(np.isin(temp_indx1[i],idx1[vdim[i]])))

@@ -22,7 +22,7 @@ from pyproj import Transformer
 from pyproj import CRS
 
 #------------------------------------------------------------------------------------------------------------------
-def Daymet_ELM_mapinfo(mapfile):
+def Daymet_ELM_mapinfo(mapfile, redoxy=False):
     # read-in mapping file
     #mapfile = options.gridmap.strip()
     with open(mapfile, 'r') as f:
@@ -46,22 +46,20 @@ def Daymet_ELM_mapinfo(mapfile):
     #xidx/yidx may be missing (<0)
     resx = 1000.0 #daymet cell resolution in meters
     resy = 1000.0
-    if any(xidx<=0) or any(yidx<=0):
+    if any(xidx<0) or any(yidx<0) or redoxy:
         #
         xmin = np.min(geox)
         xmax = np.max(geox)
-        x = np.arange(xmin, xmax+resx, resx)
+        xx = np.arange(xmin, xmax+resx, resx)
         ymin = np.min(geoy)
         ymax = np.max(geoy)
-        y = np.arange(ymin, ymax+resy, resy)
+        yy = np.arange(ymin, ymax+resy, resy)
         
         for idx in range(len(gidx)):
-            ii=np.argmin(abs(geox[idx]-x))
-            jj=np.argmin(abs(geoy[idx]-y))
+            ii=np.argmin(abs(geox[idx]-xx))
+            jj=np.argmin(abs(geoy[idx]-yy))
             xidx[idx] = ii
             yidx[idx] = jj
-        geox = deepcopy(x)
-        geoy = deepcopy(y)
         
     else:
         # xidx/yidx is really actual indices
@@ -70,15 +68,15 @@ def Daymet_ELM_mapinfo(mapfile):
         [idx, i] = np.unique(xidx, return_index=True)
         ii = np.argsort(idx)
         idx = i[ii]
-        geox = geox[idx]
+        xx = geox[idx]
 
         [idx, i] = np.unique(yidx, return_index=True)
         ii = np.argsort(idx)
         idx = i[ii]
-        geoy = geoy[idx]
-
+        yy = geoy[idx]
+    
     # output 2-D grid net geox/geoy, mapping index of  1D gidx <==> (xidx,yidx)
-    return geox, geoy, xidx, yidx, gidx
+    return xx, yy, xidx, yidx, gidx
 
 
 #------------------------------------------------------------------------------------------------------------------
@@ -206,27 +204,34 @@ parser.add_option("--elm_varname", dest="elm_varname", default="ALL", \
 
 (options, args) = parser.parse_args()
 
+
+cwdir = './'
+
+if (options.elmheader == ''):
+    print('MUST input file name header, including fullpath, by " --elmheader=???"')
+    sys.exit()
+else:
+    pathf=options.elmheader.strip().split('/')
+    if len(pathf)>1: options.workdir = options.elmheader.strip().replace(pathf[-1],'')
 #
 if (options.workdir == './'):
     print('data directory is the current')
 else:
     print('data directory: '+ options.workdir)
-cwdir = options.workdir
 
 if (options.workdir2 != ''):
     print('outputs will be merged from: '+ options.workdir2+' into: ' +options.workdir)
     workdir2=options.workdir2.strip().split(',') # multiple directories, separated by ','
 
-if (options.elmheader == ''):
-    print('MUST input file name header, including fullpath, by " --elmheader=???"')
-    sys.exit()
-
 if (options.gridmap == ''):
     print('MUST input daymet_elm_mapping txt file, including fullpath, by " --daymet_elm_mapfile=???"')
     sys.exit()
+else:
+    # mapfile also includes path for workdir
+    pathf=options.gridmap.strip().split('/')
+    if len(pathf)>1: options.gridmap = pathf[-1]
 # 
-
-if not cwdir.endswith('/'): cwdir = cwdir+'/'
+if not options.workdir.endswith('/'): options.workdir = options.workdir+'/'
 
 elm_varname = options.elm_varname # 'ALL' by default
 
@@ -239,29 +244,29 @@ if (options.elmheader != ""):
 
     # mapping file reading for the first (primary) workdir
     mapfile = options.gridmap.strip()
-    [geox, geoy, xidx, yidx, gidx] = Daymet_ELM_mapinfo(mapfile)
+    [xx, yy, xidx, yidx, gidx] = Daymet_ELM_mapinfo(options.workdir+mapfile, redoxy=True)
     cumsum_gid = len(gidx)
     count_gid  = [np.asarray(cumsum_gid)]    
     if (options.workdir2!=''):
         for dir2 in workdir2:
             # mapfile is NOT with path, but in different dir2
-            [geox2, geoy2, xidx2, yidx2, gidx2] = Daymet_ELM_mapinfo(dir2.strip()+'/'+mapfile)
+            [xx2, yy2, xidx2, yidx2, gidx2] = Daymet_ELM_mapinfo(dir2.strip()+'/'+mapfile, redoxy=True)
             
             # x/yidx of the 1st in original/individual tiles
             xidx1st_1 = xidx[0]
             xidx1st_2 = xidx2[0]
             yidx1st_1 = yidx[0]
             yidx1st_2 = yidx2[0]
-            geox1st_1 = geox[xidx1st_1]
-            geox1st_2 = geox2[xidx1st_2]
-            geoy1st_1 = geoy[yidx1st_1]
-            geoy1st_2 = geoy2[yidx1st_2]
+            xx1st_1 = xx[xidx1st_1]
+            xx1st_2 = xx2[xidx1st_2]
+            yy1st_1 = yy[yidx1st_1]
+            yy1st_2 = yy2[yidx1st_2]
             
             #appending and removal of duplicates in in 2D grid x/y lines
-            geox = np.append(geox, geox2)
-            geoy = np.append(geoy, geoy2)
-            geox = np.unique(geox)
-            geoy = np.unique(geoy)
+            xx = np.append(xx, xx2)
+            yy = np.append(yy, yy2)
+            xx = np.unique(xx)  # sorted too here, otherwise cannot be x axis
+            yy = np.unique(yy)  # sorted too here, otherwise cannot be y axis
             
             # gidx are those in individual nc files, so keep it as original
             gidx = np.append(gidx, gidx2)
@@ -269,14 +274,14 @@ if (options.elmheader != ""):
             count_gid = np.append(count_gid, cumsum_gid)
             
             # xidx/yidx are in to-be-merged nc file, so need to redo them by adding x/y offsets
-            xidx1st_1new = np.where(geox==geox1st_1)[0][0]  #np.where() output is a tuple, but really here needed is an interger index
+            xidx1st_1new = np.where(xx==xx1st_1)[0][0]  #np.where() output is a tuple, but really here needed is an interger index
             xidx = xidx + (xidx1st_1new - xidx1st_1)
-            yidx1st_1new = np.where(geoy==geoy1st_1)[0][0]
+            yidx1st_1new = np.where(yy==yy1st_1)[0][0]
             yidx = yidx + (yidx1st_1new - yidx1st_1)
 
-            xidx1st_2new = np.where(geox==geox1st_2)[0][0]
+            xidx1st_2new = np.where(xx==xx1st_2)[0][0]
             xidx2 = xidx2 + (xidx1st_2new - xidx1st_2)
-            yidx1st_2new = np.where(geoy==geoy1st_2)[0][0]
+            yidx1st_2new = np.where(yy==yy1st_2)[0][0]
             yidx2 = yidx2 + (yidx1st_2new - yidx1st_2)
 
             xidx = np.append(xidx, xidx2)
@@ -287,12 +292,12 @@ if (options.elmheader != ""):
 
     alldirfiles = sorted(glob.glob("%s*.%s" % (elmpathfileheader, ftype)))
     if(len(alldirfiles)<=0):
-        sys.exit("No file exists - %s*.%s IN %s" %(elmpathfileheader, ftype, cwdir))
+        sys.exit("No file exists - %s*.%s IN %s" %(elmpathfileheader, ftype, options.workdir))
     else:
         print('Total Files of ELM outputs: '+str(len(alldirfiles)))
 
     ncfileheader = elmpathfileheader.split('/')[-1]
-    elm_odir   = elmpathfileheader.replace(ncfileheader,'')
+    elm_odir   = cwdir
     if(elm_odir.strip()==''):elm_odir='./'
     
     
@@ -301,18 +306,19 @@ if (options.elmheader != ""):
 
         src = Dataset(ncfile,'r')
         file_names = np.asarray(ncfile)
-        if ('elm' in file_names or 'clm2' in file_names):
+        if ('elm' in ncfile  or 'clm2' in ncfile):
             file_timestr = ncfile.split('.')[-4:-1] # '.clm2[elm].h?.????-??-*'
             file_timestr = file_timestr[0]+'.'+file_timestr[1]+'.'+file_timestr[2]
+            print('ncfile ending: ',file_timestr)
         else:
             file_timestr = ''
         if (options.workdir2!=''):
             for dir2 in workdir2:
                 file_matched = False
                 if file_timestr == '':
-                    ncfile2 = sorted(glob.glob("%s*.%s" % (dir2.strip()+'/'+elmpathfileheader, ftype)))
+                    ncfile2 = sorted(glob.glob("%s*.%s" % (dir2.strip()+'/'+ncfileheader, ftype)))
                 else:
-                    ncfile2 = sorted(glob.glob("%s*.%s.%s" % (dir2.strip()+'/', file_timestr+elmpathfileheader,ftype)))
+                    ncfile2 = sorted(glob.glob("%s*.%s.%s" % (dir2.strip()+'/'+ncfileheader,file_timestr,ftype)))
                 if len(ncfile2)==1: 
                     file_matched = True
                     file_names=np.append(file_names,ncfile2)
@@ -322,7 +328,8 @@ if (options.elmheader != ""):
                     print(ncfile2)
                     sys.exit(-1)
                 else:
-                    print('Warning: NO file matched found in: '+ dir2.strip())
+                    print('Warning: NO file matched found in: '+ dir2.strip()+'as following')
+                    print(dir2.strip()+'/'+ncfileheader,file_timestr,ftype)
                     print('Warning: skip file merging: '+ncfile)
                 
                 if(not file_matched): break # break 'for dir2 in workdir2:'
@@ -345,27 +352,28 @@ if (options.elmheader != ""):
     
         # copy dimensions
         for name, dimension in src.dimensions.items():
-            dst.createDimension(name, (len(dimension) if not dimension.isunlimited() else None))
-            
+            dname=name
+            if name=='DTIME': dname='time'# rename 'DTIME' to 'time' so that VISIT can regcon. it
+            dst.createDimension(dname, (len(dimension) if not dimension.isunlimited() else None))
             # unlimited dimension name to be included dst output
             if dimension.isunlimited:
-                unlimited_dim = name
+                unlimited_dim = dname
     
         # add geox/geoy dimensions
-        geox_dim = dst.createDimension('geox',  len(geox))
-        geoy_dim = dst.createDimension('geoy',  len(geoy))
+        geox_dim = dst.createDimension('geox',  len(xx))
+        geoy_dim = dst.createDimension('geoy',  len(yy))
         
         vgeox = dst.createVariable('geox', np.float32, ('geox',))
         vgeox.units = 'meters'
         vgeox.long_name = 'Easting (Lambert Conformal Conic projection)'
         vgeox.standard_name = "projection_x_coordinate"
-        vgeox[:] = geox
+        vgeox[:] = xx
             
         vgeoy = dst.createVariable('geoy', np.float32, ('geoy',))
         vgeoy.units = 'meters'
         vgeoy.long_name = 'Northing (Lambert Conformal Conic projection)'
         vgeoy.standard_name = "projection_y_coordinate"
-        vgeoy[:] = geoy
+        vgeoy[:] = yy
 
         vproj = dst.createVariable('lambert_conformal_conic', np.int32)
         vproj.grid_mapping_name = "lambert_conformal_conic"
@@ -378,26 +386,32 @@ if (options.elmheader != ""):
         vproj.inverse_flattening = 298.257223563 
 
         # copy all data in src, and do 1D-grid --> 2D-geox/geoy copy
-        for name, var in src.variables.items():
-            
-            if ('ALL' not in elm_varname) and (name not in elm_varname.split(',')):
+        for name, variable in src.variables.items():
+            vname = name
+            if name=='DTIME': vname='time' # rename 'DTIME' to 'time' so that VISIT can regcon. it
+
+            if ('ALL' not in elm_varname) and (name not in elm_varname.split(',')): 
                 # Must include 'unlimited_dim' variable, otherwise output NC is empty
                 if (name!=unlimited_dim): continue
+
             
             #if(ncfile == alldirfiles[0]): print(name)
             
-            src_dims = var.dimensions
+            src_dims = variable.dimensions
+            
             # if merge tile domain.nc, it's dims are (ni,nj)
+            dim_domain = 'none'
             if 'domain' in ncfile:
                 dim_domain = 'ni'
                 if (src.dimensions['nj'].size>1 and src.dimensions['ni'].size==1): dim_domain='nj'
-                
-            if ('gridcell' in src_dims or 'lndgrid' in src_dims  or dim_domain in src_dims \
+            #
+            if ('gridcell' in src_dims or 'lndgrid' in src_dims \
+                or 'n' in src_dims or dim_domain in src_dims \
                 or 'landunit' in src_dims \
                 or 'column' in src_dims \
                 or 'pft' in src_dims):
                 try:
-                    FillValue = var._FillValue
+                    FillValue = variable._FillValue
                 except Exception as e:
                     print(e)
                     FillValue = -9999
@@ -405,21 +419,46 @@ if (options.elmheader != ""):
 
                 new_dims = []
                 i = -1
-                for dim in src_dims:
+                SKIPPED = False
+                for vdim in src_dims:
+                    dim=vdim
+                    if vdim=='DTIME': dim='time'# rename 'DTIME' to 'time' so that VISIT can regcon. it
                     i = i + 1
-                    if dim in ('gridcell','lndgrid',dim_domain): 
+                    if dim in ('gridcell','lndgrid', 'n', dim_domain): 
                         idim = i
                         new_dims.append('geoy')
                         new_dims.append('geox')
-                    elif dim in ('landunit','column','pft') and \
-                                ('gridcell' in src.dimensions.keys() \
-                                 or 'lndgrid' in src.dimensions.keys()):
+                    elif (dim in ('landunit','column','pft')) and \
+                         ('gridcell' in src.dimensions.keys() \
+                           or 'lndgrid' in src.dimensions.keys() \
+                           or 'n' in src.dimensions.keys() \
+                           or dim_domain in src.dimensions.keys()):
                         # in ELM output, column/pft dims are gridcells*col/patch
                         idim = i
-                        #new_dims.append('geoy')
-                        #new_dims.append('geox')
+                        #
                         # reshape of dim column/pft
-                        len_dim = src.dimensions[dim].size
+                        # note: have to exclude NON-vegetated/bare land unit (i.e. lunit=1)
+                        lunit=1
+                        if (dim == 'landunit'): 
+                            idx_lun = np.where(src.variables['land1d_ityplun'][...]==lunit)[0]
+                        if (dim == 'column'): 
+                            idx_lun = np.where(src.variables['cols1d_ityplun'][...]==lunit)[0]
+                        if (dim == 'pft'): 
+                            idx_lun = np.where(src.variables['pfts1d_ityplun'][...]==lunit)[0]
+                        len_dim = idx_lun.size
+                        if idim==0:
+                            src_data = src_data[idx_lun,...]
+                        elif idim==1:
+                            src_data = src_data[:,idx_lun,...]
+                        elif idim==2:
+                            src_data = src_data[:,:,idx_lun,...]
+                        elif idim==3:
+                            src_data = src_data[:,:,:,idx_lun,...]
+                        else:
+                            print('Error - more than 4 dimension variable, not supported yet')
+                            sys.exit(-1)
+                        
+                        
                         if('gridcell' in src.dimensions.keys()):
                             len_grid = src.dimensions['gridcell'].size
                         elif('lndgrid' in src.dimensions.keys()):
@@ -434,7 +473,7 @@ if (options.elmheader != ""):
                                 dst.createDimension(name_dim, len_dim)
                             new_dims.append(name_dim)
                             
-                            #reshape original data to be like from (totalpft=gidx*col/pft) --> (gidx,col/pft)
+                            #reshape original data to be like from (totalpft=gidx*col/pft) --> (gidx,lunit/col/pft)
                             src_shp = src_data.shape
                             if idim == 0:
                                 re_shp = (len(gidx),len_dim,)+src_shp[1:]
@@ -449,22 +488,28 @@ if (options.elmheader != ""):
                             src_data = np.swapaxes(src_data, idim, idim+1)
                             idim = idim + 1 #swaping above actually moved 'gidx' 1 dimension backwardly
                         else:
-                            print('Error in size of ', dim.name)
-                            sys.exit(-1)
+                            print('size of', dim, len_dim,'is NOT multiple of grids',len_grid)
+                            print('variable', name,'excluded in 2-D merging')
+                            SKIPPED=True
                         
                         new_dims.append('geoy')
                         new_dims.append('geox')
 
                     else:
                         new_dims.append(dim)
-                x = dst.createVariable(name, var.datatype, \
+                
+                if SKIPPED: continue
+                vdtype = variable.datatype
+                if(vdtype!=src_data.dtype):
+                    vdtype=src_data.dtype
+                x = dst.createVariable(vname, vdtype, \
                                         dimensions=new_dims, \
                                         zlib=True, fill_value=FillValue)
                 
-                dst_data = np.asarray(dst[name])          # at this point, dst_data is empty
-                
                 # re-assign data from gidx to (yidx,xidx)
                 # gidx should be in order already
+                dst_data = np.asarray(dst[vname])
+                
                 for nf in range(file_names.size):
                     # print(nf, file_names[nf],name)
                     if nf==0: # already read-in
@@ -498,29 +543,19 @@ if (options.elmheader != ""):
                         print('Error - more than at least 4 dimension variable, not supported yet')
                         sys.exit(-1)
 
-                    #for g in gidx:  # this is not good way, very expensive
-                    #    if i==0:
-                    #        dst[name][yidx[g],xidx[g],] = src[name][g,]
-                    #    elif i==1:
-                    #        dst[name][:,yidx[g],xidx[g-1]-1,] = src[name][:,g-1,]
-                    #    elif i==2:
-                    #        dst[name][:,:,yidx[g]-1,xidx[g-1]-1,] = src[name][:,:,g-1,]
-                    #    elif i==3:
-                    #        dst[name][:,:,:,yidx[g-1]-1,xidx[g-1]-1,] = src[name][:,:,g-1,]
-                    #    else:
-                    #        print('Error - more than at least 4 dimension variable, not supported yet')
-                    #        sys.exit(-1)
-                    
-                    # need to close src2
-                    if(nf>0): src2.close()
+                     
             else:
-                x = dst.createVariable(name, var.datatype, \
-                                        dimensions = var.dimensions, \
+                vdims = src_dims
+                if 'DTIME' in src_dims: 
+                    i=src_dims.index('DTIME')
+                    vdims = src_dims[:i]+('time',)+src_dims[i+1:]
+                x = dst.createVariable(vname, variable.datatype, \
+                                        dimensions = vdims, \
                                         zlib=True)
-                dst[name][:] = src[name][:]
+                dst[vname][:] = src[name][:]
         
             # copy variable attributes all at once via dictionary
-            dst[name].setncatts(src[name].__dict__)
+            dst[vname].setncatts(src[name].__dict__)
         
         #
         src.close()
