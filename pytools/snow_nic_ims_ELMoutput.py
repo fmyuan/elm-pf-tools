@@ -341,8 +341,16 @@ if (options.elmheader != ""):
     if2dgrid = True
     if('topo' in varsdata.keys()):
         if(len(varsdata['topo'].shape)==1): if2dgrid = False
+    
     # names for variable and its time-axis
     vars_list = list(varsdata.keys())    # var_list is in format of 'h*_varname', in which 'varname' is the real variable names
+
+    # time-invariant variables
+    constdata = {}
+    for v in vars_list:
+        if 'time' not in varsdims[v]: 
+            constdata[v]=varsdata[v]
+    
     for hv in vars_list:
         if re.search(elm_varname, hv): 
             var_h = hv
@@ -355,7 +363,7 @@ if (options.elmheader != ""):
     
     # processing original data
     t, gdata, sdata, zdim_indx, pdim_indx = \
-        CLMvar_1Dtseries(tt, vdims, vdata, nx, ny, -999, -999, if2dgrid, \
+        CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, -999, -999, if2dgrid, \
                     False, False)
     t = np.asarray(t)
 
@@ -366,14 +374,16 @@ if (options.elmheader != ""):
         elm_snowcov = gdata
         
     # lon/lat of ELM output
-    if ('lon' in varsdata.keys() and 'lat' in varsdata.keys()):
+    if ( ('lon' in varsdata.keys() and 'lat' in varsdata.keys()) and 
+         ('lon' in varsdims['lon'] and 'lat' in varsdims['lat']) ):
         elmx = varsdata['lon']
         elmy = varsdata['lat']
         elmx_res = 0.50
         elmy_res = 0.50
         elmxy = False
         elmprjstr = ''
-    elif ('geox' in varsdata.keys() and 'geoy' in varsdata.keys()):
+    elif ( ('geox' in varsdata.keys() and 'geoy' in varsdata.keys()) and 
+           ('geox' in varsdims['geox'] and 'geoy' in varsdims['geoy']) ):
         elmx = varsdata['geox']
         elmy = varsdata['geoy']
         elmx_res = np.nanmean(np.diff(elmx))
@@ -381,7 +391,10 @@ if (options.elmheader != ""):
         elmxy = True
         # elm proj is lambert conformal conic, when using daymet scaled-forcing
         elmprjstr = "+proj=lcc +lon_0=-100 +lat_0=42.5 +lat_1=25 +lat_2=60 +x_0=0 +y_0=0 +R=6378137 +f=298.257223563 +units=m +no_defs"
-
+    else:
+        print('Error: could not find lat/lon or geox/geoy dimension')
+        sys.exit()
+    
     if ('landmask' in varsdata.keys()):
         landmask = varsdata['landmask'] # ELM 2-D data is in [y,x] order
     else:
@@ -452,7 +465,6 @@ if (options.elmheader != ""):
     
 #-------------------------------------------------------------------------
 # NIC-IMS snow coverages reading from daily NC snowcov dataset
-snow_yearly = {}
 if (options.imsheader != ""):
     imspathfileheader = options.imsheader
     if (options.elmheader == ""): elmxy=False
@@ -468,6 +480,7 @@ if (options.imsheader != ""):
     if(ims_odir.strip()==''):ims_odir='./'
     imsfileheader = imspathfileheader.replace(ims_odir,'')
 
+    snow_yearly = {}
     for ncfile in alldirfiles:
         print ('Processing - ', ncfile)
         f = Dataset(ncfile,'r')

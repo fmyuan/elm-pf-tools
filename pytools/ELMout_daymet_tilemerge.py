@@ -15,7 +15,6 @@ from copy import deepcopy
 
 import netCDF4
 from Modules_CLMoutput_nc4 import CLM_NcRead_1simulation
-from Modules_CLMoutput_nc4 import CLMvar_1Dtseries
 
 from pyproj import Proj
 from pyproj import Transformer

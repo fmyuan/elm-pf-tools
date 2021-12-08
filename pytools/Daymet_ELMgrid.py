@@ -524,6 +524,12 @@ if (options.elmheader != ""):
         if(len(varsdata['topo'].shape)==1): if2dgrid = False
     # names for variable and its time-axis
     vars_list = list(varsdata.keys())    # var_list is in format of 'h*_varname', in which 'varname' is the real variable names
+    # time-invariant variables
+    constdata = {}
+    for v in vars_list:
+        if 'time' not in varsdims[v]: 
+            constdata[v]=varsdata[v]
+    
     for hv in vars_list:
         if re.search(elm_varname, hv): 
             var_h = hv
@@ -536,7 +542,7 @@ if (options.elmheader != ""):
     
     # processing original data
     t, gdata, sdata, zdim_indx, pdim_indx = \
-        CLMvar_1Dtseries(tt, vdims, vdata, nx, ny, -999, -999, if2dgrid, \
+        CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, -999, -999, if2dgrid, \
                     False, False)
     t = np.asarray(t)
 
