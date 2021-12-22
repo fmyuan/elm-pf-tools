@@ -96,7 +96,7 @@ def SinglePlotting(tt, time_unit, varnames, varunits, vardatas, figno=None):
     nrow = 1   # sub-plot vertically arranged number (row no.)
     ncol = 1   # sub-plot horizontally arranged number (column no.)
 
-    fig = plt.figure(figsize=(11.5,8.5))
+    fig = plt.figure(figsize=(10.5,6.5))
     ax0=plt.subplot(nrow, ncol, 1)
     #
     # data must be in dictionary, due to length may not be same

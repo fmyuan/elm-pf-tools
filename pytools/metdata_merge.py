@@ -74,14 +74,19 @@ def DataTimeDown(sdata_jointting, src, target, data_method='offset'):
         offset = target - src# 
         sdata_jointting = sdata_jointting + offset
     elif (data_method == 'nanmean'):# 
-        sdata_jointting = np.nanmean([src,target], axis=0)
+        if (not np.any(src==0.0)):
+            ratio = np.nanmean([src,target], axis=0)/src
+            sdata_jointting = sdata_jointting*ratio
+        else:
+            offset = target - src# 
+            sdata_jointting = sdata_jointting + offset/2.0
     elif (data_method == 'ratio'):
         if (not np.any(src==0.0)):
             ratio = target/src# 
             sdata_jointting = sdata_jointting*ratio
         else:
-            print('Error: ratio cannot calculated duo to 0.0 value in data ')
-            sys.exit(-2)
+            offset = target - src# 
+            sdata_jointting = sdata_jointting + offset
     else:
         print('Error: not supported method - ',  data_method)
     
@@ -116,9 +121,7 @@ def DataTimePatterns(t, data, SEASONALLY, ANNUALLY, t_unit='Days', ts_yrly=365, 
         idx = np.where(t2==0)
         t3[idx] = t3[idx]-1
         t2[idx] = 365-1.0e-8
-    if(abs(t2[1]-t2[0])<1.0):
-        t2 = t2 + 1                  # convert to 1-based DOY, if sub-daily data
-
+        
     
     # if 'season' length in 'data' is greater than pre-defined yrly timesteps
     # need to aggregate first
@@ -279,16 +282,17 @@ parser.add_option("--lon", dest="lon", default=-999, \
                   help = " longitude to be reading/plotting, default -999 for first one")
 parser.add_option("--lat", dest="lat", default=-999, \
                   help = " latitude to be reading/plotting, default -999 for first one")
+
 # other sources of data to be pull into merged E3SM data
 parser.add_option("--user_mettype", dest="user_mettype", default="", \
-                  help="e3sminput met data type (default = 'CRU', options: CRU, GSWP3, GSWP3v1, GSWP3, Site, and *_daymet/cplbypass_*, ATS_h5, NCDC, daymet, None)")
+                  help="e3sminput met data type (default = 'CRU', options: CRU, GSWP3, GSWP3v1, GSWP3, Site, and *_daymet/cplbypass_*, None)")
 parser.add_option("--user_metdir", dest="user_metdir", default="./", \
                   help="user-defined met directory (default = ./, i.e., under current directory)")
 parser.add_option("--user_metfile", dest="user_metfile", default="", \
                   help="user-defined met file(s) under user_metdir (default = '', i.e., None)")
 #
-parser.add_option("--source_adjusting", dest="src_adj", default=False, \
-                  help = "adjusting source data by detrended mean", action="store_true")
+parser.add_option("--extending", dest="extending", default=False, \
+                  help = "extending merged-data into maximal period of time", action="store_true")
 parser.add_option("--plotting", dest="plotting", default=False, \
                   help = "plotting data for checking", action="store_true")
 parser.add_option("--nc_create", dest="nc_create", default=False, \
@@ -360,9 +364,9 @@ lon = float(options.lon)
 lat = float(options.lat)
 met_domain=options.met_domain
 
-metdir=options.met_dir
-metfileheader=options.met_header
-mettype=options.met_type
+metdir=[options.met_dir]
+metfileheader=[options.met_header]
+mettype=[options.met_type]
 
 # if for merging mets are both ELM met-type
 if options.user_mettype in elmmettype or 'cplbypass_' in options.user_mettype:
@@ -461,7 +465,7 @@ for imet in range(len(mettype)):
     
         # read in
         ix,iy, varsdims, vardatas = \
-            Modules_metdata.clm_metdata_read(imet_dir,imet_header, imet_type, met_domain, lon, lat,'')
+            Modules_metdata.clm_metdata_read(imet_dir,imet_header, imet_type, met_domain, [lon], [lat],'')
         # assign data to plotting variables
         nx=len(ix)
         ny=len(iy)
@@ -491,7 +495,6 @@ for imet in range(len(mettype)):
             
             sdata_elm = deepcopy(vardatas[varname])
             sdata_elm = np.squeeze(sdata_elm)
-            #SubPlotting(t, time_unit, varname, varunit, sdata_elm) # for checking
             
             vname_elm = varname
             break
@@ -617,178 +620,12 @@ for imet in range(len(mettype)):
                 sdata_elm = deepcopy(sdata_elm1)
                 if(options.var_depended!=''): 
                     sdata_depended_elm = deepcopy(sdata_depended1)
-
-                del t_elm1, tunit_elm1, tvarname_elm1, vname_elm1, sdata_elm1, sdata_depended1
+                    del sdata_depended1
+                del t_elm1, tunit_elm1, tvarname_elm1, vname_elm1, sdata_elm1
             
 #--------------------------------------------------------------------------------------
-# read-in metdata from NCDC daily Tmax/Tmin, Precipitation data
-
-if ('NCDC' in options.user_mettype):
-    site,odata_header,odata = \
-        Modules_metdata.singleNCDCReadCsvfile('2059560_Alert_initproc.csv','NCDC_metric','-999.99') # 'metric' refers to NCDC data converted to metric system already
-        #singleNCDCReadCsvfile('2022211_MysVanKarem_initproc.csv','NCDC_metric','-9999.99') # 'metric' refers to NCDC data converted to metric system already
-        #singleNCDCReadCsvfile('GHCND_Alert_initproc.csv','GHCND','-999.99')
-    #site_header = ("LATITUDE","LONGITUDE","ELEVATION")
-    #data_header = ("YEAR","MONTH","DOY","PRCP","SNWD","TAVG","TMAX","TMIN")
-    
-    # need to recalculate time
-    tvarname = 'time'    # variable name for time/timing
-    
-    vardatas = {}
-    vardatas['time']=(odata['YEAR']-1901.0)*365.0+(odata['DOY']-1.0)  # days since 1901-01-01 00:00:00
-    lpyrindex=[i for i, x in enumerate(odata['DOY']) if x == 366.0 ]  # NCDC data is in leap-year calender. Here simply remove last day of the year
-    vardatas['time']=np.delete(vardatas['time'],lpyrindex)
-
-    varsdims = {}
-    varsdims['time']  = tvarname
-    varsdims['TBOTd'] = tvarname
-    varsdims['TMAXd'] = tvarname
-    varsdims['TMINd'] = tvarname
-    varsdims['PRCPd'] = tvarname
-    varsdims['SNWDd'] = tvarname
-
-    vardatas['TBOTd']=np.delete(odata['TAVG'],lpyrindex)+273.15
-    vardatas['TMAXd']=np.delete(odata['TMAX'],lpyrindex)+273.15
-    vardatas['TMINd']=np.delete(odata['TMIN'],lpyrindex)+273.15
-    vardatas['PRCPd']=np.delete(odata['PRCP'],lpyrindex)
-    vardatas['SNWDd']=np.delete(odata['SNWD'],lpyrindex)
-
-    
-    nx=1#len(site['LONGITUDE'])
-    ny=1#len(site['LATITUDE'])
-    if2dgrid = False
-    nxy=nx*ny
-    
-    ix = 0
-    iy = 0
-    vars_list = list(varsdata.keys())
-
-    t = vardatas[tvarname] # days since 1901-01-01-00000
-    tunit = 'days since 0001-01-01 00:00'
-    t0 = 1901*365 # converted to days since 0000-01-01-00000
-
-    if(options.vars=='TBOT'):
-        vname_elm = 'TBOTd'
-        varunit = 'K'
-    elif(options.vars=='PRECT'):
-        vname_elm = 'PRCPd'
-        varunit = 'mm/d'
-    else:
-        print('NOT supported variable name, should be one of : ')
-        print('TBOT, PRECT')
-        sys.exit(-1)
-
-    for varname in vars_list:
-        if vname_user not in varname: continue
-        
-        vardata = vardatas[varname]
-        sdata_user = deepcopy(vardata)
-        #SubPlotting(t, time_unit, varname, varunit, sdata_user) # for checking
-        
-        vname_user = varname
-        break
-        
-    #
-    t_user = np.asarray(t)+t0
-    tunit_user = tunit
-    del vardata, vardatas, t
-    
-#--------------------------------------------------------------------------------------
-# read-in metdata from ATS daily forcing
-
-if ('ATS_h5' in options.user_mettype):
-    #hdfname = 'CESM-RCP8.5-2006-2100_dm1985-2015.h5'
-    hdfname = options.user_metdir+'/'+options.user_metfile
-    varnames=['all']
-    vardatas = \
-        Read1hdf(hdfname, varnames)
-
-    # 
-    t_name='time [s]'
-    tunit='[s]'
-    t = vardatas[t_name]
-    varnames = [x for x in vardatas.keys() if x!=t_name]
-    nvars = len(varnames)
-    nt = len(t)
-    sdata_user = np.zeros(nt)
-
-    if(options.vars=='TBOT'):
-        vname_user = 'air temperature'
-        varunit = 'K'
-    elif(options.vars=='PRECT'):
-        vname_user = 'precipitation [m s^-1]'
-        varunit = 'm/s'
-    elif(options.vars=='QBOT'):
-        vname_user = 'specific humidity' # note that must do convertion below
-        varunit = '-'
-    elif(options.vars=='RH'):
-        vname_user = 'relative humidity'
-        varunit = '-'
-    elif(options.vars=='FSDS'):
-        vname_user = 'incoming shortwave radiation'
-        varunit = 'W/m2'
-    elif(options.vars=='FLDS' or options.vars=='estFLDS'):
-        vname_user = 'incoming longwave radiation'
-        varunit = 'W/m2'
-    elif(options.vars=='PSRF'):
-        vname_user = 'NONE'  # a specific situation
-        varunit = 'Pa'
-    elif(options.vars=='WIND'):
-        vname_user = 'wind speed'
-        varunit = 'm/s'
-    else:
-        print('NOT supported variable name, should be one of : ')
-        print('TBOT, PRECT, QBOT, RH, FSDS, FLDS, estFLDS, PSRF, WIND')
-        sys.exit(-1)
-
-    t0 = 2006*365 # ==>days since 0001-01-01-000000
-    
-    for ivar in range(0,nvars):
-        if vname_user not in varnames[ivar]: 
-            continue #skip
-        else:
-            print ('ATS varname: ', varnames[ivar])
-        sdata_user = vardatas[varnames[ivar]]
-        varunit = varnames[ivar].strip().split(" ")[-1]
-        varname = varnames[ivar].strip().replace(varunit,'')
-
-        if 'rain' in varname or 'snow' in varname or 'precipitation' in varname: 
-            sdata_user = deepcopy(sdata_user)*86400000 # m/s -> mm/day
-        #SubPlotting(t, time_unit, varname, varunit, sdata_user) # for checking
-        
-        if 'relative humidity' in varname:
-            sdata_user = sdata_user*100.
-        
-        vname_user = varnames[ivar]
-        break # exit for loop
-    
-    #
-    if(options.vars=='QBOT' or options.vars=='estFLDS'):
-        for ivar in range(0,nvars):
-            if 'air temperature' in varnames[ivar]: 
-                tk = vardatas[varnames[ivar]]
-            elif 'relative humidity' in varnames[ivar]:
-                rh = vardatas[varnames[ivar]]*100
-            else:
-                continue
-        
-        #
-        pres_pa = 101325.0
-        if(options.vars=='QBOT'):
-            sdata_user = Modules_metdata.convertHumidity(tk, pres_pa, q_kgkg=[], rh_100=rh)
-        #
-        if(options.vars=='estFLDS'):
-            sdata_user = Modules_metdata.calcFLDS(tk, pres_pa, q_kgkg=[], rh_100=rh)
-    
-    #
-    t_user = np.asarray(t)/86400.0+t0
-    tunit_user = 'days since 0001-01-01 00:00'
-
-    del vardatas, t
-    #
 #--------------------------------------------------------------------------------------
 # read-in metdata from totally user-defined data
-
 if ('NONE' in options.user_mettype):
     odata_header,odata = \
         singleReadCsvfile('5_minute_data_v21.csv')
@@ -861,6 +698,101 @@ if ('NONE' in options.user_mettype):
     tunit_user = tunit
     del vardata, vardatas, t
     
+#--------------------------------------------------------------------------------------
+# read-in metdata from ATS daily forcing
+
+elif ('ATS_h5' in options.user_mettype):
+    #hdfname = 'CESM-RCP8.5-2006-2100_dm1985-2015.h5'
+    hdfname = options.user_metdir+'/'+options.user_metfile
+    varnames=['all']
+    vardatas = \
+        Read1hdf(hdfname, varnames)
+
+    # 
+    t_name='time [s]'
+    tunit='[s]'
+    t = vardatas[t_name]
+    varnames = [x for x in vardatas.keys() if x!=t_name]
+    nvars = len(varnames)
+    nt = len(t)
+    sdata_user = np.zeros(nt)
+
+    if(options.vars=='TBOT'):
+        vname_ats = 'air temperature'
+        varunit = 'K'
+    elif(options.vars=='PRECT'):
+        vname_ats = 'precipitation [m s^-1]'
+        varunit = 'm/s'
+    elif(options.vars=='QBOT'):
+        vname_ats = 'specific humidity' # note that must do convertion below
+        varunit = '-'
+    elif(options.vars=='RH'):
+        vname_ats = 'relative humidity'
+        varunit = '-'
+    elif(options.vars=='FSDS'):
+        vname_ats = 'incoming shortwave radiation'
+        varunit = 'W/m2'
+    elif(options.vars=='FLDS' or options.vars=='estFLDS'):
+        vname_ats = 'incoming longwave radiation'
+        varunit = 'W/m2'
+    elif(options.vars=='PSRF'):
+        vname_ats = 'NONE'  # a specific situation
+        varunit = 'Pa'
+    elif(options.vars=='WIND'):
+        vname_ats = 'wind speed'
+        varunit = 'm/s'
+    else:
+        print('NOT supported variable name, should be one of : ')
+        print('TBOT, PRECT, QBOT, RH, FSDS, FLDS, estFLDS, PSRF, WIND')
+        sys.exit(-1)
+
+    t0 = 2006*365 # ==>days since 0001-01-01-000000, USER-defined
+    
+    for ivar in range(0,nvars):
+        if vname_ats not in varnames[ivar]: 
+            continue #skip
+        else:
+            print ('ATS varname: ', varnames[ivar])
+        sdata_user = vardatas[varnames[ivar]]
+        varunit = varnames[ivar].strip().split(" ")[-1]
+        varname = varnames[ivar].strip().replace(varunit,'')
+
+        if 'rain' in varname or 'snow' in varname or 'precipitation' in varname: 
+            sdata_user = deepcopy(sdata_user)*86400000 # m/s -> mm/day
+        #SinglePlotting(t, time_unit, varname, varunit, sdata_user) # for checking
+        
+        if 'relative humidity' in varname:
+            sdata_user = sdata_user*100.
+        
+        vname_user = varnames[ivar]
+        break # exit for loop
+    
+    #
+    if(options.vars=='QBOT' or options.vars=='estFLDS'):
+        for ivar in range(0,nvars):
+            if 'air temperature' in varnames[ivar]: 
+                tk = vardatas[varnames[ivar]]
+            elif 'relative humidity' in varnames[ivar]:
+                rh = vardatas[varnames[ivar]]*100
+            else:
+                continue
+        
+        #
+        pres_pa = 101325.0
+        if(options.vars=='QBOT'):
+            sdata_user = Modules_metdata.convertHumidity(tk, pres_pa, q_kgkg=[], rh_100=rh)
+        #
+        if(options.vars=='estFLDS'):
+            sdata_user = Modules_metdata.calcFLDS(tk, pres_pa, q_kgkg=[], rh_100=rh)
+    
+    #
+    t_user = np.asarray(t)/86400.0+t0
+    tunit_user = 'days since 0001-01-01 00:00'
+
+    del vardatas, t
+    #
+
+#---------------------------------------------------------------------------------------------------------
 
 
 #---------------------------------------------------------------------------------------------------------
@@ -910,13 +842,13 @@ else:
 SEASONALLY=True
 # ANNUALITY
 ANNUALLY=True
-# max. timesteps in a year
-dts1 = np.max(np.diff(t1))  # must be in 'days'
-dts2 = np.max(np.diff(t2))  # must be in 'days'
+#
+dts1 = np.unique(np.diff(np.round(t1,10)))  # must be in 'days'
+dts2 = np.unique(np.diff(np.round(t2,10)))  # must be in 'days'
 ts_yrly = 365
 #
-detrending='yearly'
-if (vname1=='NONE' or vname2=='NONE' or (not options.src_adj)): detrending=''
+detrending=''
+if (vname1=='NONE' or vname2=='NONE'): detrending=''
 
 if (detrending !=''):
     if (vname1!=''):
@@ -947,13 +879,6 @@ else:
     
 
 #--------------------------------------------------------------------------------------
-# Year Matching
-
-# by comparing statistics/regression fitting
-#rmse, se, r2, offset, slope = DataSimilarity(data1, data2, t=t, t_unit=time_unit, v_name='PRECP', v_unit='mm/day', plt=plt)
-#plt.show()
-
-#--------------------------------------------------------------------------------------
 # Merging
 
 # by jointing 2 datasets directly, from data1-->data2
@@ -970,60 +895,18 @@ if (BY_JOINTING):
     
     # joint-smooth-transition
     if detrending!='':
-        # prior to adjust data, save if need to backwardly adjust 'data2' from 'data1'
-        if (options.src_adj):
-
-            # precipitation (rate): re-distruting but conserved daily rate
-            if (options.vars=='PRECT'):
-                i2=-1
-                for i in range(len(t2_yrly)):
-                    iyr2 = t2_yrly[i]
-                    i2=i2+1
-                    if (i2>len(t1_yrly)-1): i2=0
-                    iyr1 = t1_yrly[i2]  # this is temporary, should be from 'similarity' analysis above
-                    idx2 = np.where((t_src2>=iyr2*365.0) & (t_src2<(iyr2+1.0)*365.0))
-                    idx1 = np.where((t1>=iyr1*365.0) & (t1<(iyr1+1.0)*365.0))
-                    sdata_iyr = sdata_src2[idx2]
-                    sdata_iyr = RateRedistribution(sdata_iyr, data1[idx1])
-                    sdata_src2[idx2] = sdata_iyr
-            
-            elif (options.vars=='TBOT' or options.vars=='PSRF'):
-                # T/P variables
-                offset12_yrly = np.nanmean(data1_yrly)-np.nanmean(data2_yrly)
-                sdata_src2 = sdata_src2-offset12_yrly
-            else:
-                # humidity, radiations, wind speedy
-                try:
-                    ratio12_yrly = np.nanmean(data1_yrly)/np.nanmean(data2_yrly)
-                except Exception as e:
-                    print(e)
-                    # in case np.nanmen(data2_yrly) = 0
-                    ratio12_yrly = 1.0
-                sdata_src2 = sdata_src2*ratio12_yrly
-    
-            # data scaled, requiring re-do time-pattern analysis
-            t2, data2, t2_yrly, data2_yrly, t2_seasonally, data2_seasonally, fitfunc_data2 = \
-                DataTimePatterns(t_src2, sdata_src2, SEASONALLY, ANNUALLY, ts_yrly=365, detrending=detrending)
-            
-            # no-need to do scaling below
-            jointgap_data = 0.0
-            jointgap_yrly = 0.0
-            jointgap_seasonally = 0.0
+        # time-interval sync'ed data2/data1
+        tj=(t2[-1]+t1[0])/2.0
+        jointgap_data = fitfunc_data2(tj)-fitfunc_data1(tj)
+        data2 = data2 - jointgap_data
+        sdata_src2 = sdata_src2 - jointgap_data
         
-        else:
-            
-            # time-interval sync'ed data2/data1
-            tj=(t2[-1]+t1[0])/2.0
-            jointgap_data = fitfunc_data2(tj)-fitfunc_data1(tj)
-            data2 = data2 - jointgap_data
-            sdata_src2 = sdata_src2 - jointgap_data
-    
-            # integrated data2/data1
-            jointgap_yrly = np.nanmean(data2_yrly)-np.nanmean(data1_yrly)
-            data2_yrly = data2_yrly - jointgap_yrly
-            jointgap_seasonally = np.nanmean(data2_seasonally)-np.nanmean(data1_seasonally)
-            data2_seasonally = data2_seasonally - jointgap_seasonally
-    
+        # integrated data2/data1
+        jointgap_yrly = np.nanmean(data2_yrly)-np.nanmean(data1_yrly)
+        data2_yrly = data2_yrly - jointgap_yrly
+        jointgap_seasonally = np.nanmean(data2_seasonally)-np.nanmean(data1_seasonally)
+        data2_seasonally = data2_seasonally - jointgap_seasonally
+        
     else:
         jointgap_data = 0.0
         jointgap_yrly = 0.0
@@ -1031,64 +914,79 @@ if (BY_JOINTING):
     
     
     # to be jointed/temporally-scaling (pulling data1 into data2)
-    t_jointed = deepcopy(t_src2[t_src2<t_user[0]])
-    sdata_jointed = deepcopy(sdata_src2[t_src2<t_user[0]])
+    t_jointed = deepcopy(t_src2[t_src2<t_user[0]-dts1/2.0])
+    sdata_jointed = deepcopy(sdata_src2[t_src2<t_user[0]-dts1/2.0])
     
     # loop through 't1' by year
-    iyr_t_src = 0
+    iyr_t_src = np.where(t2_yrly==t1_yrly[0])[0][0]
     for iyr in np.floor(t1_yrly):
         
         if iyr<t2_yrly[0]: continue  # skip data prior to min of t2
         
+        dt = np.round(np.max(np.diff(t1_seasonally)),8)
         for it in range(len(t1_seasonally)):
-            iday = t1_seasonally[it]  # so dts1 is the common time-interval
-            td0_t1 = iyr*365.0+it*dts1                  # starting point of a day in t1
-            td0_t2 = t2_yrly[iyr_t_src]*365.0+it*dts1   # starting point of a day in t2
-        
-            idx_src = np.where((t_src2>=td0_t2) & (t_src2<=(td0_t2+dts1)))
+            iday = t1_seasonally[it]
+            td0_t1 = iyr*365.0+it*dt                  # starting point of a day in t1
+            td0_t2 = t2_yrly[iyr_t_src]*365.0+it*dt   # starting point of a day in t2
+            
+            idx_target = np.where((t_user>=td0_t1) & (t_user<(td0_t1+dt)))
+            idx_src = np.where((t_src2>=td0_t2) & (t_src2<(td0_t2+dt)))
             
             t_jointting = td0_t1 + (t_src2[idx_src]-td0_t2) # the second portion is sub-daily (fraction) time
             t_jointed = np.hstack((t_jointed, t_jointting))
             
             # temporal down-scaling:
             sdata_jointting = sdata_src2[idx_src]
-            # 'sdata_jointing' - in/out (for sub-time variation), 
-            # 'src/target' are time-sync'ed datasets to provide scalors (a moving window)
-            twidth = 1.0  # 1-d moving-window (for 'data_method' of 'smooth', t spans 2 or more timesteps -TODO)
-            idx = np.where((t2>td0_t2) & (t2<=(td0_t2+twidth)))
-            src = data2[idx]
-            if(options.var_depended!=''): src_depended = data2_depended[idx]
             
-            if (vname1!='NONE'):
-                idx = np.where((t1>td0_t1) & (t1<=(td0_t1+twidth)))
-                target = data1[idx]
-                if(options.var_depended!=''): target_depended = data1_depended[idx]
+            # timestep interval is not same, need to use aggregated data (data1, data2)
+            if len(idx_src[0]) != len(idx_target[0]):
+                # 'sdata_jointing' - in/out (for sub-time variation), 
+                # 'src/target' are time-sync'ed datasets to provide scalors (a moving window)
+                twidth = 1.0*dt  # 1-d moving-window (for 'data_method' of 'smooth', t spans 2 or more timesteps -TODO)
+                idx = np.where((t2>td0_t2) & (t2<=(td0_t2+twidth)))
+                src = data2[idx]
+                if(options.var_depended!=''): src_depended = data2_depended[idx]
                 
-                if(len(src)!=len(target)):
-                    print('Error: src/target data NOT in same length!')
-                    sys.exit(-1)
+                if (vname1!='NONE' and src.size>0):
+                    idx = np.where((t1>td0_t1) & (t1<=(td0_t1+twidth)))
+                    target = data1[idx]
+                    if(options.var_depended!=''): target_depended = data1_depended[idx]
+                    
+                    if(len(src)!=len(target)):
+                        print('Error: src/target data NOT in same length!')
+                        sys.exit(-1)
+                    
+                    # 'data_method': 'offset' (default),'nanmean', 'ratio', etc
+                    if sum(np.isnan(target))<len(target): # if aimed data available
+                        sdata_jointting = DataTimeDown(sdata_jointting, src, target, data_method='offset')
                 
-                # 'data_method': 'offset' (default),'nanmean', 'ratio', etc
-                if detrending != '':
-                    sdata_jointting = DataTimeDown(sdata_jointting, src, target, data_method='offset')
-                else:
-                    sdata_jointting = DataTimeDown(sdata_jointting, src, target, data_method='nanmean')
-                    # very specific to correct daymet-derived QBOT or RH datasets
-                    if((options.vars=='QBOT' or options.vars=='RH') \
+                #else:
+                    # do nothing if 'data1' not exists, then just simply copy data
+            
+            else: # didn't do de-trending
+                src = deepcopy(sdata_jointting)
+                target = sdata_user[idx_target]
+                
+                if sum(np.isnan(target))<len(target): # if aimed data available
+                    #sdata_jointting = DataTimeDown(sdata_jointting, src, target, data_method='nanmean')
+                    sdata_jointting = np.nanmean([src,target], axis=0)
+                # very specific to correct daymet-derived QBOT or RH datasets
+                if((options.vars=='QBOT' or options.vars=='RH') \
                        and options.var_depended=='TBOT' and 'daymet' in options.met_type.lower()):
                         idx=np.where(target_depended>273.15) # i.e. if air NOT freezing, pick the merging data, otherwise averaging as above
                         if len(idx[0])>0: sdata_jointting[idx]=target[idx]
                     
                 
-            #else:
-                # do nothing if 'data1' not exists, then just simply copy data
             
             sdata_jointed = np.hstack((sdata_jointed, sdata_jointting))
+            
 
         #DONE 'for iday in np.floor(t2_seasonally)'
         #cycling 'sdata_elm' throughout by year-order
         iyr_t_src = iyr_t_src + 1
-        if(iyr_t_src>=len(t2_yrly)): iyr_t_src = 0
+        if(iyr_t_src>=len(t2_yrly)): 
+            if not options.extending: break
+            iyr_t_src = np.where(t2_yrly==t1_yrly[0])[0][0]
     
     #DONE 'for iyr in np.floor(t1_yrly)'
     # some simple checkings
@@ -1127,7 +1025,7 @@ if (BY_JOINTING):
         sdatas[snames[2]] = deepcopy(sdata_user)
         
         SinglePlotting(tt, 'days-since-0001-01-01', snames, vname_elm, sdatas)
-
+        
         txx, dataxx, txx_yrly, dataxx_yrly, txx_seasonally, dataxx_seasonally = \
             DataTimePatterns(t_jointed, sdata_jointed, SEASONALLY, ANNUALLY, ts_yrly=365) 
         tt={}
@@ -1220,9 +1118,9 @@ if (options.nc_create or options.nc_write):
         sdata_jointed = sdata_jointed[idx]
     
     
-    met_type = options.nc_write_mettype
-    if met_type =='': met_type = options.met_type
-    if met_type==options.met_type and 'cplbypass_' not in options.met_type:
+    out_mettype = options.nc_write_mettype
+    if out_mettype =='': out_mettype = options.met_type
+    if out_mettype==options.met_type and 'cplbypass_' not in options.met_type:
         NCOUT_ORIGINAL=True
     else:
         NCOUT_ORIGINAL=False
@@ -1234,38 +1132,39 @@ if (options.nc_create or options.nc_write):
     if (options.nc_create and options.nc_write):
         print('Error: cannot have both "--nc_create" and "--nc_write" ')
         sys.exit(-1)
-    elif (options.nc_create):
-        print('Create new ELM forcing data ? ', options.nc_create)
-    elif (options.nc_write):
-        print('Write to existed ELM forcing data ? ', options.nc_write)
+    elif(NCOUT_ORIGINAL or NCOUT_CPLBYPASS):
+        if (options.nc_create):
+            print('Create new ELM forcing data ? ', options.nc_create)
+        elif (options.nc_write):
+            print('Write to existed ELM forcing data ? ', options.nc_write)
     
     # get a template ELM forcing data nc file
     # 
     varname = vname_elm
-    if('Site' not in met_type and varname=='RH'): varname='QBOT'
+    if('Site' not in out_mettype and varname=='RH'): varname='QBOT'
     ncfilein_cplbypass = ''
-    metdir = options.nc_write_stdmetdir
-    if metdir=='': metdir=options.met_idir
-    if 'GSWP3' in met_type:
+    out_metdir = options.nc_write_stdmetdir
+    if out_metdir=='': out_metdir='./'
+    if 'GSWP3' in out_mettype:
         if (varname == 'FSDS'):
-            fdir = metdir+'/Solar3Hrly/'
+            fdir = options.met_dir+'/Solar3Hrly/' # where to access template nc file
         elif (varname == 'PRECTmms'):
-            fdir = metdir+'/Precip3Hrly/'
+            fdir = options.met_dir+'/Precip3Hrly/'
         else:
-            fdir = metdir+'/TPHWL3Hrly/'
+            fdir = options.met_dir+'/TPHWL3Hrly/'
         
-        fdirheader = metdir+'/GSWP3_'+varname+'_'
-        if ('daymet4' in met_type.lower()):# from 1980-2014, and 1km resolution
-            fdirheader = metdir+'/GSWP3_daymet4_'+varname+'_'
-        elif('daymet' in met_type.lower() and 'v1' in met_type.lower()):# from 1980-2010, half-degree
-            fdirheader = metdir+'/GSWP3v1_Daymet_'+varname+'_'
-        elif('daymet' in met_type.lower()):# from 1980-2014, half-degree
-            fdirheader = metdir+'/GSWP3_Daymet_'+varname+'_'
+        fdirheader = options.met_dir+'/GSWP3_'+varname+'_'
+        if ('daymet4' in out_mettype.lower()):# from 1980-2014, and 1km resolution
+            fdirheader = options.met_dir+'/GSWP3_daymet4_'+varname+'_'
+        elif('daymet' in options.met_dir.lower() and 'v1' in out_mettype.lower()):# from 1980-2010, half-degree
+            fdirheader = options.met_dir+'/GSWP3v1_Daymet_'+varname+'_'
+        elif('daymet' in options.met_dir.lower()):# from 1980-2014, half-degree
+            fdirheader = options.met_dir+'/GSWP3_Daymet_'+varname+'_'
         ncfilein_cplbypass = sorted(glob.glob("%s*.*" % fdirheader))
         ncfilein_cplbypass = ncfilein_cplbypass[0]
         
-    elif 'site' in met_type.lower():
-        fdir = metdir+'/'
+    elif 'site' in out_mettype.lower():
+        fdir = options.met_dir+'/'
         # So 'metdir' must be full path, e.g. ../atm/datm7/CLM1PT_data/1x1pt_US-Brw
         ncfilein_cplbypass=fdir+'all_hourly.nc'
     
@@ -1274,17 +1173,26 @@ if (options.nc_create or options.nc_write):
     # (1) if in original output format
     if NCOUT_ORIGINAL:
         if (options.met_header==''):
-            dirfiles = sorted(os.listdir(fdir))
+            dirfiles = sorted(os.listdir(options.met_dir))
         else:
-            fdirheader=fdir+options.met_header.strip()
+            fdirheader=options.met_dir+'/'+options.met_header.strip()
             dirfiles = sorted(glob.glob("%s*.*" % fdirheader))  # maybe file pattern in 'fileheader'
-        if (os.path.isfile(dirfiles[0]) and str(dirfiles[0]).endswith('.nc')):
+        if len(dirfiles)<=0: 
+            print('Error: No template met nc file FOUND to create new one as following - ')
+            print(fdirheader)
+            sys.exit(-1)
+        elif (os.path.isfile(dirfiles[0]) and str(dirfiles[0]).endswith('.nc')):
             ncfilein = dirfiles[0]
+        else:
+            print('Error: No template met nc file FOUND to create new one as following - ')
+            print(dirfiles[0])
+            sys.exit(-2)
+            
         
         yyyymm=ncfilein.split('/')[-1]
         yyyymm=yyyymm.split('.')[-2]
         # elm met file usually ending like '*.1980-01.nc', while in CPL_BYPASS format, ending like '*_1901-2014_z??.nc'
-        if ('GSWP3' in met_type): yyyymm = yyyymm.split('_')[-2]
+        if ('GSWP3' in options.met_type): yyyymm = yyyymm.split('_')[-2]
         yyyy=yyyymm.split('-')[-2]
         mm=yyyymm.split('-')[-1]  # for 'GSWP3', 'mm' is the end-year while 'yyyy' is the starting-year
         
@@ -1330,7 +1238,11 @@ if (options.nc_create or options.nc_write):
                     # varatts must in format: 'varname::att=att_val; varname::att=att_val; ...'
                     if error!=0: sys.exit('nfmod.putvar WRONG')
                 
-                #elif(options.nc_write):
+                elif(options.nc_write):
+                    if (not os.path.isfile(ncfileout)): 
+                        print('Error: File '+ncfileout+ ' NOT exists, so CANNOT write data into.')
+                        sys.exit(-3)
+                #
                 if (varname=='PRECTmms'): 
                     varvals=varvals/86400.0 # mm/day -> mm/s
                 
@@ -1343,10 +1255,10 @@ if (options.nc_create or options.nc_write):
     #(2) in cplbypass format (NOTE: can output both original and cplbypass)
     if (NCOUT_CPLBYPASS): print('cpl_bypass template file: '+ ncfilein_cplbypass)
     if (NCOUT_CPLBYPASS and ncfilein_cplbypass!=''):
-        if 'site' in met_type.lower()  or 'GSWP3' in met_type: 
-            if 'site' in met_type.lower():
+        if 'site' in out_mettype.lower()  or 'GSWP3' in out_mettype: 
+            if 'site' in out_mettype.lower():
                 ncfileout_cplbypass='all_hourly.nc'
-            elif 'GSWP3' in met_type:
+            elif 'GSWP3' in out_mettype:
                 ncfileout_cplbypass=ncfilein_cplbypass.split('/')[-1]
             else:
                 print('currently only support 2 types of cpl_bypass: Site or GSWP3*')
@@ -1383,12 +1295,15 @@ if (options.nc_create or options.nc_write):
                 
                 error=nfmod.putvar(ncfileout_cplbypass,['LONGXY'], LONGXY)
                 error=nfmod.putvar(ncfileout_cplbypass,['LATIXY'], LATIXY)
-                if 'site' in met_type.lower():
+                if 'site' in out_mettype.lower():
                     error=nfmod.putvar(ncfileout_cplbypass,['start_year'], np.floor(t_jointed[0]/365.0))
                     error=nfmod.putvar(ncfileout_cplbypass,['end_year'], np.floor(t_jointed[-1]/365.0))
-
+            #
+            elif(options.nc_write):
+                if (not os.path.isfile(ncfileout_cplbypass)): 
+                    print('Error: File '+ncfileout_cplbypass+ ' NOT exists, so CANNOT write data into.')
+                    sys.exit(-3)
             
-            #elif(options.nc_write):
             if (varname=='PRECTmms' and varunit=='mm/d'): sdata_jointed=sdata_jointed/86400.0 # mm/d -> mm/s
             # scaling data as initeger
             if (varname=='PRECTmms'):
