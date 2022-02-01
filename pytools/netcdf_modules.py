@@ -106,7 +106,7 @@ def putvar(ncfile, varname, varvals, varatts=''):
 def dupexpand(ncfilein, ncfileout,dim_name='',dim_len=-999, dim_multipler=1):
     # dim_len -999, no-change; dim_len 0, unlimited; dime_len positive, re-size
     # but dim_multipler must be 1 (obviously)
-    if (dim_len>=0 and dim_multipler>1):
+    if type(dim_name)==str and (dim_len>=0 and len(dim_multipler)>1):
         print('Error: cannot have new-dim_len and multiplied len -', dim_len, dim_multipler)
         sys.exit(-1)
     
@@ -126,10 +126,10 @@ def dupexpand(ncfilein, ncfileout,dim_name='',dim_len=-999, dim_multipler=1):
             len_dimension = len(dimension)
             if name in dim_name:
                 indx=dim_name.index(name)
-                if (dim_multipler[indx]>1):
-                    len_dimension = len(dimension)*dim_multipler[indx]
-                elif (dim_len[indx]>0):
+                if (dim_len[indx]>0):
                     len_dimension = dim_len[indx]
+                elif (dim_multipler[indx]>1):
+                    len_dimension = len(dimension)*dim_multipler[indx]
                 elif (dim_len[indx]==0):
                     dimension=None
             
@@ -150,29 +150,30 @@ def dupexpand(ncfilein, ncfileout,dim_name='',dim_len=-999, dim_multipler=1):
             varvals = np.copy(src[name][...])
             for dim in dim_name:
                 if dim in variable.dimensions:
-                    if dim_multipler[dim_name.index(dim)]>1:
+                     if dim_len[dim_name.index(dim)]>0:
+                        dim_indx = variable.dimensions.index(dim)
+                        resizer = dim_len[dim_name.index(dim)]
+                        if(resizer>np.size(varvals, axis=dim_indx)):
+                            tmp=np.zeros(dst.variables[name].shape)
+                            # the following is slow, if length too big
+                            tmp = varvals
+                            esizer = resizer - np.size(varvals, axis=dim_indx)
+                            while resizer>1:
+                                varval = np.take(varvals, [0], axis=dim_indx)
+                                tmp=np.concatenate((tmp,varval), axis=dim_indx)
+                                resizer-=1
+                        else:
+                            tmp = np.take(varvals, range(resizer), axis=dim_indx)
+                    
+                     elif dim_multipler[dim_name.index(dim)]>1:
                         dim_indx = variable.dimensions.index(dim)
                         multipler = dim_multipler[dim_name.index(dim)]
                         tmp=varvals
                         while multipler>1:
                             tmp=np.concatenate((tmp,varvals), axis=dim_indx)
                             multipler-=1
-                    elif dim_len[dim_name.index(dim)]>0:
-                        dim_indx = variable.dimensions.index(dim)
-                        resizer = dim_len[dim_name.index(dim)]
-                        if(resizer>np.size(varvals, axis=dim_indx)):
-                            tmp=np.zeros(dst.variables[name].shape)
-                            # the following is slow, if length too big
-                            # tmp = varvals
-                            #resizer = resizer - np.size(varvals, axis=dim_indx)
-                            #while resizer>1:
-                            #    varval = np.take(varvals, [0], axis=dim_indx)
-                            #    tmp=np.concatenate((tmp,varval), axis=dim_indx)
-                            #    resizer-=1
-                        else:
-                            tmp = np.take(varvals, range(resizer), axis=dim_indx)
-                    #
-                    varvals=tmp
+                     #
+                     varvals=tmp
             #           
                 
             dst[name][...] = np.copy(varvals)
@@ -548,7 +549,9 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 #os.system('rm -rf test02.nc')
 
 # duplicately expanding nc files along named dimension(s)
-#dupexpand('test01.nc', 'test02.nc', ['lsmlat','lsmlon'], [2,3])
+#dupexpand('surfdata.nc', 'surfdata2.nc', dim_name=['lsmlat','lsmlon'], dim_len=[1,8])
+#dupexpand('domain.nc', 'domain2.nc', dim_name='ni', dim_multipler=8)
+#dupexpand('domain.lnd.test01_navy.nc', 'test02_navy.nc', dim_name=['nj','ni'], dim_len=[1,2])
 #dupexpand('landuse.timeseries_1x1pt_kougarok-NGEE_simyr1850-2015_c181015m64.nc', 'test6x1.nc', ['lsmlat','lsmlon'], [1,6])
 
 # merge 2 files along 1-only named-dimension
