@@ -51,6 +51,7 @@ def Daymet_ELM_mapinfo(mapfile, redoxy=False):
             jj=np.argmin(abs(geoy[ig]-yy))
             xidx[ig] = ii
             yidx[ig] = jj
+            gidx[ig] = ig
             
             # re-write daymet_elm_mapping.txt    
             #'(f12.5,1x,f12.6,1x, 2(f15.1, 1x),3(I5,1x))'
@@ -135,19 +136,17 @@ if True:
     zline_file = cwdir+'zone_mappings.txt' # this is for CPL_BYPASS in ELM
     if(options.workdir+'zone_mappings.txt'==zline_file): # don't over-write the first one
         zline_file = cwdir+'merged-zone_mappings.txt'
-    os.system('cp '+options.workdir+'zone_mappings.txt '+zline_file)
+    # need to know the first zone number, which will be a single zone for all when mergeing
+    f = open(options.workdir+'zone_mappings.txt', 'r')
+    z1st_no = f.readline().rstrip().split()
+    z1st_no = int(z1st_no[2])
+    f.close()
+
+    
     if (options.workdir2!=''):
         for dir2 in workdir2:
             # mapfile is NOT with path, but in different dir2
             [lon2, lat2, geox2, geoy2, xx2, yy2, xidx2, yidx2, gidx2] = Daymet_ELM_mapinfo(dir2.strip()+'/'+mapfile, redoxy=options.redoxy)
-            
-            # appending 'zone_mappings.txt'
-            f  = open(zline_file, 'a+')
-            f2 = open(dir2+'/zone_mappings.txt','r')
-            f.write(f2.read())
-            f.close()
-            f2.close()
-            
             
             # x/yidx of the 1st in original/individual tiles
             xidx1st_1 = xidx[0]
@@ -163,12 +162,17 @@ if True:
             xx = np.unique(np.append(xx, xx2))
             yy = np.unique(np.append(yy, yy2))
             
-            # gidx are those in individual nc files, so keep it as original
+            
             lon = np.append(lon, lon2)
             lat = np.append(lat, lat2)
             geox = np.append(geox, geox2)
             geoy = np.append(geoy, geoy2)
-            gidx = np.append(gidx, gidx2)
+            if (options.mapfile_only): 
+                # gidx are those in individual nc files, so keep it as original if not merge nc files
+                gidx = np.append(gidx, gidx2)
+            else:
+                # gidx are those in individual nc files, need to add it up when merge nc files
+                gidx = np.append(gidx, gidx[-1]+1+gidx2)
             cumsum_gid = cumsum_gid + len(gidx2)
             count_gid = np.append(count_gid, cumsum_gid)
             
@@ -186,13 +190,16 @@ if True:
             xidx = np.append(xidx, xidx2)
             yidx = np.append(yidx, yidx2)
         
-    # daymet_elm_mapping.txt    
+    # daymet_elm_mapping.txt, zone_mappings.txt
     mapfile_out = cwdir+options.gridmap.strip().split('/')[-1]
     if(options.workdir+mapfile==mapfile_out):
         mapfile_out = cwdir+'merged-'+options.gridmap.strip().split('/')[-1]
     f = open(mapfile_out, 'w')
     fheader='     lon          lat        geox            geoy       i     j     g '
     f.write(fheader+'\n')
+    
+    f2 = open(zline_file, 'w')
+    
     for ig in range(len(gidx)):
         #'(f12.5,1x,f12.6,1x, 2(f15.1, 1x),3(I5,1x))'
         f.write('%12.5f ' % lon[ig] )
@@ -203,7 +210,15 @@ if True:
         f.write('%5d ' % (yidx[ig]+1) )
         f.write('%5d ' % (gidx[ig]+1) )
         f.write('\n')
+        
+        f2.write('%12.5f ' % lon[ig] )
+        f2.write('%12.6f ' % lat[ig] )
+        f2.write('%5d ' % z1st_no )
+        f2.write('%5d ' % (gidx[ig]+1) )
+        f2.write('\n')
+    
     f.close()
+    f2.close()
     if options.mapfile_only: os.sys.exit()
     
     
@@ -250,6 +265,7 @@ if True:
         
         print ('DONE with ncfile: ', ncfile)
     # end of 'for ncfile in alldirfiles:'
+    
     
 # end of 'if (options.workdir2 != ""):' 
 #-------------------------------------------------------------------------

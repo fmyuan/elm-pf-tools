@@ -112,29 +112,32 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
             #gridtext.append(("GRID "+str(igrd)))
             plt.plot(t, sdata[:,igrd])
         #gridtext.append(["NAMC","DSLT","AS","WBT","TT-WBT","TT"])
-        #gridtext.append("Daymet_Tile13868 (Kougarok Site")
+        gridtext.append("Daymet_Tile13868")
 
     else:
         #gridtext.append(("GRID "+str(0)))
         plt.plot(t, sdata)
         
     
-    plt.legend((gridtext), loc=0, fontsize=14)
+    plt.legend((gridtext), loc=0, fontsize=20)
     
     # plot X/Y axis label, if manually change
-    #t_unit = 'DOY'
-    #varname = 'Snow depth (m)' #'Snow water equivalent (mm)'
-    plt.xlabel(t_unit, fontsize=18, fontweight='bold')
-    plt.ylabel(varname, fontsize=18, fontweight='bold')
+    t_unit = 'DOY'
+    varname = 'Snow depth (m)'
+    #varname = 'Snow water equivalent (mm)'
+    plt.xlabel(t_unit, fontsize=28, fontweight='bold')
+    plt.ylabel(varname, fontsize=28, fontweight='bold')
     
     ax_user=plt.gca()
-    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 18)
+    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 24)
 
-    lx = 0.10
-    ly = 0.90
+    lx = 0.20
+    ly = 0.85
     plot_title = ''
-    #plot_title = 'Daymet_Tile13868(Kougarok Site)' #plotlabel, if any
-    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=18, fontweight='bold')
+    #plot_title = 'Daymet_Tile13868(Kougarok)' #plotlabel, if any
+    plt.rcParams["font.weight"] = "bold"
+    plt.rcParams["axes.labelweight"] = "bold"
+    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=20, fontweight='bold')
 
 #-------------------Parse options-----------------------------------------------
 
@@ -332,7 +335,7 @@ for var in varnames:
     t = np.asarray(t)*day_scaling + tunit0
 
     #if manually offset time
-    t0 = 0 
+    t0 = 2014*365 
     t = t - t0
     tunit = tunit.upper()
 
