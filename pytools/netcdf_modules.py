@@ -5,7 +5,6 @@ from netCDF4 import Dataset
 from netCDF4 import Variable
 from array import array
 from numpy import newaxis
-ncopath = '/usr/local/nco/bin'
 
 #----------------------------------------------------------------------------             
 def getvar(ncfile, varname):
@@ -243,10 +242,7 @@ def mergefilesby1dim(ncfilein1, ncfilein2, ncfileout, dim_name):
                     
                     varvals1 = np.put_along_axis(varvals1, idx1, varvals12, axis=dim_indx)
                     varvals2 = np.delete(varvals2, idx2, axis=dim_indx)
-                if ((d1[0]<=d2[0] and d1[0]<=d1[-1]) or (d1[0]>=d2[0] and d1[0]>=d1[-1])):
-                    tmp=np.concatenate((varvals1,varvals2), axis=dim_indx)
-                else:
-                    tmp=np.concatenate((varvals2,varvals1), axis=dim_indx)
+                tmp=np.concatenate((varvals2,varvals1), axis=dim_indx)
                 
             dst[name][...] = np.copy(tmp)
         
@@ -351,7 +347,7 @@ def overlayfiles(ncfilein1, ncfilein2, ncfileout):
 
 #----------------------------------------------------------------------------             
 #Using NCO to extract all variables along named dimensions
-def nco_extract(ncfilein, ncfileout,dim_names,dim_starts, dim_lens, ncksdir=ncopath):   
+def nco_extract(ncfilein, ncfileout,dim_names,dim_starts, dim_lens, ncksdir=""):
     
     if(not os.path.isfile(ncfilein)): 
         print('Error: invalid input NC file: '+ncfilein)
@@ -377,7 +373,7 @@ def nco_extract(ncfilein, ncfileout,dim_names,dim_starts, dim_lens, ncksdir=ncop
                                 +str(dim_starts[idim]+dim_lens[idim]-1)
 
     #
-    if(not ncksdir.endswith('/')):
+    if((ncksdir!="") & (not ncksdir.endswith('/'))):
         ncksdir = ncksdir.strip()+'/'
     os.system(ncksdir+'ncks --no_abc -O '+ dim_string+ \
           ' '+ncfilein+' '+ncfileout)
