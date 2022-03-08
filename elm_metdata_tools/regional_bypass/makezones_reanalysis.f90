@@ -24,7 +24,7 @@ character(len=20) met_type
 
 integer ierr, ncid, varid, dimid1
 ! met data zoning parameters
-integer, parameter:: ngzx = 12000           ! max. grids in a N-S strip (i.e. zone)
+integer, parameter:: ngzx = 50000           ! max. grids in a N-S strip (i.e. zone)
 integer nzx, nz, ng                         ! min. and actual numbers of zones (N-S strips), total masked grids
 integer, pointer :: ngi(:), zng(:)          ! actual masked grids in each x/longitude interval and each zone
 integer nzg                                 ! max. zone i-axis intervals
@@ -594,13 +594,15 @@ do v=myid+1,7,np
  if (myid .eq. 0) close(9)
 end do   !Variable loop
 
+call mpi_barrier(ierr)
+
 deallocate(xc)
 deallocate(xc1d)
 deallocate(yc)
 deallocate(yc1d)
-if(associated(xv)) deallocate(xv)
-if(associated(yv)) deallocate(yv)
-deallocate(mask)
+!if(associated(xv)) deallocate(xv)
+!if(associated(yv)) deallocate(yv)
+!if(associated(mask)) deallocate(mask)
 
 deallocate(longxy)
 deallocate(latixy)
