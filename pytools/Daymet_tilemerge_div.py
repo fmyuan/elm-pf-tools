@@ -97,8 +97,14 @@ parser.add_option("--mapfile_only", dest="mapfile_only", default=False, \
                   help = " ONLY merge mapfile ", action="store_true")
 parser.add_option("--mapfile_redoxy", dest="redoxy", default=False, \
                   help = " redo x/y index in mapfile ", action="store_true")
-parser.add_option("--subzone_gridnumber", dest="zone_gnumber", default=36000, \
-                  help = " new tile zone grid numbers ")
+parser.add_option("--subdomain_gridnumber", dest="zone_grdnum", default=36000, \
+                  help = " sud-domain grid numbers, by default 36,000 ")
+parser.add_option("--subdomain_number", dest="zone_num", default=0, \
+                  help = " sub-domain numbers , by default uppon to subdomain_gridnumber which can be overriden by giving a number over 0")
+parser.add_option("--subdomain_cores", dest="zone_cores", default=6, \
+                  help = " sub-domain on number of cores , by default 6 i.e. subdomain is for running at 6 cores ")
+parser.add_option("--ncfile_header", dest="fileheader", default="GSWP3_daymet", \
+                  help = "netcdf file name header, by default 'GSWP3_daymet*', i.e. high-res forcing data files only ")
 parser.add_option("--ncobinpath", dest="ncobinpath", default="", \
                       help = "NCO bin path if not in $PATH")
 
@@ -130,7 +136,7 @@ if not cwdir.endswith('/'): cwdir = cwdir+'/'
 # Note: the output data is in 1D of gridcell or landgridcell
 if True:
     
-    pathfileheader = options.workdir+'GSWP3_daymet4'
+    pathfileheader = options.workdir+options.fileheader
     
     # mapping file reading for the first (primary) workdir
     mapfile = options.gridmap.strip()  # for 1D <--> 2D
@@ -206,22 +212,54 @@ if True:
     f = open(mapfile_out, 'w')
     fheader='     lon          lat        geox            geoy       i     j     g '
     f.write(fheader+'\n')
-    
     f2 = open(zline_file, 'w')
     
     # newly-creating subzone
-    z_gsize = int(options.zone_gnumber)       # this is max.
-    z_num = math.ceil(len(gidx)/z_gsize)
+    z_gsize = int(options.zone_grdnum)        # this is max.
+    if (int(options.zone_num)>0):
+        z_num = int(options.zone_num)
+    else:
+        z_num = math.ceil(len(gidx)/z_gsize)
     z_gsize = math.floor(len(gidx)/z_num)     # this is the actual
-    z_gres = len(gidx)%z_gsize                # this number of residual will distribute to first 'g_res' zones with 1 for each
+    z_gres = len(gidx)%z_gsize                # this number of residual will distribute to first 'g_res' zones with 6 for each and less than 6 for the last
     z_gid = gidx.copy()                       # original gidx for new subzone
     z_gid[:] = 0
     
     g_0 = 0
-    g_accsum = z_gsize
     g_zno = 1
-    if (g_zno<=z_gres): g_accsum = g_accsum + 1
+    g_accsum = z_gsize
+    z_cores = int(options.zone_cores)
+    z_gres1 = math.floor(z_gres/z_cores)       # so z_gres = z_gres1*cores+z_gresx
+    z_gresx = z_gres%z_cores
+    if (g_zno<=z_gres1): 
+        g_accsum = g_accsum + z_cores
+    elif (g_zno==(z_gres1+1) and z_gresx>0):
+        g_accsum = g_accsum + z_gresx
+    
+    fsub = open(mapfile_out+str(int(g_zno)).zfill(3), 'w')
+    fsub.write(fheader+'\n')
+    fsub2 = open(zline_file+str(int(g_zno)).zfill(3), 'w')
+    
     for ig in range(len(gidx)):
+        if ig>=g_accsum:
+            fsub.close()
+            fsub2.close()
+            
+            g_0 = g_accsum
+            g_zno = g_zno + 1
+            g_accsum = g_accsum + z_gsize
+            if (g_zno<=z_gres1): 
+                g_accsum = g_accsum + z_cores
+            elif (g_zno==(z_gres1+1) and z_gresx>0):
+                g_accsum = g_accsum + z_gresx
+                    
+            fsub = open(mapfile_out+str(int(g_zno)).zfill(3), 'w')
+            fsub.write(fheader+'\n')
+            fsub2 = open(zline_file+str(int(g_zno)).zfill(3), 'w')
+            
+        z_gid[ig] = g_zno
+        
+        #merged mapping files
         #'(f12.5,1x,f12.6,1x, 2(f15.1, 1x),3(I5,1x))'
         f.write('%12.5f ' % lon[ig] )
         f.write('%12.6f ' % lat[ig] )
@@ -231,23 +269,32 @@ if True:
         f.write('%5d ' % (yidx[ig]+1) )
         f.write('%5d ' % (gidx[ig]+1) )
         f.write('\n')
-        
-        if ig>=g_accsum: 
-            g_0 = g_accsum
-            g_accsum = g_accsum + z_gsize
-            g_zno = g_zno + 1
-            if (g_zno<=z_gres): g_accsum = g_accsum + 1
-        z_gid[ig] = g_zno
-        
         f2.write('%12.5f ' % lon[ig] )
         f2.write('%12.6f ' % lat[ig] )
         f2.write('%5d ' % g_zno )
         f2.write('%5d ' % (gidx[ig]+1-g_0) )
         f2.write('\n')
         
-    
+        # sub mapping files
+        fsub.write('%12.5f ' % lon[ig] )
+        fsub.write('%12.6f ' % lat[ig] )
+        fsub.write('%15.1f ' % geox[ig] )
+        fsub.write('%15.1f ' % geoy[ig] )
+        fsub.write('%5d ' % (xidx[ig]+1) )  #x/yidx were 0-based, but need to 1-based for the mapping file
+        fsub.write('%5d ' % (yidx[ig]+1) )
+        fsub.write('%5d ' % (gidx[ig]+1-g_0) )
+        fsub.write('\n')
+        fsub2.write('%12.5f ' % lon[ig] )
+        fsub2.write('%12.6f ' % lat[ig] )
+        fsub2.write('%5d ' % g_zno )
+        fsub2.write('%5d ' % (gidx[ig]+1-g_0) )
+        fsub2.write('\n')
+        
+    #
     f.close()
     f2.close()
+    fsub.close()
+    fsub2.close()
     if options.mapfile_only: os.sys.exit()
     
     
@@ -265,9 +312,14 @@ if True:
     for zno in range(z_num):
         # output directories
         zno_name = str(int(zno+1)).zfill(3)
-        ncdirout = "DOMAIN_SUB"+zno_name
+        ncdirout = "sub"+zno_name
         if (os.path.exists(ncdirout)): os.system('rm -rf '+ncdirout)
         os.system('mkdir '+ncdirout)
+        
+        fsub = mapfile_out+str(int(zno+1)).zfill(3)
+        fsub2 = zline_file+str(int(zno+1)).zfill(3)
+        os.system('mv '+fsub+' '+ncdirout+'/'+mapfile)
+        os.system('mv '+fsub2+' '+ncdirout+'/zone_mappings.txt')
         
         for ncfile in alldirfiles:
             
@@ -279,6 +331,12 @@ if True:
                 ncfileout = ncdirout+"/"+ncfname.replace(z0str,'z'+zno_name)
             else:
                 ncfileout = ncdirout+"/"+ncfname
+                if ('domain' in ncfname  or 'surfdata' in ncfname):
+                    merged_ncfileout = "./merged_"+ncfname  # additionally, merge 'domain.nc'
+                    if (os.path.isfile(merged_ncfileout) and zno==0): 
+                        os.system('rm '+merged_ncfileout)
+            if (os.path.isfile(ncfileout) and zno==0): 
+                os.system('rm '+ncfileout)
             
             zworkdir=tile_dir[np.where(z_gid==zno+1)]
             zworkdir=np.unique(zworkdir)
@@ -300,26 +358,40 @@ if True:
                     break # break 'for dir2 in workdir2:'
                 else:
                     print ('Processing - ', ncfile2[0], '==> ', ncfileout)
-                    
+        
+                    dim_name = ['n']
+                    if ('domain' in ncfile):
+                        dim_name = ['ni']
+                    elif ('surfdata' in ncfile):
+                        dim_name = ['gridcell']
+            
                     gidx=tile_gid[np.where((tile_dir==dir) & (z_gid==zno+1))]
+                    if (os.path.isfile('temp.nc')): os.system('rm temp.nc')
                     if (options.ncobinpath==""):
-                        ncmod.nco_extract(ncfile2[0], 'temp.nc', ['n'], 
+                        ncmod.nco_extract(ncfile2[0], 'temp.nc', dim_name, 
                                 [gidx[0]], [len(gidx)])
                     else:
-                        ncmod.nco_extract(ncfile2[0], 'temp.nc', ['n'], 
+                        ncmod.nco_extract(ncfile2[0], 'temp.nc', dim_name, 
                                 [gidx[0]], [len(gidx)],ncksdir=options.ncobinpath)
                     
+                    if ('domain' in ncfname  or 'surfdata' in ncfname):
+                       if (os.path.isfile(merged_ncfileout)):
+                           os.system('mv '+merged_ncfileout+' temp1.nc')
+                           ncmod.mergefilesby1dim('temp1.nc', 'temp.nc', merged_ncfileout, dim_name[0])
+                       else:
+                           os.system('cp temp.nc '+merged_ncfileout)
+                    
                     if (os.path.isfile(ncfileout)):
-                        os.system('mv '+ncfileout+' temp0.nc')
-                        ncmod.mergefilesby1dim('temp0.nc', 'temp.nc', ncfileout, 'n')
+                       os.system('mv '+ncfileout+' temp0.nc')
+                       ncmod.mergefilesby1dim('temp0.nc', 'temp.nc', ncfileout, dim_name[0])
                     else:
-                        os.system('mv temp.nc '+ncfileout)
+                       os.system('cp temp.nc '+ncfileout)
                     
                     
             #end of for dir in zworkdir
         
         #end of for zno in zones
-        os.system('rm -f temp.nc temp0.nc')
+        os.system('rm -f temp.nc temp0.nc temp1.nc')
         
         print ('DONE with ncfile: ', ncfile)
     # end of 'for ncfile in alldirfiles:'
