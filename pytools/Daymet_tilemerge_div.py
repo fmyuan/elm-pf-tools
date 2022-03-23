@@ -7,6 +7,7 @@ import numpy as np
 #from datetime import datetime, date
 from optparse import OptionParser
 from copy import deepcopy
+from mpi4py import MPI
 
 import netcdf_modules as ncmod
 
@@ -112,18 +113,22 @@ parser.add_option("--ncobinpath", dest="ncobinpath", default="", \
 
 cwdir = './'
 
+mycomm = MPI.COMM_WORLD
+myrank = mycomm.Get_rank()
+mysize = mycomm.Get_size()
+
 #
 if (options.workdir == './'):
-    print('data directory is the current')
+    if myrank==0: print('data directory is the current')
 else:
-    print('data directory: '+ options.workdir)
+    if myrank==0: print('data directory: '+ options.workdir)
 
 if (options.workdir2 != ''):
-    print('outputs will be merged from: '+ options.workdir2+' into: ' +options.workdir)
     workdir2=options.workdir2.strip().split(',') # multiple directories, separated by ','
+    if myrank==0: print('outputs will be merged from: '+ workdir2[0]+' into: ' +options.workdir)
 
 if (options.gridmap == ''):
-    print('MUST input daymet_elm_mapping txt file, including fullpath, by " --daymet_elm_mapfile=???"')
+    if myrank==0: print('MUST input daymet_elm_mapping txt file, including fullpath, by " --daymet_elm_mapfile=???"')
     sys.exit()
 # 
 
@@ -132,28 +137,44 @@ if not cwdir.endswith('/'): cwdir = cwdir+'/'
 
 #------------------------------------------------------------------------------
 
-# 
+#
+pathfileheader = options.workdir+options.fileheader
+mapfile = options.gridmap.strip()  # for 1D <--> 2D
+
+mapfile_out = cwdir+options.gridmap.strip().split('/')[-1]
+if(options.workdir+mapfile==mapfile_out):
+    mapfile_out = cwdir+'merged-'+options.gridmap.strip().split('/')[-1]
+
+zline_file = cwdir+'zone_mappings.txt' # this is for CPL_BYPASS in ELM
+if(options.workdir+'zone_mappings.txt'==zline_file): # don't over-write the first one
+    zline_file = cwdir+'merged-zone_mappings.txt'
+
+gidx_len = None
+z_num = None
+
+#it's hard to mpi bcast np string array
+wdir_all ={}
+wdir_all[0] = options.workdir
+if (options.workdir2!=''):
+    for idir2 in range(len(workdir2)): 
+        wdir_all[idir2+1]=workdir2[idir2]
+
 # Note: the output data is in 1D of gridcell or landgridcell
-if True:
-    
-    pathfileheader = options.workdir+options.fileheader
+if myrank==0:
     
     # mapping file reading for the first (primary) workdir
-    mapfile = options.gridmap.strip()  # for 1D <--> 2D
     [lon, lat, geox, geoy, xx, yy, xidx, yidx, gidx] = Daymet_ELM_mapinfo(options.workdir+mapfile, redoxy=options.redoxy)
     cumsum_gid = len(gidx)
     count_gid  = [np.asarray(cumsum_gid)]
     tile_gid = [np.asarray(cumsum_gid)]
     tile_gid[:] = gidx
-    tile_dir = np.zeros(len(gidx), dtype=object)
-    tile_dir[:] = options.workdir
+    tile_idir = np.zeros(len(gidx), dtype=np.int)
+    tile_idir[:] = 0
     
-    zline_file = cwdir+'zone_mappings.txt' # this is for CPL_BYPASS in ELM
-    if(options.workdir+'zone_mappings.txt'==zline_file): # don't over-write the first one
-        zline_file = cwdir+'merged-zone_mappings.txt'
     
     if (options.workdir2!=''):
-        for dir2 in workdir2:
+        for idir2 in range(len(workdir2)):
+            dir2 = workdir2[idir2]
             # mapfile is NOT with path, but in different dir2
             [lon2, lat2, geox2, geoy2, xx2, yy2, xidx2, yidx2, gidx2] = Daymet_ELM_mapinfo(dir2.strip()+'/'+mapfile, redoxy=options.redoxy)
             
@@ -185,9 +206,9 @@ if True:
             cumsum_gid = cumsum_gid + len(gidx2)
             count_gid = np.append(count_gid, cumsum_gid)
             
-            tmp_dir = np.zeros(len(gidx2), dtype=object)
-            tmp_dir[:] = dir2
-            tile_dir = np.append(tile_dir, tmp_dir)
+            tmp_idir = np.zeros(len(gidx2), dtype=np.int)
+            tmp_idir[:] = idir2+1
+            tile_idir = np.append(tile_idir, tmp_idir)
             tile_gid = np.append(tile_gid, gidx2)
             
             # xidx/yidx are in to-be-merged nc file, so need to redo them by adding x/y offsets
@@ -205,10 +226,6 @@ if True:
             yidx = np.append(yidx, yidx2)
         
     # daymet_elm_mapping.txt, zone_mappings.txt
-    
-    mapfile_out = cwdir+options.gridmap.strip().split('/')[-1]
-    if(options.workdir+mapfile==mapfile_out):
-        mapfile_out = cwdir+'merged-'+options.gridmap.strip().split('/')[-1]
     f = open(mapfile_out, 'w')
     fheader='     lon          lat        geox            geoy       i     j     g '
     f.write(fheader+'\n')
@@ -240,7 +257,8 @@ if True:
     fsub.write(fheader+'\n')
     fsub2 = open(zline_file+str(int(g_zno)).zfill(3), 'w')
     
-    for ig in range(len(gidx)):
+    gidx_len = len(gidx)
+    for ig in range(gidx_len):
         if ig>=g_accsum:
             fsub.close()
             fsub2.close()
@@ -295,21 +313,53 @@ if True:
     f2.close()
     fsub.close()
     fsub2.close()
-    if options.mapfile_only: os.sys.exit()
     
     
-    #--------------------------------------------------------------------------------------------
-    # data
-    ftype = 'nc'
-    alldirfiles = sorted(glob.glob("%s*.%s" % (pathfileheader, ftype))) # first daymet tile
-    if(len(alldirfiles)<=0):
-        sys.exit("No file exists - %s*.%s IN %s" %(pathfileheader, ftype, options.workdir))
-    else:
-        print('Total Files of: '+str(len(alldirfiles)))
+#--------------------------------------------------------------------------------------------
+# the following need Bcast to each mpi rank
+gidx_len = mycomm.bcast(gidx_len, root=0)
+z_num = mycomm.bcast(z_num, root=0)
+
+if myrank != 0:
+    tile_idir = np.empty(gidx_len, dtype=np.int)
+    tile_gid = np.empty(gidx_len, dtype=np.int)
+    z_gid = np.empty(gidx_len, dtype=np.int)
+else:
+    print('Total Grids: ', gidx_len, 'Total Sub-Zones: ', z_num)
     
-    # read-in datasets one by one and do merging/divding
+mycomm.Bcast([tile_idir, MPI.INT], root=0)
+mycomm.Bcast([tile_gid, MPI.INT], root=0)
+mycomm.Bcast([z_gid, MPI.INT], root=0)
+
+# data
+ftype = 'nc'
+alldirfiles = sorted(glob.glob("%s*.%s" % (pathfileheader, ftype))) # first daymet tile
+if(len(alldirfiles)<=0):
+    sys.exit("No file exists - %s*.%s IN %s" %(pathfileheader, ftype, options.workdir))
+else:
+    if myrank==0: print('Total Files of: '+str(len(alldirfiles)))
+
+
+mycomm.Barrier()
+
+# read-in datasets one by one and do merging/divding
+if (not options.mapfile_only):
     
-    for zno in range(z_num):
+    # mpi implementation - simply round-robin 'z_num' over cpu_cores
+    # (best if matching -np with known z_num) 
+    nz_total = z_num
+    nz = math.floor(nz_total/mysize)
+    nz_rank = np.full([mysize], np.int(1))
+    nz_rank = np.cumsum(nz_rank)*nz
+    xz = int(math.fmod(nz_total, mysize))
+    xz_rank = np.full([mysize], np.int(0))
+    if xz>0: xz_rank[:xz]=1
+    nz_rank = nz_rank + np.cumsum(xz_rank) - 1        # ending z index, starting 0, for each rank
+    nz0_rank = np.hstack((0, nz_rank[0:mysize-1]+1))  # starting z index, starting 0, for each rank
+
+    
+    #for zno in range(z_num):
+    for zno in range(nz0_rank[myrank], nz_rank[myrank]+1):
         # output directories
         zno_name = str(int(zno+1)).zfill(3)
         ncdirout = "sub"+zno_name
@@ -320,8 +370,9 @@ if True:
         fsub2 = zline_file+str(int(zno+1)).zfill(3)
         os.system('mv '+fsub+' '+ncdirout+'/'+mapfile)
         os.system('mv '+fsub2+' '+ncdirout+'/zone_mappings.txt')
-        
-        for ncfile in alldirfiles:
+        #
+        for ifile in range(len(alldirfiles)):
+            ncfile = alldirfiles[ifile]
             
             # output filenames
             ncfname = ncfile.split('/')[-1]
@@ -331,74 +382,68 @@ if True:
                 ncfileout = ncdirout+"/"+ncfname.replace(z0str,'z'+zno_name)
             else:
                 ncfileout = ncdirout+"/"+ncfname
-                if ('domain' in ncfname  or 'surfdata' in ncfname):
-                    merged_ncfileout = "./merged_"+ncfname  # additionally, merge 'domain.nc'
-                    if (os.path.isfile(merged_ncfileout) and zno==0): 
-                        os.system('rm '+merged_ncfileout)
             if (os.path.isfile(ncfileout) and zno==0): 
-                os.system('rm '+ncfileout)
+                os.system('rm -f '+ncfileout)
             
-            zworkdir=tile_dir[np.where(z_gid==zno+1)]
-            zworkdir=np.unique(zworkdir)
-           
-            for dir in zworkdir:
+            zworkdirno=tile_idir[np.where(z_gid==zno+1)]
+            zworkdirno=np.unique(zworkdirno)
+            
+            for idir in zworkdirno:
+                dir = wdir_all[idir]
                 file_matched = False
                 ncfile2 = sorted(glob.glob("%s" % (dir.strip()+'/'+ncfname)))
                 if len(ncfile2)==1: 
                     file_matched = True
                 elif len(ncfile2)>1:
-                    print('Error: multiple files matched found in: '+ dir.strip())
-                    print(ncfile2)
+                    if myrank ==0: print('Error: multiple files matched found in: '+ dir.strip())
+                    if myrank ==0: print(ncfile2)
                     sys.exit(-1)
                 else:
-                    print('Warning: NO file matched found in: '+ dir.strip())
-                    print('Warning: skip file merging: '+ncfile)
+                    if myrank ==0: print('Warning: NO file matched found in: '+ dir.strip())
+                    if myrank ==0: print('Warning: skip file merging: '+ncfile)
                 
                 if(not file_matched): 
                     break # break 'for dir2 in workdir2:'
                 else:
-                    print ('Processing - ', ncfile2[0], '==> ', ncfileout)
         
                     dim_name = ['n']
                     if ('domain' in ncfile):
                         dim_name = ['ni']
                     elif ('surfdata' in ncfile):
                         dim_name = ['gridcell']
-            
-                    gidx=tile_gid[np.where((tile_dir==dir) & (z_gid==zno+1))]
-                    if (os.path.isfile('temp.nc')): os.system('rm temp.nc')
+                    
+                    gidx=tile_gid[np.where((tile_idir==idir) & (z_gid==zno+1))]
+                    tmpnc = 'temp_'+zno_name+'_'+str(ifile)+'.nc'
+                    if (os.path.isfile(tmpnc)): os.system('rm -f '+tmpnc)
+                    
                     if (options.ncobinpath==""):
-                        ncmod.nco_extract(ncfile2[0], 'temp.nc', dim_name, 
+                        ncmod.nco_extract(ncfile2[0], tmpnc, dim_name, 
                                 [gidx[0]], [len(gidx)])
                     else:
-                        ncmod.nco_extract(ncfile2[0], 'temp.nc', dim_name, 
+                        ncmod.nco_extract(ncfile2[0], tmpnc, dim_name, 
                                 [gidx[0]], [len(gidx)],ncksdir=options.ncobinpath)
                     
-                    if ('domain' in ncfname  or 'surfdata' in ncfname):
-                       if (os.path.isfile(merged_ncfileout)):
-                           os.system('mv '+merged_ncfileout+' temp1.nc')
-                           ncmod.mergefilesby1dim('temp1.nc', 'temp.nc', merged_ncfileout, dim_name[0])
-                       else:
-                           os.system('cp temp.nc '+merged_ncfileout)
-                    
                     if (os.path.isfile(ncfileout)):
-                       os.system('mv '+ncfileout+' temp0.nc')
-                       ncmod.mergefilesby1dim('temp0.nc', 'temp.nc', ncfileout, dim_name[0])
+                       os.system('mv '+ncfileout+' '+tmpnc+'0')
+                       ncmod.mergefilesby1dim(tmpnc+'0', tmpnc, ncfileout, dim_name[0])
                     else:
-                       os.system('cp temp.nc '+ncfileout)
+                       os.system('cp '+ tmpnc +' '+ncfileout)
                     
-                    
-            #end of for dir in zworkdir
+                
+            #end of for idir in zworkdirno
+            if (dir==wdir_all[len(wdir_all)-1] and zno==z_num-1): 
+                print ('DONE with ncfile: ', ncfile.split('/')[-1], ' ON rank: ', myrank)
         
-        #end of for zno in zones
-        os.system('rm -f temp.nc temp0.nc temp1.nc')
+        #end of 'for ncfile in alldirfiles:'
+        mycomm.Barrier()
+        if (myrank==0): os.system('rm -f temp_*nc*')
         
-        print ('DONE with ncfile: ', ncfile)
-    # end of 'for ncfile in alldirfiles:'
+    # end of 'for zno in range(z_num)'
     
-    
-# end
+# end if (not options.mapfile_only)
 #-------------------------------------------------------------------------
 
+
+MPI.Finalize()
 
 #------------------------------------------------------------------------------------------------

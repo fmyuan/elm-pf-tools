@@ -242,14 +242,14 @@ def mergefilesby1dim(ncfilein1, ncfilein2, ncfileout, dim_name):
                     
                     varvals1 = np.put_along_axis(varvals1, idx1, varvals12, axis=dim_indx)
                     varvals2 = np.delete(varvals2, idx2, axis=dim_indx)
-                tmp=np.concatenate((varvals2,varvals1), axis=dim_indx)
+                tmp=np.concatenate((varvals1,varvals2), axis=dim_indx)
                 
             dst[name][...] = np.copy(tmp)
         
         #
         
     #            
-    print('done!')
+    #print('done!')
 
 #----------------------------------------------------------------------------             
 
@@ -341,7 +341,7 @@ def overlayfiles(ncfilein1, ncfilein2, ncfileout):
         #
         
     #
-    print('done!')
+    #print('done!')
 
 #----------------------------------------------------------------------------             
 
@@ -351,7 +351,7 @@ def nco_extract(ncfilein, ncfileout,dim_names,dim_starts, dim_lens, ncksdir=""):
     
     if(not os.path.isfile(ncfilein)): 
         print('Error: invalid input NC file: '+ncfilein)
-        sys.exit()
+        os.sys.exit()
 
     if(os.path.isfile(ncfileout)): 
         os.system('rm -rf '+ncfileout)
@@ -399,7 +399,7 @@ def nc2csv(file, varnames):
                             
     t_v = np.swapaxes(t_v, 1, 0)
     np.savetxt(file+'.csv', t_v, delimiter=',', fmt='%s')
-    print('done!')
+    #print('done!')
 
 #----------------------------------------------------------------------------             
 # convert geotiff to ncfile
