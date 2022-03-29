@@ -112,6 +112,7 @@ parser.add_option("--ncobinpath", dest="ncobinpath", default="", \
 (options, args) = parser.parse_args()
 
 cwdir = './'
+zdigit = 3
 
 mycomm = MPI.COMM_WORLD
 myrank = mycomm.Get_rank()
@@ -253,9 +254,9 @@ if myrank==0:
     elif (g_zno==(z_gres1+1) and z_gresx>0):
         g_accsum = g_accsum + z_gresx
     
-    fsub = open(mapfile_out+str(int(g_zno)).zfill(3), 'w')
+    fsub = open(mapfile_out+str(int(g_zno)).zfill(zdigit), 'w')
     fsub.write(fheader+'\n')
-    fsub2 = open(zline_file+str(int(g_zno)).zfill(3), 'w')
+    fsub2 = open(zline_file+str(int(g_zno)).zfill(zdigit), 'w')
     
     gidx_len = len(gidx)
     for ig in range(gidx_len):
@@ -271,9 +272,9 @@ if myrank==0:
             elif (g_zno==(z_gres1+1) and z_gresx>0):
                 g_accsum = g_accsum + z_gresx
                     
-            fsub = open(mapfile_out+str(int(g_zno)).zfill(3), 'w')
+            fsub = open(mapfile_out+str(int(g_zno)).zfill(zdigit), 'w')
             fsub.write(fheader+'\n')
-            fsub2 = open(zline_file+str(int(g_zno)).zfill(3), 'w')
+            fsub2 = open(zline_file+str(int(g_zno)).zfill(zdigit), 'w')
             
         z_gid[ig] = g_zno
         
@@ -343,6 +344,7 @@ else:
 mycomm.Barrier()
 
 # read-in datasets one by one and do merging/divding
+#if False: # to skip the following loop
 if (not options.mapfile_only):
     
     # mpi implementation - simply round-robin 'z_num' over cpu_cores
@@ -361,13 +363,13 @@ if (not options.mapfile_only):
     #for zno in range(z_num):
     for zno in range(nz0_rank[myrank], nz_rank[myrank]+1):
         # output directories
-        zno_name = str(int(zno+1)).zfill(3)
+        zno_name = str(int(zno+1)).zfill(zdigit)
         ncdirout = "sub"+zno_name
         if (os.path.exists(ncdirout)): os.system('rm -rf '+ncdirout)
         os.system('mkdir '+ncdirout)
         
-        fsub = mapfile_out+str(int(zno+1)).zfill(3)
-        fsub2 = zline_file+str(int(zno+1)).zfill(3)
+        fsub = mapfile_out+str(int(zno+1)).zfill(zdigit)
+        fsub2 = zline_file+str(int(zno+1)).zfill(zdigit)
         os.system('mv '+fsub+' '+ncdirout+'/'+mapfile)
         os.system('mv '+fsub2+' '+ncdirout+'/zone_mappings.txt')
         #
