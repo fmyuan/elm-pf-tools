@@ -9,7 +9,6 @@ from matplotlib.dates import date2num, num2date
 
 from optparse import OptionParser
 
-from numpy import long, int16
 from netCDF4 import Dataset
 from copy import deepcopy
 
@@ -355,9 +354,10 @@ if (options.elmheader != ""):
             if name=='DTIME': dname='time'# rename 'DTIME' to 'time' so that VISIT can regcon. it
             dst.createDimension(dname, (len(dimension) if not dimension.isunlimited() else None))
             # unlimited dimension name to be included dst output
-            if dimension.isunlimited:
+            if dimension.isunlimited():
                 unlimited_dim = dname
-    
+                unlimited_size = dimension.size  # this is needed for dst, otherise it's 0 which cannot put into data for newer nc4 python
+
         # add geox/geoy dimensions
         geox_dim = dst.createDimension('geox',  len(xx))
         geoy_dim = dst.createDimension('geoy',  len(yy))
@@ -504,10 +504,18 @@ if (options.elmheader != ""):
                 x = dst.createVariable(vname, vdtype, \
                                         dimensions=new_dims, \
                                         zlib=True, fill_value=FillValue)
+                dst[vname].setncatts(src[name].__dict__)
                 
                 # re-assign data from gidx to (yidx,xidx)
                 # gidx should be in order already
-                dst_data = np.asarray(dst[vname])
+                #dst_data = np.asarray(dst[vname])
+                # for newer netcdf4-python, the unlimited dimension in an array is problemic
+                # so have to hack like following
+                re_size = list(dst[vname].shape)
+                for i in range(len(re_size)):
+                    if dst[vname].dimensions[i]==unlimited_dim: re_size[i]=unlimited_size
+                dst_data=np.empty(tuple(re_size), dtype=dst[vname].datatype)
+                dst_data[:]=FillValue
                 
                 for nf in range(file_names.size):
                     # print(nf, file_names[nf],name)
@@ -551,10 +559,10 @@ if (options.elmheader != ""):
                 x = dst.createVariable(vname, variable.datatype, \
                                         dimensions = vdims, \
                                         zlib=True)
+                dst[vname].setncatts(src[name].__dict__)
                 dst[vname][:] = src[name][:]
         
-            # copy variable attributes all at once via dictionary
-            dst[vname].setncatts(src[name].__dict__)
+            #
         
         #
         src.close()
