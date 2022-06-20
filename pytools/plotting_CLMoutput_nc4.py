@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from Modules_CLMoutput_nc4 import CLM_NcRead_1simulation
 from Modules_CLMoutput_nc4 import CLMvar_1Dtseries
+from cmath import nan
 
 
 # ---------------------------------------------------------------
@@ -17,9 +18,14 @@ from Modules_CLMoutput_nc4 import CLMvar_1Dtseries
 def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, layer_index, sdata, varname, plotlabel):
 
     ax=plt.subplot(nrow, ncol, isubplot)
-    if(varname == 'SOILPSI'):
+    if(varname == 'SOILPSI' or varname=='SOILPSI2' or \
+       varname == 'SMP' or varname=='SMP2'):
         sdata = -sdata
-        ax.set_yscale("log", nonposy='clip')
+        ax.set_yscale("log")
+        # the following is for plot's purpose - can be commented out
+        sdata[sdata<100] = nan
+        plt.plot([min(t),max(t)],[100,100],'k--')
+        plt.plot([min(t),max(t)],[1.0e8,1.0e8],'k--')
     
     layertext = []
     
@@ -32,7 +38,7 @@ def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, layer_index, sd
         layertext.append(("Layer "+str(il)))
         plt.plot(t, sdata[:,il])
  
-    plt.legend((layertext), loc=0, fontsize=14)
+    #plt.legend((layertext), loc=0, fontsize=10)
     plt.xlabel(t_unit, fontsize=18, fontweight='bold')
     plt.ylabel(varname, fontsize=18, fontweight='bold')
 
@@ -62,7 +68,7 @@ def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, pftvidx, pft_ind
                 active_pfts.append(("PFT "+str(ip)))
                 plt.plot(t, sdata[:,ip])
     
-    plt.legend((active_pfts), loc=0, fontsize=14)
+    plt.legend((active_pfts), loc=0, fontsize=10)
     plt.xlabel(t_unit,  fontsize=18, fontweight='bold')
     plt.ylabel(varname, fontsize=18, fontweight='bold')
 
@@ -112,7 +118,7 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
             #gridtext.append(("GRID "+str(igrd)))
             plt.plot(t, sdata[:,igrd])
         #gridtext.append(["NAMC","DSLT","AS","WBT","TT-WBT","TT"])
-        gridtext.append("Daymet_Tile13868")
+        #gridtext.append("Daymet_Tile13868")
 
     else:
         #gridtext.append(("GRID "+str(0)))
@@ -122,14 +128,14 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
     plt.legend((gridtext), loc=0, fontsize=20)
     
     # plot X/Y axis label, if manually change
-    t_unit = 'DOY'
-    varname = 'Snow depth (m)'
+    #t_unit = 'Days'
+    #varname = ' surface water head (mm)'
     #varname = 'Snow water equivalent (mm)'
-    plt.xlabel(t_unit, fontsize=28, fontweight='bold')
-    plt.ylabel(varname, fontsize=28, fontweight='bold')
+    plt.xlabel(t_unit, fontsize=14, fontweight='bold')
+    plt.ylabel(varname, fontsize=14, fontweight='bold')
     
     ax_user=plt.gca()
-    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 24)
+    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 14)
 
     lx = 0.20
     ly = 0.85
@@ -137,7 +143,7 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
     #plot_title = 'Daymet_Tile13868(Kougarok)' #plotlabel, if any
     plt.rcParams["font.weight"] = "bold"
     plt.rcParams["axes.labelweight"] = "bold"
-    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=20, fontweight='bold')
+    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=12, fontweight='bold')
 
 #-------------------Parse options-----------------------------------------------
 
@@ -335,7 +341,7 @@ for var in varnames:
     t = np.asarray(t)*day_scaling + tunit0
 
     #if manually offset time
-    t0 = 2014*365 
+    t0 = 0#yr0*365
     t = t - t0
     tunit = tunit.upper()
 

@@ -4,8 +4,13 @@ from optparse import OptionParser
 import numpy as np
 from scipy import interpolate
 from netCDF4 import Dataset
-import netcdf_modules as ncmod
 from cmath import nan, inf
+from pyproj import Proj
+from pyproj import Transformer
+from pyproj import CRS
+from builtins import int
+from ast import literal_eval
+
 
 #
 #-------------------- convert 'mksurf urban' to standard ELM surfdata -----------------------
@@ -98,7 +103,7 @@ def mksrfdata_urban(fsurfnc_all, fmksrfnc_urban_raw, redo_grid=False):
             vdim =src2.variables[vname].dimensions
             # dim 'numurbl' is common for all urban data
             if 'numurbl' in vdim or \
-               vname in ['lsmlat', 'lsmlon','LONGXY','LATIXY']:
+               vname in ['lsmlat', 'lsmlon','LONGXY','LATIXY', 'URBAN_REGION_ID']:
                 
                 print(vname)
                 vnames.append(vname)
@@ -114,10 +119,12 @@ def mksrfdata_urban(fsurfnc_all, fmksrfnc_urban_raw, redo_grid=False):
                     vname1 = vname.replace(sufix,'')
                 elif vname in ['lsmlat','lsmlon']:
                     vname1 = vname.replace('lsm','')
+                elif vname =='URBAN_REGION_ID':
+                    vname1 = 'REGION_ID'
                 # checking if urban var
                 variable1=src1.variables[vname1]
                 if 'density_class' not in variable1.dimensions and \
-                  vname not in ['lsmlat', 'lsmlon','LONGXY','LATIXY']:
+                  vname1 not in ['lsmlat', 'lsmlon','LONGXY','LATIXY','REGION_ID']:
                     print('ERROR: ',vname1,'IS NOT a urban variable')
                     sys.exit(-1)
                 varvals = np.copy(src1[vname1][...])
@@ -217,7 +224,7 @@ def mksrfdata_soildtb(fsurfnc_all, fmksrfnc_soildtb, fmksrfnc_soildtb2='', fmksr
             
             vname = 'aveDTB'
             vdim = ('lsmlat','lsmlon')
-            var2d=dst.createVariable(vname, 'f4', vdim, fill_value=-999.)
+            var2d=dst.createVariable(vname, vtype, vdim, fill_value=-999.)
             var2d.units = 'meters below surface'
             var2d.standard_name = 'aveDTB'
             var2d.long_name = 'mean soil depth to bedrock'
@@ -226,8 +233,9 @@ def mksrfdata_soildtb(fsurfnc_all, fmksrfnc_soildtb, fmksrfnc_soildtb2='', fmksr
             dtb[np.where(dtb==np.NaN)]=dst.variables[vname]._FillValue
             dtb[np.where(dtb==255)]=dst.variables[vname]._FillValue
             dst[vname][...] = dtb
- 
-def mksrfdata_lndunit(fsurfnc_all, fmksrfnc_soildtbmask, redo_grid=False):
+
+# create PCT_LAKE, PCT_GLACIER datasets from soil thickness accessory data
+def mksrfdata_lndunit(fsurfnc_all, fmksrfnc_lndmask, redo_grid=False):
     print('#--------------------------------------------------#')
     print("Creating surface data  - land units: PCT_LAKE, PCT_GLACIER")
     fsurf_lunit ='./surfdata_lake_icedlnd.nc'
@@ -237,7 +245,7 @@ def mksrfdata_lndunit(fsurfnc_all, fmksrfnc_soildtbmask, redo_grid=False):
     dnames_elm=['lsmlat', 'lsmlon']
     dnames_lunit=['lat','lon']
     if (redo_grid or os.path.isfile(fsurf_lunit)==False):
-        src1=Dataset(fmksrfnc_soildtbmask,'r')
+        src1=Dataset(fmksrfnc_lndbmask,'r')
         lunittype = np.asarray(src1.variables['Band1']).astype('f4')
         lat = np.asarray(src1.variables['lat'])
         lon = np.asarray(src1.variables['lon'])
@@ -292,7 +300,7 @@ def mksrfdata_lndunit(fsurfnc_all, fmksrfnc_soildtbmask, redo_grid=False):
         del lnd, lnd_new, lnd_false, lnd_true
         
        # write into nc file
-        with Dataset(fmksrfnc_soildtbmask,'r') as src1, Dataset(fsurfnc_all,'r') as src2, Dataset(fsurf_lunit, "w") as dst:
+        with Dataset(fmksrfnc_lndmask,'r') as src1, Dataset(fsurfnc_all,'r') as src2, Dataset(fsurf_lunit, "w") as dst:
             
             # new surfdata dimensions
             for dname2, dimension2 in src2.dimensions.items():
@@ -357,6 +365,227 @@ def mksrfdata_lndunit(fsurfnc_all, fmksrfnc_soildtbmask, redo_grid=False):
             glacier[np.where(lunittype==0)] = dst.variables[vname]._FillValue
             dst[vname][...] = np.copy(glacier)
             
+# create LATIXY/LONGXY/TOPO/STDELEV/SLOPE datasets from DEM data, usually in geotiff format
+def mksrfdata_topo(fsurfnc_all, fmksrfnc_lndgeo, bands=['aspect','esl','slope'], redo_grid=False):
+    print('#--------------------------------------------------#')
+    print("Creating surface data  - LATIXY, LONGXY, TOPO, STDELEV, SLOPE, AREA")
+    fsurf_lndtopo ='./surfdata_topo.nc'
+    
+    #--------------------------------------
+    # 
+    #dnames_elm=['lsmlat', 'lsmlon']
+    dnames_elm=['gridcell']
+    dnames_lndtopo=['lon','lat'] #should be projected [x,y]
+    if (redo_grid or os.path.isfile(fsurf_lndtopo)==False):
+        src1=Dataset(fmksrfnc_lndgeo,'r')
+        band = np.where(np.asarray(bands)=='esl')[0][0]
+        esl = np.asarray(src1.variables['Band'+str(band+1)]).astype('f4')
+        band = np.where(np.asarray(bands)=='aspect')[0][0]
+        aspect = np.asarray(src1.variables['Band'+str(band+1)]).astype('f4')
+        band = np.where(np.asarray(bands)=='slope')[0][0]
+        slope = np.asarray(src1.variables['Band'+str(band+1)]).astype('f4')
+        area = np.copy(esl)
+        area[:,:] = 25.e-6 # 5mx5m --> km^2
+        x = np.asarray(src1.variables[dnames_lndtopo[0]])
+        y = np.asarray(src1.variables[dnames_lndtopo[1]])
+        src1.close()
+       
+       # averaging over a box of 10x10, i.e. 5x5m --> 50x50m in this example
+        xlen = esl.shape[1]; xlen_new = 10
+        ylen = esl.shape[0]; ylen_new = 10
+        new_shp = (int(ylen/ylen_new), ylen_new, int(xlen/xlen_new), xlen_new)
+        esl_new = esl.reshape(new_shp).mean(axis=(1,3))  # note: both xlen/ylen are multiple of xlen_new
+        esl_std = esl.reshape(new_shp).std(axis=(1,3))   # note: both xlen/ylen are multiple of xlen_new
+        slope_new = slope.reshape(new_shp).mean(axis=(1,3))  # note: both xlen/ylen are multiple of xlen_new
+        area_new = area.reshape(new_shp).mean(axis=(1,3))  # note: both xlen/ylen are multiple of xlen_new
+        
+        # x/y projection to lat/lon 
+        # NAD83/Alaska Albers, for AK Seward Peninsula, ifsar 5-m DEM data
+        #Proj4 = +proj=aea +lat_0=50 +lon_0=-154 +lat_1=55 +lat_2=65 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs
+        geoxy_proj_str = "+proj=aea +lat_0=50 +lon_0=-154 +lat_1=55 +lat_2=65 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
+        geoxyProj = CRS.from_proj4(geoxy_proj_str)
+        # EPSG: 4326
+        # Proj4: +proj=longlat +datum=WGS84 +no_defs
+        lonlatProj = CRS.from_epsg(4326) # in lon/lat coordinates
+        Txy2lonlat = Transformer.from_proj(geoxyProj, lonlatProj, always_xy=True)
+
+        x_new = x.reshape((int(xlen/xlen_new),xlen_new)).mean(axis=1)
+        y_new = y.reshape((int(ylen/ylen_new),ylen_new)).mean(axis=1)
+        xx_new, yy_new = np.meshgrid(x_new, y_new)
+        lon_new,lat_new = Txy2lonlat.transform(xx_new,yy_new)
+        ij=np.where(lon_new<0.0)
+        if(len(ij[0])>0): lon_new[ij]=lon_new[ij]+360.0 # for convenience, longitude from 0~360
+        
+        # write into nc file
+        with Dataset(fmksrfnc_topo,'r') as src1, Dataset(fsurfnc_all,'r') as src2, Dataset(fsurf_lndtopo, "w") as dst:
+            
+            # new surfdata dimensions
+            for dname2, dimension2 in src2.dimensions.items():
+                if dname2 in dnames_elm:
+                    i=np.where(np.asarray(dnames_elm)==dname2)[0][0]
+                    dimension1 = src1.dimensions[dnames_lndtopo[i]]
+                    len_dimension2 = len(dimension1)            # dim length from new data
+                    dst.createDimension(dname2, len_dimension2 if not dimension2.isunlimited() else None)
+            #
+            # 2-D structured grids (lat/lon)
+            if 'lsmlat' in dnames_elm or 'lsmlon' in dnames_elm:
+                vname = 'lsmlat'
+                vdim = ('lsmlat')
+                vtype = src1.variables['lat'].datatype
+                laty=dst.createVariable(vname, vtype, vdim)
+                laty.units = 'degrees_north'
+                laty.standard_name = 'latitude'
+                dst[vname][...] = np.copy(src1.variables['lat'][...])
+                
+                vname = 'lsmlon'
+                vdim = ('lsmlon')
+                vtype = src1.variables['lon'].datatype
+                lonx=dst.createVariable(vname, vtype, vdim)
+                lonx.units = 'degrees_east'
+                lonx.standard_name = 'longitude'
+                dst[vname][...] = np.copy(src1.variables['lon'][...])
+
+                gdim = ('lsmlat','lsmlon')
+            
+            else:
+                #1d unstructured domain
+                gdim = ('gridcell')
+                len_dimension2 = lat_new.size
+                dst.createDimension('gridcell', len_dimension2)
+                
+                xdim = ('geox')
+                dst.createDimension('geox', x_new.size)
+                vname = 'geox'
+                vtype = x_new.dtype
+                x1d=dst.createVariable(vname, vtype, xdim, fill_value=nan)
+                x1d.units = 'm'
+                x1d.standard_name = 'geo-projected coordinate x'
+                dst[vname][...] = x_new
+                
+                ydim = ('geoy')
+                dst.createDimension('geoy', y_new.size)
+                vname = 'geoy'
+                vtype = y_new.dtype
+                y1d=dst.createVariable(vname, vtype, ydim, fill_value=nan)
+                y1d.units = 'm'
+                y1d.standard_name = 'geo-projected coordinate y'
+                dst[vname][...] = y_new
+                
+                vname = 'gridcell_jy'
+                vtype = np.int32
+                yy=dst.createVariable(vname, vtype, gdim, fill_value=-9999)
+                yy.units = '-'
+                yy.standard_name = 'geo-projected coordinate y indices, 0-based, for gridcell'
+                dst[vname][...] = np.unravel_index(range(yy_new.size), yy_new.shape)[0]
+                
+                vname = 'gridcell_ix'
+                vtype = np.int32
+                xx=dst.createVariable(vname, vtype, gdim, fill_value=-9999)
+                xx.units = '-'
+                xx.standard_name = 'geo-projected coordinate x indices, 0-based, for gridcell'
+                dst[vname][...] = np.unravel_index(range(xx_new.size), xx_new.shape)[1]
+            
+            vname = 'LATIXY'
+            vdim = gdim
+            vtype = src2.variables['LATIXY'].datatype
+            lat2d=dst.createVariable(vname, vtype, vdim, fill_value=nan)
+            lat2d.units = 'degrees_north'
+            lat2d.standard_name = 'latitude'
+            vals = dst.variables[vname][...]
+            if 'gridcell' in gdim:
+                vals[:,...] = lat_new.flatten()
+                dst[vname][...] = np.copy(vals)
+            else:
+                vals = np.moveaxis(vals,0,1)
+                vals[:,...] = np.copy(src1.variables['lat'][...])
+                dst[vname][...] = np.moveaxis(vals,1,0)
+            del vals
+            
+            vname = 'LONGXY'
+            vdim = gdim
+            vtype = src2.variables['LONGXY'].datatype
+            lon2d=dst.createVariable(vname, vtype, vdim, fill_value=nan)
+            lon2d.units = 'degrees_east'
+            lon2d.standard_name = 'longitude'
+            vals = dst.variables[vname][...]
+            if 'gridcell' in gdim:
+                vals[:,...] = lon_new.flatten()
+            else:
+                vals[:,...] = lon_new
+            dst[vname][...] = np.copy(vals)
+            del vals
+            
+            vname = 'TOPO'
+            vdim = gdim
+            variable = src2.variables[vname]
+            dst.createVariable(vname, variable.datatype, vdim, fill_value=nan)
+            dst[vname].setncatts(src2[vname].__dict__)
+            vals = dst.variables[vname][...]
+            if 'gridcell' in gdim:
+                vals[:,...] = esl_new.flatten()
+            else:
+                vals[:,...] = esl_new
+            dst[vname][...] = np.copy(vals)
+            del vals
+            
+            vname = 'STD_ELEV'
+            vdim =gdim
+            variable = src2.variables[vname]
+            dst.createVariable(vname, variable.datatype, vdim, fill_value=nan)
+            dst[vname].setncatts(src2[vname].__dict__)
+            vals = dst.variables[vname][...]
+            if 'gridcell' in gdim:
+                vals[:,...] = esl_std.flatten()
+            else:
+                vals[:,...] = esl_std
+            dst[vname][...] = np.copy(vals)
+            del vals
+            
+            vname = 'SLOPE'
+            vdim = gdim
+            variable = src2.variables[vname]
+            dst.createVariable(vname, variable.datatype, vdim, fill_value=nan)
+            dst[vname].setncatts(src2[vname].__dict__)
+            vals = dst.variables[vname][...]
+            if 'gridcell' in gdim:
+                vals[:,...] = slope_new.flatten()
+            else:
+                vals[:,...] = slope_new
+            dst[vname][...] = np.copy(vals)
+            del vals
+            
+            vname = 'AREA'
+            vdim = gdim
+            variable = src2.variables[vname]
+            dst.createVariable(vname, variable.datatype, vdim, fill_value=nan)
+            dst[vname].setncatts(src2[vname].__dict__)
+            vals = dst.variables[vname][...]
+            if 'gridcell' in gdim:
+                vals[:,...] = area_new.flatten()
+            else:
+                vals[:,...] = area_new
+            dst[vname][...] = np.copy(vals)
+            del vals
+            
+        # write indices for mapping 
+        f = open('projection_elm_mappings.txt', 'w')
+        fheader='   lon          lat            geox            geoy        i     j     g '
+        f.write(fheader+'\n')
+        xidx = np.unravel_index(range(xx_new.size), xx_new.shape)[1]
+        yidx = np.unravel_index(range(yy_new.size), yy_new.shape)[0]
+        for ig in range(xx_new.size):
+             #'(f12.5,1x,f12.6,1x, 2(f15.1, 1x),3(I5,1x))'
+            f.write('%12.5f ' % lon_new.flatten()[ig] )
+            f.write('%12.6f ' % lat_new.flatten()[ig] )
+            f.write('%15.1f ' % xx_new.flatten()[ig] )
+            f.write('%15.1f ' % yy_new.flatten()[ig] )
+            f.write('%5d ' % (xidx[ig]+1) )  #x/yidx were 0-based, but need to 1-based for the mapping file
+            f.write('%5d ' % (yidx[ig]+1) )
+            f.write('%5d ' % (ig+1) )
+            f.write('\n')
+        f.close()
+
+
 #--------------------------------------------------------------------
 
 
@@ -366,18 +595,6 @@ parser = OptionParser()
 parser.add_option("--ccsm_input", dest="ccsm_input", \
                   default='../../../../ccsm_inputdata', \
                   help = "input data directory for CESM (required)")
-parser.add_option("--point_list", dest="point_list", default='', \
-                  help = 'File containing list of points to run (unstructured)')
-parser.add_option("--point_area_kmxkm", dest="point_area_km2", default=None, \
-                  help = 'user-specific area in km2 of each point in point list (unstructured')
-parser.add_option("--point_area_degxdeg", dest="point_area_deg2", default=None, \
-                  help = 'user-specific area in degreeXdegree of each point in point list (unstructured')
-parser.add_option("--keep_duplicates", dest="keep_duplicates", default=False, \
-                  help = 'Keep duplicate points', action='store_true')
-parser.add_option("--usersurfnc", dest="usersurfnc", default="none", \
-                  help = 'User-provided surface data nc file, with one or more variable(s) as defined')
-parser.add_option("--usersurfvar", dest="usersurfvar", default="none", \
-                  help = 'variable name(s) in User-provided surface data nc file, separated by ","')
 parser.add_option("--nco_path", dest="nco_path", default="", \
                      help = 'NCO bin PATH, default "" ')
 (options, args) = parser.parse_args()
@@ -388,12 +605,21 @@ ccsm_input = os.path.abspath(options.ccsm_input)
 #------------------- get site information ----------------------------------
 # the following are what to be modified (as tempalate or original datasets)
 domainfile_orig = ccsm_input+'/share/domains/domain.clm/domain.lnd.360x720_cruncep.c20190221.nc'
-surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_360x720cru_simyr1850_c180216.nc'
-pftdyn_orig = ccsm_input+'/lnd/clm2/surfdata_map/landuse.timeseries_360x720cru_hist_simyr1850-2015_c180220.nc'
+surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_0.125x0.125_simyr1850_c190730.nc'
 
 #get grid cells
-longx_orig = np.asarray(Dataset(surffile_orig).variables['LONGXY'])[:,0]
-latiy_orig = np.asarray(Dataset(surffile_orig).variables['LATIXY'])[0,:]
+longx_orig = np.asarray(Dataset(surffile_orig).variables['LONGXY'])[0,:]
+latiy_orig = np.asarray(Dataset(surffile_orig).variables['LATIXY'])[:,0]
+
+
+# get new TOPO
+# convert geotiff to nc
+fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Kougarok/surfdata_topo_50mx50m_simyr2020.c220721.nc'
+if True:
+    #fmksrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Teller/Teller_esl_aspect.nc'
+    fmksrfnc_topo = './Kougarok_esl_aspect_slope.nc'
+    mksrfdata_topo(surffile_orig, fmksrfnc_topo, bands=['esl','aspect','slope'], redo_grid=True)
+    os.system('mv surfdata_topo.nc '+fsrfnc_topo)
 
 #
 fsrfnc_urban = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urban_0.05x0.05_simyr2000.c220127.nc'
@@ -423,8 +649,6 @@ fsrfnc_lake_glacier = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_lake_
 if False: # edit as 'True' when needed to redo data
     fmksrfnc_soildtb_landmask = ccsm_input+'/lnd/clm2/surfdata_map/high_res/mksrf_soilthk_land_cover_mask.nc'
     mksrfdata_lndunit(surffile_orig, fmksrfnc_soildtb_landmask, redo_grid=True)              # from raw data --> grided --> surfdata
-
-
 #
 #
 fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/Tesfa_pnnl_PFT_0.05_MODIS_nwh201201.nc'
@@ -433,6 +657,466 @@ fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/Tesfa_pnnl_PFT_0
 
 #####################
 # sync data for spatial content and resolution
+
+lat_min = 0.0; lat_max = 90.0
+lon_min = -180.0; lon_max = -15.0
+
+UNSTRUCTURED_DOMAIN = False
+if (os.path.exists(fsrfnc_topo)):
+    # if all other high-res surfdata merged already, like following; otherwise comment the following out
+    fsrfnc_urban = '../high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_lake_glacier = '../high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_natveg_pft = '../high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_soildtb = '../high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+
+    
+    
+    fsurf_new = 'surfdata_userdefined_50mx50m.nc'
+    interp_urb=True; interp_pft=True               # for sync spatial resolutions - original are 0.05deg or 3arcmin
+    interp_soiltdb=True; interp_lakeglacier=True   # for sync spatial resolutions - original are 30arcsec
+    # 
+    lat_new = np.asarray(Dataset(fsrfnc_topo).variables['LATIXY'][...])
+    lon_new = np.asarray(Dataset(fsrfnc_topo).variables['LONGXY'][...])
+    
+    UNSTRUCTURED_DOMAIN = True
+
+else:
+    # The following is NOT always needed to do (ONCE is enough)
+    # spatial content: North-Western Hemisphere, lat 0-90deg, lon -180~-15deg
+    # resolution: 3minx3min, or, interpolated 30secx30sec
+    #fsrfnc_natveg_pft = 'surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    #fsrfnc_lake_glacier = 'surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    #fsrfnc_soildtb = 'surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+
+    if False:
+        # 3minx3min
+        fsurf_new = 'surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725_new.nc'
+        interp_urb=False; interp_pft=False            # for sync spatial resolutions - original are 0.05deg or 3arcmin
+        interp_soiltdb=True; interp_lakeglacier=True  # for sync spatial resolutions - original are 30 arcsec
+        #5x5min
+        lat_new = np.asarray(Dataset(fsrfnc_natveg_pft).variables['lsmlat'][...])
+        lon_new = np.asarray(Dataset(fsrfnc_natveg_pft).variables['lsmlon'][...])
+    
+    if False:
+        #30secx30sec
+        fsurf_new = 'surfdata_urb_lake_glacier_avedtb_natpft_30secx30sec_nwh.c20220725.nc'
+        interp_urb=True; interp_pft=True               # for sync spatial resolutions - original are 0.05deg or 3arcmin
+        interp_soiltdb=False; interp_lakeglacier=False # for sync spatial resolutions - original are 30arcsec
+        # 30 arcsec
+        lat_new = np.asarray(Dataset(fsrfnc_soildtb).variables['lsmlat'][...])
+        lon_new = np.asarray(Dataset(fsrfnc_soildtb).variables['lsmlon'][...])
+
+# 
+
+lon_new[np.where(lon_new>180.0)]=lon_new[np.where(lon_new>180.0)]-360.0
+lat_new = lat_new[np.where((lat_new>=lat_min) & (lat_new<=lat_max))]
+lon_new = lon_new[np.where((lon_new>=lon_min) & (lon_new<=lon_max))]
+
+numurbl_new = Dataset(fsrfnc_urban).dimensions['numurbl']
+nlevurb_new = Dataset(fsrfnc_urban).dimensions['nlevurb']
+numrad_new  = Dataset(fsrfnc_urban).dimensions['numrad']
+
+
+if True:
+    # write into nc file
+    with Dataset(surffile_orig,'r') as src2, Dataset(fsurf_new, "w") as dst:
+        
+        # new surfdata dimensions
+        for dname2, dimension2 in src2.dimensions.items():
+            if dname2 == 'lsmlat':
+                len_dimension2 = len(lat_new)
+            elif dname2 == 'lsmlon':
+                if UNSTRUCTURED_DOMAIN:
+                    len_dimension2 = 1
+                else:
+                    len_dimension2 = len(lon_new)
+            elif dname2 == 'numurbl':
+                len_dimension2 = len(numurbl_new)
+            elif dname2 == 'nlevurb':
+                len_dimension2 = len(nlevurb_new)
+            elif dname2 == 'numbrad':
+                len_dimension2 = len(numrad_new)
+            else:
+                len_dimension2 = len(dimension2)
+            dst.createDimension(dname2, len_dimension2 if not dimension2.isunlimited() else None)
+        #
+        if UNSTRUCTURED_DOMAIN:
+            gdim = ('gridcell')
+            
+            if 'gridcell' not in src2.dimensions: 
+                dst.createDimension(gdim, len(lat_new))
+            vname = 'LATIXY'
+            vtype = lat_new.dtype
+            lat2d=dst.createVariable(vname, vtype, gdim, fill_value=nan)
+            lat2d.units = 'degrees_north'
+            lat2d.standard_name = 'latitude'
+            vals = dst.variables[vname][...]
+            if UNSTRUCTURED_DOMAIN:
+                vals[:,...] = np.copy(lat_new)
+                dst[vname][...] = np.copy(vals)
+            else:
+                vals = np.moveaxis(vals,0,1)
+                vals[:,...] = np.copy(lat_new)
+                dst[vname][...] = np.asarray(np.moveaxis(vals,1,0))
+            del vals
+                
+            vname = 'LONGXY'
+            vtype = lon_new.dtype
+            lon2d=dst.createVariable(vname, vtype, gdim, fill_value=nan)
+            lon2d.units = 'degrees_east'
+            lon2d.standard_name = 'longitude'
+            vals = dst.variables[vname][...]
+            vals[:,...] = np.copy(lon_new)
+            dst[vname][...] = np.copy(vals)
+            del vals
+            
+            vnames = ['LATIXY', 'LONGXY']
+            
+        else:
+            gdim = ('lsmlat','lsmlon')
+
+            vname = 'lsmlat'
+            vdim = ('lsmlat')
+            vtype = lat_new.dtype
+            laty=dst.createVariable(vname, vtype, vdim)
+            laty.units = 'degrees_north'
+            laty.standard_name = 'latitude'
+            dst[vname][...] = np.copy(lat_new)
+            
+            vname = 'lsmlon'
+            vdim = ('lsmlon')
+            vtype = lon_new.dtype
+            lonx=dst.createVariable(vname, vtype, vdim)
+            lonx.units = 'degrees_east'
+            lonx.standard_name = 'longitude'
+            dst[vname][...] = np.copy(lon_new)
+            
+            vname = 'LATIXY'
+            vtype = lat_new.dtype
+            lat2d=dst.createVariable(vname, vtype, gdim, fill_value=nan)
+            lat2d.units = 'degrees_north'
+            lat2d.standard_name = 'latitude'
+            vals = dst.variables[vname][...]
+            vals = np.moveaxis(vals,0,1)
+            vals[:,...] = np.copy(lat_new)
+            dst[vname][...] = np.asarray(np.moveaxis(vals,1,0))
+            del vals
+                
+            vname = 'LONGXY'
+            vtype = lon_new.dtype
+            lon2d=dst.createVariable(vname, vtype, gdim, fill_value=nan)
+            lon2d.units = 'degrees_east'
+            lon2d.standard_name = 'longitude'
+            vals = dst.variables[vname][...]
+            vals[:,...] = np.copy(lon_new)
+            dst[vname][...] = np.copy(vals)
+            del vals
+            
+            vnames = ['lsmlat', 'lsmlon', 'LATIXY', 'LONGXY']
+        
+        # copy TOPO data directly
+        if (os.path.exists(fsrfnc_topo)):
+            fdata_src1 = Dataset(fsrfnc_urban)
+            fdata_src1 = Dataset(fsrfnc_topo)
+            for vname in fdata_src1.variables.keys():
+                if vname in src2.variables.keys() and vname not in vnames and \
+                  ('TOPO' in vname or 'STD_ELEV' in vname or 'SLOPE' in vname):
+                    print ('variable: ', vname)
+                    vdim = fdata_src1.variables[vname].dimensions
+                    if 'gridcell' not in vdim and UNSTRUCTURED_DOMAIN:
+                        vdim_new=[]
+                        for i in range(len(vdim)):
+                            if vdim[i]=='lsmlon':
+                                vdim_new.append('gridcell')
+                            elif vdim[i]!='lsmlat':
+                                vdim_new.append(vdim[i])
+                        vdim = vdim_new
+                    
+                    vtype = src2.variables[vname].datatype
+                    dst.createVariable(vname, vtype, vdim)
+                    dst[vname].setncatts(src2[vname].__dict__)
+                    vnames.append(vname)
+                    vdata = np.asarray(fdata_src1.variables[vname])
+                    dst[vname][...] = np.copy(vdata)
+                    del vdata
+            fdata_src1.close()
+
+        # urban data
+        if (os.path.isfile(fsrfnc_urban)):
+            fdata_src1 = Dataset(fsrfnc_urban)
+            vlat = np.asarray(fdata_src1.variables['LATIXY'][:,0])
+            vlon = np.asarray(fdata_src1.variables['LONGXY'][0,:])
+
+            # URBAN_REGION_ID first, which have no 'numurbl' dim
+            vname = 'URBAN_REGION_ID'
+            if vname in src2.variables.keys() and vname not in vnames:
+                vdim = fdata_src1.variables[vname].dimensions
+                if UNSTRUCTURED_DOMAIN: vdim = ('gridcell')
+                vtype = src2.variables[vname].datatype
+                dst.createVariable(vname, vtype, vdim)
+                dst[vname].setncatts(src2[vname].__dict__)
+                vnames.append(vname)
+                
+                vdata = np.asarray(fdata_src1.variables[vname])
+                finterp_src1 =interpolate.interp2d(vlon, vlat, vdata, kind='linear')
+                if UNSTRUCTURED_DOMAIN:
+                    vdata_regionid = [finterp_src1(xx,yy) for xx,yy in zip(lon_new,lat_new)]
+                    vdata_regionid = np.squeeze(np.asarray(vdata_regionid))
+                else:
+                    vdata_regionid = finterp_src1(lon_new, lat_new)
+                dst[vname][...] = np.copy(vdata_regionid)
+                
+            # rest urban vars, with dim of 'numurbl'
+            for vname in fdata_src1.variables.keys():
+                if vname in src2.variables.keys() and vname not in vnames:
+                    vdim = fdata_src1.variables[vname].dimensions
+                    if 'numurbl' not in vdim: continue        # not urban variable, exit for loop
+                    
+                    print ('variable: ', vname)
+                    vdim = fdata_src1.variables[vname].dimensions
+                    if 'gridcell' not in vdim and UNSTRUCTURED_DOMAIN:
+                        vdim_new=[]
+                        for i in range(len(vdim)):
+                            if vdim[i]=='lsmlon':
+                                vdim_new.append('gridcell')
+                            elif vdim[i]!='lsmlat':
+                                vdim_new.append(vdim[i])
+                        vdim = vdim_new
+                        
+                    vtype = src2.variables[vname].datatype
+                    dst.createVariable(vname, vtype, vdim)
+                    dst[vname].setncatts(src2[vname].__dict__)
+                    vnames.append(vname)
+                    
+                    vdata = np.asarray(fdata_src1.variables[vname])
+                    idx_void = np.where(vdata==-999.)
+                    vdata_min = np.min(vdata[np.where(vdata!=-999.)])
+                    vdata_max = np.max(vdata[np.where(vdata!=-999.)])
+                    vdata[idx_void] = vdata_min  # -999f is bad for interpolating
+                    vdata_new = np.asarray(dst.variables[vname]) # blanket at this point
+                    vshp = vdata.shape
+                    for i in range(vshp[-3]):
+                        if 'numrad' in vdim or 'nlevurb' in vdim:
+                            for j in range(vshp[-4]):
+                                if interp_urb and (vname=='PCT_URBAN' or vname =='WTLUNIT_ROOF' or vname == 'WTROAD_PERV'):
+                                    finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[j,i,...], kind='cubic')
+                                else:
+                                    # nearest
+                                    finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[j,i,...], kind='linear')
+                                if UNSTRUCTURED_DOMAIN: 
+                                    temp = [finterp_src1(xx,yy) for xx,yy in zip(lon_new,lat_new)]
+                                    temp = np.squeeze(np.asarray(temp))
+                                else:
+                                    temp = finterp_src1(lon_new, lat_new)
+                                temp[np.where(vdata_regionid<=0)]=0.0   # don't go beyond non-urban region, which causes data issue
+                                vdata_new[j,i,] = np.copy(temp)
+                                del temp
+                            
+                        else:
+                                if interp_urb and (vname=='PCT_URBAN' or vname =='WTLUNIT_ROOF' or vname == 'WTROAD_PERV'):
+                                    finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[i,...], kind='cubic')
+                                else:
+                                    # nearest
+                                    finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[i,...], kind='linear')
+                                if UNSTRUCTURED_DOMAIN: 
+                                    temp = [finterp_src1(xx,yy) for xx,yy in zip(lon_new,lat_new)]
+                                    temp = np.squeeze(np.asarray(temp))
+                                else:
+                                    temp = finterp_src1(lon_new, lat_new)
+                                temp[np.where(vdata_regionid<=0)]=0.0   # don't go beyond non-urban region, which causes data issue
+                                vdata_new[i,] = np.copy(temp)
+                                del temp
+                        #
+                    #
+                    vdata_new[np.where(vdata_new<vdata_min)]=vdata_min
+                    vdata_new[np.where(vdata_new>vdata_max)]=vdata_max
+                    # limits of two types of variables (percentage or fraction)
+                    if vname == 'PCT_URBAN':
+                        vdata_new[np.where(vdata_new<0.0)]=0.0; vdata_new[np.where(vdata_new>100.0)]=100.0
+                    elif vname == 'WTLUNIT_ROOF' or vname == 'WTROAD_PERV':
+                        vdata_new[np.where(vdata_new<0.0)]=0.0; vdata_new[np.where(vdata_new>100.0)]=100.0
+                        
+                    #
+                    dst[vname][...] = np.copy(vdata_new)
+                    del vdata, vdata_new
+                    #
+                    #
+            fdata_src1.close()
+        
+        # PCT_LAKE, PCT_GLACIER
+        if os.path.isfile(fsrfnc_lake_glacier):
+            fdata_src1 = Dataset(fsrfnc_lake_glacier)
+            for vname in fdata_src1.variables.keys():
+                if vname in src2.variables.keys() and vname not in vnames and \
+                  ('PCT_LAKE' in vname or 'PCT_GLACIER' in vname):
+                    print ('variable: ', vname)
+                    vdim = fdata_src1.variables[vname].dimensions
+                    if 'gridcell' not in vdim and UNSTRUCTURED_DOMAIN:
+                        vdim_new=[]
+                        for i in range(len(vdim)):
+                            if vdim[i]=='lsmlon':
+                                vdim_new.append('gridcell')
+                            elif vdim[i]!='lsmlat':
+                                vdim_new.append(vdim[i])
+                        vdim = vdim_new
+                    
+                    vtype = src2.variables[vname].datatype
+                    dst.createVariable(vname, vtype, vdim)
+                    dst[vname].setncatts(src2[vname].__dict__)
+                    vnames.append(vname)
+                    
+                    vdata = np.asarray(fdata_src1.variables[vname])
+                    try:
+                        idx_void = np.where(vdata==fdata_src1.variables[vname]._FillValue)
+                        vdata_min = np.min(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
+                        vdata_max = np.max(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
+                        vdata[idx_void] = vdata_min  # nan is bad for interpolating
+                    except:
+                        vdata_min = 0.0
+                        vdata_max = 100.0
+                        
+                    vlat = np.asarray(fdata_src1.variables['lsmlat'])
+                    vlon = np.asarray(fdata_src1.variables['lsmlon'])
+                    if interp_lakeglacier:
+                        finterp_src1 =interpolate.interp2d(vlon, vlat, vdata, kind='cubic')
+                    else:
+                        finterp_src1 =interpolate.interp2d(vlon, vlat, vdata, kind='linear')
+                    
+                    if UNSTRUCTURED_DOMAIN: 
+                        vdata_new = [finterp_src1(xx,yy) for xx,yy in zip(lon_new,lat_new)]
+                        vdata_new = np.squeeze(np.asarray(vdata_new))
+                    else:
+                        vdata_new = finterp_src1(lon_new, lat_new)
+                        
+                    vdata_new[np.where(vdata_new<0.0)]=0.0; vdata_new[np.where(vdata_new>100.0)]=100.0
+                    dst[vname][...] = np.copy(vdata_new)
+                    del vdata, vdata_new, vlon, vlat
+            fdata_src1.close()
+        
+        # soil 'aveDTB'
+        if os.path.isfile(fsrfnc_soildtb):
+            fdata_src1 = Dataset(fsrfnc_soildtb)
+            vname = 'aveDTB'
+            vdim = fdata_src1.variables[vname].dimensions
+            if 'gridcell' not in vdim and UNSTRUCTURED_DOMAIN:
+                vdim_new=[]
+                for i in range(len(vdim)):
+                    if vdim[i]=='lsmlon':
+                        vdim_new.append('gridcell')
+                    elif vdim[i]!='lsmlat':
+                        vdim_new.append(vdim[i])
+                vdim = vdim_new
+            
+            if vname in src2.variables.keys():
+                vtype = src2.variables[vname].datatype
+            else:
+                vtype = fdata_src1.variables[vname].datatype
+            dst.createVariable(vname, vtype, vdim)
+            dst[vname].setncatts(fdata_src1[vname].__dict__)
+            vnames.append(vname)
+            
+            print ('variable: ', vname)
+            
+            vdata = np.asarray(fdata_src1.variables[vname])
+            try:
+                idx_void = np.where(vdata==fdata_src1.variables[vname]._FillValue)
+                vdata_min = np.min(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
+                vdata_max = np.max(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
+                vdata[idx_void] = vdata_min  # nan is bad for interpolating
+            except:
+                idx_void = np.where((np.isnan(vdata) | ~np.isfinite(vdata)))
+                vdata_min = np.min(vdata[np.where(~(np.isnan(vdata) | ~np.isfinite(vdata)))])
+                vdata_max = np.max(vdata[np.where(~(np.isnan(vdata) | ~np.isfinite(vdata)))])
+                vdata[idx_void] = vdata_min  # nan/inf is bad for interpolating
+            vlat = np.asarray(fdata_src1.variables['lsmlat'])
+            vlon = np.asarray(fdata_src1.variables['lsmlon'])
+            if interp_soiltdb:
+                finterp_src1 =interpolate.interp2d(vlon, vlat, vdata, kind='cubic')
+            else:
+                finterp_src1 =interpolate.interp2d(vlon, vlat, vdata, kind='linear')
+            if UNSTRUCTURED_DOMAIN: 
+                vdata_new = [finterp_src1(xx,yy) for xx,yy in zip(lon_new,lat_new)]
+                vdata_new = np.squeeze(np.asarray(vdata_new))
+            else:
+                vdata_new = finterp_src1(lon_new, lat_new)
+            vdata_new[np.where(vdata_new<vdata_min)] = vdata_min
+            vdata_new[np.where(vdata_new>vdata_max)] = vdata_max  # 0-50.0 m are the ranges of original datasets
+            dst[vname][...] = np.copy(vdata_new)
+            del vdata, vdata_new, vlat, vlon
+            
+            fdata_src1.close()
+            
+        # natveg
+        if os.path.isfile(fsrfnc_natveg_pft):
+            fdata_src1 = Dataset(fsrfnc_natveg_pft)
+            for vname in fdata_src1.variables.keys():
+                if vname in src2.variables.keys() and vname not in vnames and \
+                  ('PCT_PFT' in vname or 'PCT_NAT_PFT' in vname or 'PCT_NATVEG' in vname):
+                    print ('variable: ', vname)
+                    vdim = fdata_src1.variables[vname].dimensions
+                    if 'gridcell' not in vdim and UNSTRUCTURED_DOMAIN:
+                        vdim_new=[]
+                        for i in range(len(vdim)):
+                            if vdim[i]=='lsmlon':
+                                vdim_new.append('gridcell')
+                            elif vdim[i]!='lsmlat':
+                                vdim_new.append(vdim[i])
+                        vdim = vdim_new
+
+                    vtype = src2.variables[vname].datatype
+                    dst.createVariable(vname, vtype, vdim)
+                    dst[vname].setncatts(src2[vname].__dict__)
+                    vnames.append(vname)
+                    
+                    vdata = np.asarray(fdata_src1.variables[vname])
+                    try:
+                        idx_void = np.where(vdata==fdata_src1.variables[vname]._FillValue)
+                        vdata_min = np.min(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
+                        vdata_max = np.max(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
+                        vdata[idx_void] = vdata_min  # nan is bad for interpolating
+                    except:
+                        idx_void = np.where((np.isnan(vdata) | ~np.isfinite(vdata)))
+                        if (len(idx_void[0])>0):
+                            vdata_min = np.min(vdata[np.where(~(np.isnan(vdata) | ~np.isfinite(vdata)))])
+                            vdata_max = np.max(vdata[np.where(~(np.isnan(vdata) | ~np.isfinite(vdata)))])
+                            vdata[idx_void] = vdata_min  # nan/inf is bad for interpolating
+                        else:
+                            vdata_min = 0.0
+                            vdata_max = 100.0
+                    vdata[vdata<vdata_min] = vdata_min
+                    vdata[vdata>vdata_max] = vdata_max
+                    vlat = np.asarray(fdata_src1.variables['lsmlat'])
+                    vlon = np.asarray(fdata_src1.variables['lsmlon'])
+                    vdata_new = np.asarray(dst.variables[vname][...])
+                    for i in range(vdata.shape[0]): #dim 'pft' in axis 0, lat/lon in the last 2
+                        if interp_pft:
+                            finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[i,...], kind='cubic')
+                        else:
+                            # nearest
+                            finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[i,...], kind='linear')
+                        
+                        if UNSTRUCTURED_DOMAIN: 
+                            temp =[finterp_src1(xx,yy) for xx,yy in zip(lon_new,lat_new)]
+                            temp = np.squeeze(np.asarray(temp))
+                        else:
+                            temp = finterp_src1(lon_new, lat_new)
+                        vdata_new[i,] = np.copy(temp)
+                        del temp
+                    #
+                    vdata_new[np.where(vdata_new<vdata_min)] = vdata_min
+                    vdata_new[np.where(vdata_new>vdata_max)] = vdata_max
+                    #need to make sure all pfts summed to 100%
+                    vdata_sum = np.sum(vdata_new, axis=0)
+                    for i in range(vdata.shape[0]):
+                        vdata_new[i,...] = vdata_new[i,...]/vdata_sum*100.0
+                    
+                    vdata_new[np.where(vdata_new<0.0)]=0.0; vdata_new[np.where(vdata_new>100.0)]=100.0
+                    dst[vname][...] = np.copy(vdata_new)
+                    del vdata, vdata_new, vlat, vlon
+            fdata_src1.close()
+            
+        #
+    # end if true for doing merging all new high-res surfdata 
 
 
 

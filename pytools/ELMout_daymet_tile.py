@@ -274,7 +274,10 @@ if (options.elmheader != ""):
         src = Dataset(ncfile,'r')
         ncformat = src.file_format
         
-        ncfile_out = 'daymet-'+ncfile.split('/')[-1]
+        if 'daymet' in options.gridmap:
+            ncfile_out = 'daymet-'+ncfile.split('/')[-1]
+        else:
+            ncfile_out = 'projection-'+ncfile.split('/')[-1]
         dst = Dataset(ncfile_out, mode='w',format=ncformat)
 
         print ('Processing - ', ncfile, '==> ', ncfile_out)
@@ -284,40 +287,44 @@ if (options.elmheader != ""):
         dst.setncatts(src.__dict__)
     
         # copy dimensions
+        has_unlimited_dim = False
         for name, dimension in src.dimensions.items():
             dname=name
             if name=='DTIME': dname='time'# rename 'DTIME' to 'time' so that VISIT can regcon. it
             dst.createDimension(dname, (len(dimension) if not dimension.isunlimited() else None))
             # unlimited dimension name to be included dst output
             if dimension.isunlimited():
+                has_unlimited_dim = True
                 unlimited_dim = dname
                 unlimited_size = dimension.size  # this is needed for dst, otherise it's 0 which cannot put into data for newer nc4 python
         
-        # add geox/geoy dimensions
-        geox_dim = dst.createDimension('geox',  len(xx))
-        geoy_dim = dst.createDimension('geoy',  len(yy))
-        
-        vgeox = dst.createVariable('geox', np.float32, ('geox',))
-        vgeox.units = 'meters'
-        vgeox.long_name = 'Easting (Lambert Conformal Conic projection)'
-        vgeox.standard_name = "projection_x_coordinate"
-        vgeox[:] = xx
+        # add geox/geoy dimensions, if not in src. 
+        # note: here by default, daymet's projection is assummed.
+        if 'geox' not in dst.dimensions: 
+            geox_dim = dst.createDimension('geox',  len(xx))
+            geoy_dim = dst.createDimension('geoy',  len(yy))
             
-        vgeoy = dst.createVariable('geoy', np.float32, ('geoy',))
-        vgeoy.units = 'meters'
-        vgeoy.long_name = 'Northing (Lambert Conformal Conic projection)'
-        vgeoy.standard_name = "projection_y_coordinate"
-        vgeoy[:] = yy
-
-        vproj = dst.createVariable('lambert_conformal_conic', np.int32)
-        vproj.grid_mapping_name = "lambert_conformal_conic"
-        vproj.longitude_of_central_meridian = -100.
-        vproj.latitude_of_projection_origin = 42.5
-        vproj.false_easting = 0.
-        vproj.false_northing = 0.
-        vproj.standard_parallel = 25., 60.
-        vproj.semi_major_axis = 6378137.
-        vproj.inverse_flattening = 298.257223563 
+            vgeox = dst.createVariable('geox', np.float32, ('geox',))
+            vgeox.units = 'meters'
+            vgeox.long_name = 'Easting (Lambert Conformal Conic projection)'
+            vgeox.standard_name = "projection_x_coordinate"
+            vgeox[:] = xx
+                
+            vgeoy = dst.createVariable('geoy', np.float32, ('geoy',))
+            vgeoy.units = 'meters'
+            vgeoy.long_name = 'Northing (Lambert Conformal Conic projection)'
+            vgeoy.standard_name = "projection_y_coordinate"
+            vgeoy[:] = yy
+    
+            vproj = dst.createVariable('lambert_conformal_conic', np.int32)
+            vproj.grid_mapping_name = "lambert_conformal_conic"
+            vproj.longitude_of_central_meridian = -100.
+            vproj.latitude_of_projection_origin = 42.5
+            vproj.false_easting = 0.
+            vproj.false_northing = 0.
+            vproj.standard_parallel = 25., 60.
+            vproj.semi_major_axis = 6378137.
+            vproj.inverse_flattening = 298.257223563 
 
         # copy all data in src, and do 1D-grid --> 2D-geox/geoy copy
         for name, variable in src.variables.items():
@@ -429,8 +436,12 @@ if (options.elmheader != ""):
                 x = dst.createVariable(vname, vdtype, \
                                         dimensions=new_dims, \
                                         zlib=True, fill_value=FillValue)
-                dst[vname].setncatts(src[name].__dict__)  # this now must be done before data-filling
+                try:
+                    dst[vname].setncatts(src[name].__dict__)  # this now must be done before data-filling
+                except:
+                    print('warning: NOT set ncatts!')
 
+                    
                 # re-assign data from gidx to (yidx,xidx)
                 # gidx should be in order already
                 # dst_data = np.asarray(dst[vname])
@@ -438,8 +449,9 @@ if (options.elmheader != ""):
                 # for newer netcdf4-python, the unlimited dimension in an array is problemic
                 # so have to hack like following
                 re_size = list(dst[vname].shape)
-                for i in range(len(re_size)):
-                    if dst[vname].dimensions[i]==unlimited_dim: re_size[i]=unlimited_size
+                if has_unlimited_dim:
+                    for i in range(len(re_size)):
+                        if dst[vname].dimensions[i]==unlimited_dim: re_size[i]=unlimited_size
                 dst_data=np.empty(tuple(re_size), dtype=dst[vname].datatype)
                 dst_data[:]=FillValue
                 
