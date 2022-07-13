@@ -104,6 +104,10 @@ parser.add_option("--subdomain_number", dest="zone_num", default=0, \
                   help = " sub-domain numbers , by default uppon to subdomain_gridnumber which can be overriden by giving a number over 0")
 parser.add_option("--subdomain_cores", dest="zone_cores", default=6, \
                   help = " sub-domain on number of cores , by default 6 i.e. subdomain is for running at 6 cores ")
+parser.add_option("--subdomain_znum1", dest="zone1", default=1, \
+                  help = " sub-domain zone number starting value , by default 1")
+parser.add_option("--subdomain_zdigit", dest="zdigit", default=2, \
+                  help = " sub-domain zone number digit, by default 2, i.e. 01 for zone 1")
 parser.add_option("--ncfile_header", dest="fileheader", default="GSWP3_daymet", \
                   help = "netcdf file name header, by default 'GSWP3_daymet*', i.e. high-res forcing data files only ")
 parser.add_option("--ncobinpath", dest="ncobinpath", default="", \
@@ -112,7 +116,7 @@ parser.add_option("--ncobinpath", dest="ncobinpath", default="", \
 (options, args) = parser.parse_args()
 
 cwdir = './'
-zdigit = 3
+zdigit = options.zdigit
 
 mycomm = MPI.COMM_WORLD
 myrank = mycomm.Get_rank()
@@ -244,7 +248,7 @@ if myrank==0:
     z_gid[:] = 0
     
     g_0 = 0
-    g_zno = 1
+    g_zno = int(options.zone1)
     g_accsum = z_gsize
     z_cores = int(options.zone_cores)
     z_gres1 = math.floor(z_gres/z_cores)       # so z_gres = z_gres1*cores+z_gresx
@@ -382,6 +386,7 @@ if (not options.mapfile_only):
                 z0str = ncfname.split('_')[-1]
                 z0str = z0str.split('.')[0]
                 ncfileout = ncdirout+"/"+ncfname.replace(z0str,'z'+zno_name)
+                ncfname = ncfname.replace(z0str,'z??')
             else:
                 ncfileout = ncdirout+"/"+ncfname
             if (os.path.isfile(ncfileout) and zno==0): 
@@ -432,10 +437,12 @@ if (not options.mapfile_only):
                        os.system('cp '+ tmpnc +' '+ncfileout)
                     
                 
+                #
+            #
             #end of for idir in zworkdirno
             if (dir==wdir_all[len(wdir_all)-1] and zno==z_num-1): 
                 print ('DONE with ncfile: ', ncfile.split('/')[-1], ' ON rank: ', myrank)
-        
+        #
         #end of 'for ncfile in alldirfiles:'
         mycomm.Barrier()
         if (myrank==0): os.system('rm -f temp_*nc*')
