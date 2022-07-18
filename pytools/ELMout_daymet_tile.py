@@ -347,9 +347,11 @@ if (options.elmheader != ""):
                 or 'pft' in src_dims):
                 try:
                     FillValue = variable._FillValue
+                    srcatt_isfillvalue = True
                 except Exception as e:
                     print(e)
                     FillValue = -9999
+                    srcatt_isfillvalue = False
                 src_data = np.asarray(src[name])# be ready for original data to re-shape if any below 
 
                 new_dims = []
@@ -430,21 +432,17 @@ if (options.elmheader != ""):
                         new_dims.append(dim)
                 
                 if SKIPPED: continue
+                
                 vdtype = variable.datatype
                 if(vdtype!=src_data.dtype):
                     vdtype=src_data.dtype
+                
                 x = dst.createVariable(vname, vdtype, \
                                         dimensions=new_dims, \
                                         zlib=True, fill_value=FillValue)
-                try:
+                if not srcatt_isfillvalue:   # weired error if src[name].__ditc__ already included '_FillValue'
                     dst[vname].setncatts(src[name].__dict__)  # this now must be done before data-filling
-                except:
-                    print('warning: NOT set ncatts!')
-
                     
-                # re-assign data from gidx to (yidx,xidx)
-                # gidx should be in order already
-                # dst_data = np.asarray(dst[vname])
                 
                 # for newer netcdf4-python, the unlimited dimension in an array is problemic
                 # so have to hack like following
