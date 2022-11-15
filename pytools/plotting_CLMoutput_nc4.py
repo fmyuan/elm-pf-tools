@@ -11,6 +11,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from Modules_CLMoutput_nc4 import CLM_NcRead_1simulation
 from Modules_CLMoutput_nc4 import CLMvar_1Dtseries
 from cmath import nan
+from matplotlib.pyplot import ylim
 
 
 # ---------------------------------------------------------------
@@ -30,20 +31,33 @@ def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, layer_index, sd
     layertext = []
     
     # add a zero-degree-C line for 'TSOI'
-    if(varname == 'TSOI'):
-        plt.plot([min(t),max(t)],[273.15,273.15],'k--')
-        layertext.append("0oC ")
+    #if(varname == 'TSOI'):
+    #    plt.plot([min(t),max(t)],[273.15,273.15],'k--')
+    #    layertext.append("0oC ")
 
     for il in layer_index:
-        layertext.append(("Layer "+str(il)))
-        plt.plot(t, sdata[:,il])
+        if il in [0,2,4,6,8,9]:
+            layertext.append(("L"+str(il+1)))
+            plt.plot(t, sdata[:,il])
+        if il>=9: break
+        #if (varname!='TSOI') and il>=9: break  # non-soil temperature only need upper 10 real soil layers 
+        
+    # limits of axis
+    if 'TSOI' in varname: plt.ylim([253,293])
+    if 'SOILICE' in varname: plt.ylim([0,450])
+
+    if 'TSOI' in varname: plt.legend((layertext), loc=0, ncol=2, fontsize=10)
+    
+    # appending unit
+    if varname=='TSOI': varname='Soil-layer Temperature (K)'
+    if varname=='SOILICE': varname='Soil-layer Ice (kg/m2)'
  
-    #plt.legend((layertext), loc=0, fontsize=10)
-    plt.xlabel(t_unit, fontsize=18, fontweight='bold')
-    plt.ylabel(varname, fontsize=18, fontweight='bold')
+ 
+    plt.xlabel(t_unit, fontsize=10, fontweight='bold')
+    plt.ylabel(varname, fontsize=10, fontweight='bold')
 
     ax_user=plt.gca()
-    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 18)
+    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 10)
 
     lx = 0.10
     ly = 0.90
@@ -68,12 +82,12 @@ def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, pftvidx, pft_ind
                 active_pfts.append(("PFT "+str(ip)))
                 plt.plot(t, sdata[:,ip])
     
-    plt.legend((active_pfts), loc=0, fontsize=10)
-    plt.xlabel(t_unit,  fontsize=18, fontweight='bold')
-    plt.ylabel(varname, fontsize=18, fontweight='bold')
+    if isubplot==1: plt.legend((active_pfts), loc=0, fontsize=10)
+    plt.xlabel(t_unit,  fontsize=10, fontweight='bold')
+    plt.ylabel(varname, fontsize=10, fontweight='bold')
 
     ax_user=plt.gca()
-    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 18)
+    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 10)
 
     lx = 0.10
     ly = 0.90
@@ -82,12 +96,17 @@ def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, pftvidx, pft_ind
 
 
 # Plot Grided data
-def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plotlabel):
+def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=None, varname='', plotlabel='', plottype='default'):
 
     ax=plt.subplot(nrow, ncol, isubplot)
 
     plt.subplots_adjust(left=0.065, bottom=None, right=0.99, top=0.98,
                 wspace=0.33, hspace=None)
+
+    if(varname in ['GPP','NEE','HR']):         
+        sdata = sdata*1000000.0 # unit change to ug/m2/s
+        if sdata_std is not None: 
+            sdata_std = sdata_std*1000000.0
     
     if('TOTSOMC' in varname):         
         varname=varname+' (kgC/m2)'
@@ -97,53 +116,104 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
         varname=varname+' (mm/d)'
         sdata = sdata*86400.0
     if(varname in ['SNOW_DEPTH','SNOWDP']):         
-        varname=varname+' (m)'
+        varname='Snow Depth'+' (m)'
 
+    if(varname in ['ALT']):
+        varname='Active Layer Depth (m)'
+        #ax.set_yscale("log")
+        #sdata[np.where(sdata<=0.0)] = nan
     
     gridtext = []
 
     
     # add a zero line for a few variables
-    if(varname in ['GPP','NPP','NEE','MR','GR']):
+    if(varname in ['NEE']):
         plt.plot([min(t),max(t)],[0.0,0.0],'k--')
         gridtext.append("0 line ")
 
     # add a zero-degree-C line for 'TBOT'
-    if(varname == 'TBOT'):
+    if(varname == 'TBOT' or varname == 'TSOI'):
         plt.plot([min(t),max(t)],[273.15,273.15],'k--')
-        gridtext.append("0oC")
+        #plt.plot([1,12],[273.15,273.15],'k--')
+        gridtext.append("0 oC")
 
     if(len(sdata.shape)>1):
-        for igrd in range(sdata.shape[1]):
-            #gridtext.append(("GRID "+str(igrd)))
-            plt.plot(t, sdata[:,igrd])
-        #gridtext.append(["NAMC","DSLT","AS","WBT","TT-WBT","TT"])
-        #gridtext.append("Daymet_Tile13868")
+        if sdata_std is not None:
+            for i in range(sdata.shape[1]):
+                #igrd = i
+                igrd = sdata.shape[1]-i-1 # this will reversely plot data point
+                gridtext.append(("Site "+str(igrd+1)))
+                #gridtext.append(("Area for Site "+str(igrd+4)))
+                if (t_unit=='MONTH'):
+                    #slightly shift t-axis so that monthly data point gapped
+                    plt.errorbar((t+igrd)*12.0/365.0, sdata[:,igrd], yerr=sdata_std[:,igrd], linestyle='-', marker='.', capsize=2)
+                    plt.xticks(np.arange(1, 13, 1))
+                    #plt.ylim([0.0,3.0])
+                else:
+                    plt.errorbar(t, sdata[:,igrd], yerr=sdata_std[:,igrd], linestyle='-', marker='.', capsize=2)
+        elif plottype=='errorbar':
+            plt.errorbar(t, np.nanmean(sdata,1), yerr=np.nanstd(sdata,1), linestyle='-', marker='.', capsize=2)
+        else:
+            for i in range(sdata.shape[1]):
+                #igrd = i
+                igrd = sdata.shape[1]-i-1 # this will reversely plot data point
+                gridtext.append(("Site "+str(igrd+1)))
+                #gridtext.append(("Area for Site "+str(igrd+4)))
+                if(varname == 'SNOW' or varname == 'RAIN'):         
+                    plt.bar(t, sdata[:,igrd])
+                else:
+                    plt.plot(t, sdata[:,igrd])
+            #gridtext.append(["NAMC","DSLT","AS","WBT","TT-WBT","TT"])
+            #gridtext.append("Daymet_Tile13868")
 
     else:
         #gridtext.append(("GRID "+str(0)))
-        plt.plot(t, sdata)
+        if sdata_std is not None:
+            plt.errorbar(t, sdata, yerr=sdata_std, linestyle='-', marker='.', capsize=2)
+        elif(varname == 'SNOW' or varname == 'RAIN'):
+            plt.bar(t, sdata)
+        else:
+            plt.plot(t, sdata)
         
+    # user-defined x/y limits
+    #if ('LAI' in varname): plt.ylim([0.0,3.0])
+    #if ('ALT' in varname): plt.ylim([-0.5,5.0])
+    #if ('SNOW' in varname): plt.ylim([0.0,20.0])
+    #if ('Snow Depth' in varname): plt.ylim([0.0,2.0])
+ 
+     # appending unit
+    if varname=='TBOT': varname='Air Temperature (oC)'
+    if varname=='TSOI': varname='Near-surface Soil Temperature (K)'
+    if varname=='TLAI': varname='Total LAI (m2/m2)'
+    if varname=='GPP': varname='GPP (10^-6 gC/m2/s)'
+    if varname=='NEE': varname='NEE (10^-6 gC/m2/s)'
+    if varname=='HR': varname='Hetero Respiration (10^-6 gC/m2/s)'
+    if varname=='total_SOILICE': varname='total Soil Ice (kg/m2)'
+
+    #if isubplot==1: plt.legend((gridtext), loc=1, fontsize=12)
     
-    plt.legend((gridtext), loc=0, fontsize=20)
     
     # plot X/Y axis label, if manually change
     #t_unit = 'Days'
     #varname = ' surface water head (mm)'
     #varname = 'Snow water equivalent (mm)'
-    plt.xlabel(t_unit, fontsize=14, fontweight='bold')
-    plt.ylabel(varname, fontsize=14, fontweight='bold')
+
+    plt.xlabel(t_unit, fontsize=10, fontweight='bold')
+    plt.ylabel(varname, fontsize=10, fontweight='bold')
     
     ax_user=plt.gca()
-    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 14)
+    ax_user.tick_params(axis = 'both', which = 'both', labelsize = 10)
+    #ax_user.set_xticklabels(ax_user.get_xticks(), weight='bold')
+    #ax_user.set_yticklabels(ax_user.get_yticks(), weight='bold')
+    if ('Active Layer ' in varname): ax_user.invert_yaxis()
 
-    lx = 0.20
-    ly = 0.85
+    lx = 0.30
+    ly = 0.95
     plot_title = ''
-    #plot_title = 'Daymet_Tile13868(Kougarok)' #plotlabel, if any
+    #if plotlabel!='' and isubplot==2: plot_title = 'Site 7'#'Seward Peninsula, AK' #plotlabel, if any
     plt.rcParams["font.weight"] = "bold"
     plt.rcParams["axes.labelweight"] = "bold"
-    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=12, fontweight='bold')
+    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=18, fontweight='bold')
 
 #-------------------Parse options-----------------------------------------------
 
@@ -251,6 +321,8 @@ if(options.clmout_ts=='daily'):
     startdays=startdays
 elif(options.clmout_ts=='monthly'): 
     startdays=startdays+1.0
+elif(options.clmout_ts=='hhourly'): 
+    startdays=startdays+1.0/24.0
     
 enddays = -9999
 if(options.endyr !=""): enddays = int(options.endyr)*365.0
@@ -268,6 +340,8 @@ tunit0 = float(options.yr0)*365.0*day_scaling #the simulation year 0 timing (in 
 
 ix=int(options.xindex);
 iy=int(options.yindex);
+iz=int(options.zindex);
+ip=int(options.pindex);
 
 # read-in datasets from 1 simulation
 nx, ny, nlgrnd, nldcmp, ncolumn, npft, varsdata, varsdims, ttunits = \
@@ -288,13 +362,14 @@ vars_list = list(varsdata.keys())    # var_list is in format of 'h*_varname', in
 # plotting
 nrow = 1   # sub-plot vertically arranged number (row no.)
 ncol = 1   # sub-plot horizontally arranged number (column no.)
+#if(nvars==2): ncol = 2
 if(nvars==2): ncol = 2
 if(nvars==3): ncol = 3
 if(nvars==4): nrow=2; ncol=2
 
 # dimension max.
 if2dgrid = True
-if(len(varsdata['topo'].shape)==1): if2dgrid = False
+if(nx==1 or ny==1): if2dgrid = False
 
 # time-invariant variables
 constdata = {}
@@ -318,6 +393,7 @@ for var in varnames:
             break
         
     vdata = varsdata[var_h]
+    if (var=='ALT'): vdata[np.where(vdata>=3.801)]=3.801 # the 10-soil-layer bottom depth is about 3.80m, not the whole 15 layer bottom (~42m)
     vdims = varsdims[var_h]
     
     tt = varsdata[var_t]   # time unit: days
@@ -331,8 +407,16 @@ for var in varnames:
         continue
     
     # processing original data, if needed
-    t, gdata, sdata, zdim_indx, pdim_indx = \
-        CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
+    if (options.annually or options.seasonally):
+        t, gdata, gdata_std, sdata, sdata_std, zdim_indx, pdim_indx, npft, ncolumn = \
+            CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
+                    izp=max(iz,ip), \
+                    annually=options.annually, \
+                    seasonally=options.seasonally)
+    else:
+        t, gdata, sdata, zdim_indx, pdim_indx, npft, ncolumn  = \
+            CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
+                    izp=max(iz,ip), \
                     annually=options.annually, \
                     seasonally=options.seasonally)
 
@@ -341,13 +425,28 @@ for var in varnames:
     t = np.asarray(t)*day_scaling + tunit0
 
     #if manually offset time
-    t0 = 0#yr0*365
-    t = t - t0
+    t0 = 0#(2014-0)*365 #0
+    #if(tunit=='DOY'):t0=(2014-0)*365
+    #if(tunit=='YEAR'):t0=0
+    t = (t - t0)
     tunit = tunit.upper()
 
-    if(zdim_indx<0 and pdim_indx<0):
-        GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, \
-                        vname, '(a) All Grids')
+    if((zdim_indx<0 and pdim_indx<0) or max(iz,ip)>=0):
+        if (options.annually or options.seasonally):
+            GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, sdata_std=gdata_std, \
+                        #varname=vname, plotlabel='0.5degx0.5deg Resolution', plottype='errorbar')
+                        varname=vname, plotlabel='1kmx1km Resolution', plottype='errorbar')
+        else:
+            GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, \
+                        #varname=vname, plotlabel='Site '+str(iy+1))
+                        varname=vname, plotlabel='1kmx1km Resolution')
+                        #varname=vname, plotlabel='0.5degx0.5deg Resolution')
+            #GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, \
+            #                varname=vname, plotlable-'0.5x0.5 degree Resolution')#, \
+            #                #'All Grids', plottype='errorbar')
+        
+        
+        
     elif(zdim_indx>0):
         if(len(layer_index)==1 and layer_index[0]<0): layer_index = range(0,nlgrnd)
         SoilLayeredVarPlotting(plt, nrow, ncol, ivar, t, tunit, layer_index, sdata, \
@@ -364,7 +463,7 @@ for var in varnames:
 # printing plot in PDF
 ofname = 'Figure_CLM.pdf'
 fig = plt.gcf()
-fig.set_size_inches(11.5, 8.5)
+fig.set_size_inches(11.5, 6.0)
 plt.savefig(ofname)
 plt.show()
 

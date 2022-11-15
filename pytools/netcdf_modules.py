@@ -107,7 +107,7 @@ def dupexpand(ncfilein, ncfileout,dim_name='',dim_len=-999, dim_multipler=1):
     # but dim_multipler must be 1 (obviously)
     if type(dim_name)==str and (dim_len>=0 and len(dim_multipler)>1):
         print('Error: cannot have new-dim_len and multiplied len -', dim_len, dim_multipler)
-        sys.exit(-1)
+        os.sys.exit(-1)
     
     with Dataset(ncfilein) as src, Dataset(ncfileout, "w") as dst:
         # copy global attributes all at once via dictionary
@@ -545,9 +545,11 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 #os.system('rm -rf test02.nc')
 
 # duplicately expanding nc files along named dimension(s)
-#dupexpand('surfdata.nc', 'surfdata2.nc', dim_name=['lsmlat','lsmlon'], dim_len=[1,8])
-#dupexpand('domain.nc', 'domain2.nc', dim_name='ni', dim_multipler=8)
-#dupexpand('domain.lnd.test01_navy.nc', 'test02_navy.nc', dim_name=['nj','ni'], dim_len=[1,2])
+#dupexpand('surfdata.nc', 'surfdata_3x1pt.nc', dim_name=['lsmlat','lsmlon'], dim_len=[1,3])
+#dupexpand('surfdata.pftdyn.nc', 'surfdata.pftdyn_3x1pt.nc', dim_name=['lsmlat','lsmlon'], dim_len=[1,3])
+#dupexpand('surfdata.nc', 'surfdata_3x1pt.nc', dim_name='gridcell', dim_len=3)
+#dupexpand('domain.nc', 'domain_3x1pt.nc', dim_name='ni', dim_multipler=3)
+#dupexpand('domain.lnd.1x1pt_Oakharbor-GRID_navy.nc', 'domain.lnd.3x1pt_Oakharbor-GRID_navy.nc', dim_name=['nj','ni'], dim_len=[1,3])
 #dupexpand('landuse.timeseries_1x1pt_kougarok-NGEE_simyr1850-2015_c181015m64.nc', 'test6x1.nc', ['lsmlat','lsmlon'], [1,6])
 
 # merge 2 files along 1-only named-dimension

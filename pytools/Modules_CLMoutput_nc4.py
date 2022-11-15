@@ -202,6 +202,17 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
     
     # convert 'soilliq' to 'saturation_lia', if available
     # sat = h2osoi_liq(c,j) / (watsat(c,j)*dz(c,j)*denh2o)
+    if 'SOILLIQ' in odata.keys():
+        dary = np.array(odata['SOILLIQ'])
+        odata_dims['total_SOILLIQ']=[]
+        for i in range(len(odata_dims['SOILLIQ'])):
+            if odata_dims['SOILLIQ'][i]=='levgrnd':
+                zdim=i
+            else:
+                odata_dims['total_SOILLIQ'].append(odata_dims['SOILLIQ'][i])
+        odata['total_SOILLIQ'] = np.sum(dary,zdim)
+
+
     denh2o = 1000.0 #kg/m3
     if 'SOILSAT_LIQ' in keep_vars:
         if 'SOILLIQ' in odata.keys():
@@ -215,6 +226,16 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
                 odata['SOILSAT_LIQ'] = dary/dvec
 
             odata_dims['SOILSAT_LIQ'] = odata_dims['SOILLIQ'] 
+
+    if 'SOILICE' in odata.keys():
+        dary = np.array(odata['SOILICE'])
+        odata_dims['total_SOILICE']=[]
+        for i in range(len(odata_dims['SOILICE'])):
+            if odata_dims['SOILICE'][i]=='levgrnd':
+                zdim=i
+            else:
+                odata_dims['total_SOILICE'].append(odata_dims['SOILICE'][i])
+        odata['total_SOILICE'] = np.sum(dary,zdim)
         
     denice = 917.0 #kg/m3
     if 'SOILSAT_ICE' in keep_vars:
@@ -315,6 +336,7 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
 
     keep_const.append("geox")     # grid center x-coordinates
     keep_const.append("geoy")     # grid center y-coordinates
+    keep_const.append("gridcell")
 
     # variables name dictionary
     keep = keep_const
@@ -344,13 +366,17 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
         keep.extend(totlitn_vr)
         
     #
-    if 'SOILSAT_LIQ' in varnames and 'SOILLIQ' not in keep: keep.append('SOILLIQ') 
-    if 'SOILLIQ' in varnames or VARS_ALL:
-        if 'SOILSAT_LIQ' not in keep: keep.append('SOILSAT_LIQ') 
+    #if 'SOILSAT_LIQ' in varnames and 'SOILLIQ' not in keep: keep.append('SOILLIQ') 
+    if 'total_SOILLIQ' in varnames and 'SOILLIQ' not in keep: keep.append('SOILLIQ') 
+    if 'SOILLIQ' in keep:
+        #keep.append('SOILSAT_LIQ') 
+        keep.append('total_SOILLIQ') 
         
-    if 'SOILSAT_ICE' in varnames and 'SOILICE' not in keep: keep.append('SOILICE') 
-    if 'SOILICE' in varnames or VARS_ALL:
-        if 'SOILSAT_ICE' not in keep: keep.append('SOILSAT_ICE') 
+    #if 'SOILSAT_ICE' in varnames and 'SOILICE' not in keep: keep.append('SOILICE') 
+    if 'total_SOILICE' in varnames and 'SOILICE' not in keep: keep.append('SOILICE') 
+    if 'SOILICE' in keep:
+        #keep.append('SOILSAT_ICE') 
+        keep.append('total_SOILICE') 
 
     # build all nc files into one or two arrays
     allfile = glob.glob("%s.h*.*.nc" % clmhead)
@@ -438,7 +464,27 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
                 elif('geox' in chunkdatai and 'geoy' in chunkdatai):
                     nx = chunkdatai['geox'].size
                     ny = chunkdatai['geoy'].size
-                
+                else:
+                    # no explicit nx/ny info, usually it's 'gridcell' which embbed in vardata
+                    for iv in chunkdatai.keys():
+                        if ('gridcell' in chunkdatai_dims[iv]):
+                            ig = chunkdatai_dims[iv].index('gridcell')
+                            nx = 1
+                            ny = chunkdatai[iv].shape[ig]
+                            continue   # only need once
+                        elif ('geox' in chunkdatai_dims[iv] and 'geoy' in chunkdatai_dims[iv]):
+                            ix = chunkdatai_dims[iv].index('geox')
+                            nx = chunkdatai[iv].shape[ix]
+                            iy = chunkdatai_dims[iv].index('geoy')
+                            ny = chunkdatai[iv].shape[iy]
+                            continue   # only need once
+                        elif ('lon' in chunkdatai_dims[iv] and 'lat' in chunkdatai_dims[iv]):
+                            ix = chunkdatai_dims[iv].index('lon')
+                            nx = chunkdatai[iv].shape[ix]
+                            iy = chunkdatai_dims[iv].index('lat')
+                            ny = chunkdatai[iv].shape[iy]
+                            continue   # only need once
+                    
             if (nlgrnd<=0 and 'levgrnd' in chunkdatai):
                 nlgrnd = len(chunkdatai['levgrnd'])
             if (nldcmp<=0 and 'levdcmp' in chunkdatai):
@@ -497,6 +543,7 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
             for fvar in chunkdata: 
                
                 #
+                
                 if len(chunkdata[fvar])>0:  
                     if (fvar not in varsdata) and (fvar not in fincludes):   # constants, excluding str of 'h0~h5'
                         varsdata[fvar] = chunkdata[fvar]
@@ -533,7 +580,7 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
 #----------------------------------------------------------------
 # processing originally-readin CLM data (1,2,3D) into t-series 1D collpased dataset
 def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
-                    annually=False, seasonally=False):
+                    izp=-1, icol=-1, annually=False, seasonally=False):
 
     t  = sorted(tt)
     it = sorted(range(len(tt)), key=lambda k: tt[k])
@@ -557,6 +604,7 @@ def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
 
     # pft dim, if existed
     pdim_indx = -999
+    npft = -999
     if('pft' in vdims):
         pdim_indx = vdims.index('pft')
         npft = vdata.shape[pdim_indx] # this actually is nxy*npft
@@ -565,7 +613,7 @@ def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
         pft1active = constdata['pfts1d_active']
 
         if(nxy>1):
-            npft = npft/nxy
+            npft = int(npft/nxy)
             if(if2dgrid): 
                 vdata = vdata.reshape(-1,ny,nx,npft)
                 pwt1cell = pwt1cell.reshape(ny,nx,npft)
@@ -579,7 +627,7 @@ def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
                 pft1active = pft1active.reshape(nxy,npft)
                 pdim_indx = pdim_indx + 1 # 
             
-            if(len(pft_index)==1 and pft_index[0]<0): 
+            if(izp<0):
                 # when NOT output specific PFT(s) for all grid, sum all pfts
                 if(ix<0 and iy<0):
                     vdata = np.sum(vdata*pwt1cell,axis=pdim_indx)
@@ -596,27 +644,28 @@ def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
                     pwt1cell = pwt1cell[max(iy,ix),:]
                     pft1vidx = pft1vidx[max(iy,ix),:]
                     pft1active = pft1active[max(iy,ix),:]
-            elif(ix<0 and iy<0):
-                if (pft_index[0]<0 and npft>1):
+            elif(ix<0 or iy<0):
+                if (izp<0 and npft>1):
                     # for all grid, must specify a PFT (that is to say: not yet support 4-D plotting)
                     print ('must specify a PFT index for grid-wised plotting')
-                    system.exit()
+                    sys.exit()
                 else:
                     if(if2dgrid): 
-                        vdata = vdata[:,:,:,pft_index[0]]
-                        pwt1cell = pwt1cell[:,:,pft_index[0]]
-                        pft1vidx = pft1vidx[:,:,pft_index[0]]
-                        pft1active = pft1active[:,:,pft_index[0]]
+                        vdata = vdata[:,:,:,izp]
+                        pwt1cell = pwt1cell[:,:,izp]
+                        pft1vidx = pft1vidx[:,:,izp]
+                        pft1active = pft1active[:,:,izp]
                     else:
-                        vdata = vdata[:,:,pft_index[0]]
-                        pwt1cell = pwt1cell[:,pft_index[0]]
-                        pft1vidx = pft1vidx[:,pft_index[0]]
-                        pft1active = pft1active[:,pft_index[0]]
+                        vdata = vdata[:,:,izp]
+                        pwt1cell = pwt1cell[:,izp]
+                        pft1vidx = pft1vidx[:,izp]
+                        pft1active = pft1active[:,izp]
                     pdim_indx = -999 # 
 
 
     # column dim, if existed
     cdim_indx = -999
+    ncolumn = -999
     if('column' in vdims):
         cdim_indx = vdims.index('column')  
         ncolumn = vdata.shape[cdim_indx] # this actually is nxy*ncolumn
@@ -624,7 +673,7 @@ def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
         col1active = constdata['cols1d_active']
 
         if(nxy>1):
-            ncolumn = ncolumn/nxy
+            ncolumn = int(ncolumn/nxy)
             if(if2dgrid): 
                 vdata = vdata.reshape(-1,ny,nx,ncolumn)
                 colwt1cell = colwt1cell.reshape(ny,nx,ncolumn)
@@ -636,25 +685,38 @@ def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
                 col1active = col1active.reshape(nxy,ncolumn)
                 cdim_indx = cdim_indx + 1 # 
         
-        if(len(col_index)==1):
-            if(col_index[0]<0): # when NOT output specific COLUMN(s), sum all cols
-                vdata = np.sum(vdata*colwt1cell,axis=cdim_indx)
-                cdim_indx = -999 # because weighted-sum, column-dimension is removed (no more 3-D data)
+        if(icol<0 and (nx>1 and ny>1)): # when NOT output specific COLUMN(s), sum all cols
+            vdata = np.sum(vdata*colwt1cell,axis=cdim_indx)
+            cdim_indx = -999 # because weighted-sum, column-dimension is removed (no more 3-D data)
         
     #-------------------------------------------
     # data series
-    gdata=[]
-    sdata=[]
-    if(zdim_indx<0 and pdim_indx<0):# 2-D grid data
-        gdata = np.zeros((nt,nx*ny))    #temporary data holder in 2-D (tt, grids)
+    gdata=[]; gdata_std=[]
+    sdata=[]; sdata_std=[]
+    if((zdim_indx<0 and pdim_indx<0) or (izp>=0)):# 2-D grid data
+        if(iy>=0 and ix>=0): #[ix,iy] is location of 2-D grids, starting from 0
+            gdata = np.zeros((nt,1))    #temporary data holder in 2-D (tt, grids)
+        elif(iy>=0 and ix<0):
+            gdata = np.zeros((nt,nx))
+        elif(ix>=0 and iy<0):
+            gdata = np.zeros((nt,ny))
+        else:
+            gdata = np.zeros((nt,nx*ny))    #temporary data holder in 2-D (tt, grids)
     elif(zdim_indx>0):        
-        sdata = np.zeros((nt,nl*nx*ny)) #temporary data holder in 2-D (tt, layers*grids)
+        if(iy>=0 and ix>=0): #[ix,iy] is location of 2-D grids, starting from 0
+            sdata = np.zeros((nt,nl))      #temporary data holder in 2-D (tt, pfts*1 grid)
+        elif(iy>=0 and ix<0):
+            sdata = np.zeros((nt,nl*nx))   #temporary data holder in 2-D (tt, pfts*nx grid)
+        elif(ix>=0 and iy<0):
+            sdata = np.zeros((nt,nl*ny))   #temporary data holder in 2-D (tt, pfts*ny grid)
+        else:
+            sdata = np.zeros((nt,nl*nx*ny)) #temporary data holder in 2-D (tt, layers*grids)
     elif(pdim_indx>0):        
         if(iy>=0 and ix>=0): #[ix,iy] is location of 2-D grids, starting from 0
             sdata = np.zeros((nt,npft))      #temporary data holder in 2-D (tt, pfts*1 grid)
-        if(iy>=0):
+        elif(iy>=0 and ix<0):
             sdata = np.zeros((nt,npft*nx))   #temporary data holder in 2-D (tt, pfts*nx grid)
-        if(ix>=0):
+        elif(ix>=0 and iy<0):
             sdata = np.zeros((nt,npft*ny))   #temporary data holder in 2-D (tt, pfts*ny grid)
         else:
             sdata = np.zeros((nt,npft*nx*ny)) #temporary data holder in 2-D (tt, pfts*grids)
@@ -665,7 +727,8 @@ def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
     # sorting data time-series by time, tt
     for i in range(len(tt)):
                 
-        if(zdim_indx<0 and pdim_indx<0):# 2-D grid data
+        if((zdim_indx<0 and pdim_indx<0) or (izp>=0)):# 2-D grid data or 3-D data with one-layer (z) or one-pft
+            if (izp>=0 and (zdim_indx>=0 or pdim_indx>=0)) and i==0: vdata = vdata[:,izp,]
             if((ix>=0 or iy>=0) and nxy>1):
                 if(if2dgrid): 
                     if(ix<0):
@@ -680,7 +743,10 @@ def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
             else: # all grids or only 1 grid
                 gdata[i,:] = vdata[it[i]].reshape(nx*ny)
         
-        
+        elif (ix<0 and iy<0):
+            #
+            print('2-D data time-series plotting NOT YET supported!')
+            sys.exit(-1)
         else:
                        
             if(zdim_indx == 1 or pdim_indx==1): # 3-D soil/pft data, z_dim/p_dim in 1 
@@ -715,10 +781,12 @@ def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
         if(len(gdata)>0):
             shp=np.hstack(([dim_yr,-1],gdata.shape[1:]))
             gdata=gdata.reshape(shp)
+            gdata_std=np.std(gdata,axis=0)
             gdata=np.mean(gdata,axis=0)
         elif(len(sdata)>0):
             shp=np.hstack(([dim_yr,-1],sdata.shape[1:]))
             sdata=sdata.reshape(shp)
+            sdata_std=np.std(sdata,axis=0)
             sdata=np.mean(sdata,axis=0)
     elif(annually):
         t=np.asarray(t)/365.0
@@ -736,14 +804,19 @@ def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
         if(len(gdata)>0):
             shp=np.hstack(([-1, dim_season],gdata.shape[1:]))
             gdata=gdata.reshape(shp)
+            gdata_std=np.std(gdata,axis=1)
             gdata=np.mean(gdata,axis=1)
         elif(len(sdata)>0):
             shp=np.hstack(([-1, dim_season],sdata.shape[1:]))
             sdata=sdata.reshape(shp)
+            sdata_std=np.std(sdata,axis=1)
             sdata=np.mean(sdata,axis=1)
 
     #
-    return t, gdata, sdata, zdim_indx, pdim_indx
+    if (annually or seasonally):
+        return t, gdata, gdata_std, sdata, sdata_std, zdim_indx, pdim_indx, npft, ncolumn
+    else:
+        return t, gdata, sdata, zdim_indx, pdim_indx, npft, ncolumn
 
 #----------------------------------------------------------------
 

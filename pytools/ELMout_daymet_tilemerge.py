@@ -349,6 +349,8 @@ if (options.elmheader != ""):
         dst.setncatts(src.__dict__)
     
         # copy dimensions
+        unlimited_dim=''
+        unlimited_size=0
         for name, dimension in src.dimensions.items():
             dname=name
             if name=='DTIME': dname='time'# rename 'DTIME' to 'time' so that VISIT can regcon. it

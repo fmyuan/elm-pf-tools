@@ -3,11 +3,13 @@
 #----------------------
 # Extract point(s) data from ELM outputs
 #
-
-import os, sys, time, math
-import numpy as np
-from optparse import OptionParser
+import os, sys
+import glob
 import re
+import math
+from optparse import OptionParser
+import numpy as np
+
 import netcdf_modules as nfmod
 
 #-------------------Local functions --------------------------------------------
@@ -20,12 +22,14 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt, is1D):
         lons_pt=[]
     else:                
         if ('str' in str(type(lons_pt))):#values with operators
-            nondecimal = re.compile(r'[^\d.,:;]+')
+            nondecimal = re.compile(r'[^\d.,:;-]+')
             v_pt = nondecimal.sub("",lons_pt)
-            v_pt = np.float64(v_pt.split("[,:;]"))
+            
+            v_pt = np.float64(v_pt.split(":"))
             if("~" in lons_pt):#nearest point(s)
                 pt_val=[]
                 for v in v_pt:
+                    if v<0.0: v=v+360.0
                     pt_nearest=np.argmin(abs(lons_all-v))
                     pt_nearest=np.unravel_index(pt_nearest,lons_all.shape)
                     pt_val=np.append(pt_val,lons_all[pt_nearest])
@@ -68,9 +72,9 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt, is1D):
         lats_pt =[]
     else:
         if ('str' in str(type(lats_pt))):#values with operators
-            nondecimal = re.compile(r'[^\d.,:;]+')
+            nondecimal = re.compile(r'[^\d.,:;-]+')
             v_pt = nondecimal.sub("",lats_pt)
-            v_pt = np.float64(v_pt.split("[,:;]"))
+            v_pt = np.float64(v_pt.split(":"))
             if("~" in lats_pt):#nearest point(s)
                 pt_val=[]
                 for v in v_pt:
@@ -112,66 +116,20 @@ def pointLocator(lons_all, lats_all, lons_pt, lats_pt, is1D):
         
                      
     # joined indices
+    
+    xind=[]
+    yind=[]
     if np.size(lons_pt)>0:  
-        xind=np.where(np.isin(lons_all,lons_pt))
-    else:
-        xind=[]
+        #xind=np.argwhere(np.isin(lons_all,lons_pt)).ravel() # cannot get duplicated indices
+        for x in lons_pt:
+            xind.append(np.argwhere(np.isin(lons_all,x)).ravel()[0])
     if np.size(lats_pt)>0:
-        yind=np.where(np.isin(lats_all,lats_pt))
-    else:
-        yind=[]
-
-    #
-    xstart = []
-    if(len(xind)>0): xstart = xind[0]
-    ystart = []
-    if(len(yind)>0): ystart = yind[0]
-
-    if(is1D):
-        if(np.size(xind)>0 and np.size(yind)>0):
-            ij=np.isin(np.isin(xind[0],yind[0]),np.isin(xind[1],yind[1]))
-            xstart = xind[0][ij]
-            ystart = xind[1][ij]
-        
-        elif(np.size(xind)>0):
-            xstart = xind[0]
-            if(len(xind)>1):
-                ystart = xind[1]
+        #yind=np.argwhere(np.isin(lats_all,lats_pt)).ravel() # cannot get duplicated indices
+        for y in lats_pt:
+            yind.append(np.argwhere(np.isin(lats_all,y)).ravel()[0])
     
-        elif(np.size(yind)>0):
-            ystart = yind[0]
-            if(len(yind)>1):
-                ystart = yind[1]
-   
-    #unique and continuing indices count
-    x= np.array(xstart,dtype=int)
-    if(np.size(x)>1):
-        x=np.unique(x)
-        xdiff=np.insert(np.diff(x),0,-1)
-        xi=x[np.where(xdiff!=1)] # unique and non-continuing index
-        loc=np.where(np.isin(x,xi))[0] # index of xi in x, from which continuing indices can be counted
-        loc=np.append(loc,np.size(x))
-        pts=np.diff(loc)       
-    elif(np.size(x)==1):
-        xi=np.copy(x)
-        pts=np.array([1],dtype=int)
-    if(len(x)>0): xindxpts = np.column_stack((xi,pts))
-     
-    # 
-    y= np.array(ystart,dtype=int)
-    if(np.size(y)>1):
-        y=np.unique(y)
-        ydiff=np.insert(np.diff(y),0,-1)
-        yi=y[np.where(ydiff!=1)] # unique and non-continuing index
-        loc=np.where(np.isin(y,yi))[0] # index of xi in x, from which continuing indices can be counted
-        loc=np.append(loc,np.size(y))
-        pts=np.diff(loc)       
-    elif(np.size(y)==1):
-        yi=np.copy(y)
-        pts=np.array([1],dtype=int)
-    if(len(y)>0): yindxpts = np.column_stack((yi,pts))
-    
-    return xindxpts, yindxpts
+    #print(xind, '/n', yind)
+    return xind, yind
 
 
 
@@ -185,9 +143,9 @@ parser.add_option("--ofheader", dest="header", default="none", \
 parser.add_option("--newdata_affix", dest="newdata_affix", default="", \
                   help = 'new dataset output with affix')
 parser.add_option("--lons", dest="ptlon", default="", \
-                      help = "point or ranged(<,<=,>=,>,~) longitude(s), separated with',:;'")
+                      help = "point or ranged(<,<=,>=,>,~) longitude(s), separated with':'")
 parser.add_option("--lats", dest="ptlat", default="", \
-                      help = "point or ranged (<,<=,>=,>,~) latitude(s), separated with',:;'")
+                      help = "point or ranged (<,<=,>=,>,~) latitude(s), separated with':'")
 parser.add_option("--ncobinpath", dest="ncobinpath", default="", \
                       help = "NCO bin path if not in $PATH")
 
@@ -237,16 +195,8 @@ if (os.path.isdir(outdir.strip())):
                 os.system('cp -f ' + outfile_old + ' '+ outfile_temp)
 
                 #loop through possible longitude/latitude pairs, with their dimension(s)
-                coord_vars = [['lon','lat'], 
-                               ['pfts1d_lon','pfts1d_lat'],
-                               ['cols1d_lon','cols1d_lat'],
-                               ['land1d_lon','land1d_lat'],
-                               ['grid1d_lon','grid1d_lat'] ];
-                coord_dims = [['lon','lat'], 
-                               ['pft'],
-                               ['column'],
-                               ['landunit'],
-                               ['gridcell'] ];
+                coord_vars = [['lon','lat']];
+                coord_dims = [['lon','lat']];
                 
  
                 # loop for all dimensions possibly in the nc file
@@ -264,39 +214,59 @@ if (os.path.isdir(outdir.strip())):
                         alllons = list(alllons.values())[0] # dict --> list
                         
                         [alllats, vdim, vattr]=nfmod.getvar(outfile_temp,[coord[1]])
-                        if(len(alllats)>0):    
-                            alllats = list(alllats.values())[0]    
-                            #indx/indy: 2-D array with paired [startindex, numpts]
-                            [indx,indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat, is1D)                
-                
-                    vdim = dim[0]
-                    if(len(indx)>0):
-                        for pt in range(len(indx)):
-                            pts_idx=[indx[pt][0]]
-                            pts_num=[indx[pt][1]]
-                            nfmod.nco_extract(outfile_temp,outfile_new, \
-                                              [vdim], pts_idx, pts_num,ncksdir=ncopath)
+                        if(len(alllats)>0):
+                            alllats = list(alllats.values())[0]
+                            
+                            #indx/indy
+                            [pts_indx,pts_indy] = pointLocator(alllons, alllats, options.ptlon, options.ptlat, is1D)                
                     
-                            #newly-updated nc file for further processing, if any
-                            os.system('mv -f ' + outfile_new + ' '+ outfile_temp)   # do the extraction continuously
+                    #print('Points found: ', len(pts_indx), pts_indx, pts_indy)
+                    
+                    if(len(pts_indx)>0):
+                        for ipt in range(len(pts_indx)):
+                            wdigit=int(math.log10(len(pts_indx)))
+                            dirfile_new = dirfile.replace(filehead,filehead_new+str(ipt).zfill(wdigit))
+                            outfile_new = outdir+'/'+dirfile_new
+                            
+                            dim_string = ' -d lon,'+str(pts_indx[ipt])+','+str(pts_indx[ipt]) \
+                                        +' -d lat,'+str(pts_indy[ipt])+','+str(pts_indy[ipt])
+                            os.system(ncopath+'./ncks --no_abc -O'+ dim_string+ \
+                                  ' '+outfile_temp.strip()+' -o '+outfile_new.strip())
+                            
+                        #
+                        os.system('rm -rf '+outfile_temp.strip())
+                        
+                        #merge file
+                        ierr = os.system('find '+outdir+'/ -name "'+filehead_new+'*'+ \
+                                         '" | xargs ls | sort | '+ncopath+'./ncecat -O -h -o ' \
+                                         +outdir+'/temp0.nc')
+                        if(ierr!=0): 
+                            raise RuntimeError('Error: ncecat ')
+                        else:
+                            os.system('find '+outdir+'/ -name "'+filehead_new+'*'+ \
+                                         '" -exec rm {} \; ')
+                        
+                        #point dim 'record' from 'ncecat' swap to 'geox' position
+                        ierr = os.system(ncopath+'./ncpdq -h -O -a lon,record '+outdir+'/temp0.nc -o '+outdir+'/temp1.nc')
+                        if(ierr!=0): raise RuntimeError('Error: ncpdq ')
+                        
+                        # remove 'geox/geoy' dims
+                        ierr = os.system(ncopath+'ncwa -h -O -a lat '+outdir+'/temp1.nc -o '+outdir+'/temp2.nc')
+                        if(ierr!=0): raise RuntimeError('Error: ncwa ')
+                        ierr = os.system(ncopath+'ncwa -h -O -a lon '+outdir+'/temp2.nc -o '+outdir+'/temp1.nc')
+                        if(ierr!=0): raise RuntimeError('Error: ncwa ')
+                        # rename 'record' dim to 'gridcell'
+                        ierr = os.system(ncopath+'ncrename -h -O -d record,gridcell '+outdir+'/temp1.nc '+outdir+'/temp2.nc')
+                        if(ierr!=0): raise RuntimeError('Error: ncrename ')
+                        #rename temp filename to new file name
+                        ierr = os.system(ncopath+'./ncks --no_abc -O -x -v lon,lat '+outdir+'/temp2.nc -o '+outdir+'/multi_'+dirfile.replace(filehead,filehead_new))
+                        if(ierr!=0): 
+                            raise RuntimeError('Error: ncks ')
+                        else:
+                            os.system('rm -f '+outdir+'/temp*.nc')
 
-                    if(is1D):
-                        vdim = dim[0]
-                    else:
-                        vdim = dim[1]
-                    if(len(indy)>0):
-                        for pt in range(len(indy)):
-                            pts_idx=[indy[pt][0]]
-                            pts_num=[indy[pt][1]]
-                            nfmod.nco_extract(outfile_temp,outfile_new, \
-                                              [vdim], pts_idx, pts_num,ncksdir=ncopath)
-                    
-                            #newly-updated nc file for further processing, if any
-                            os.system('mv -f ' + outfile_new + ' '+ outfile_temp)   # do the extraction continuously
-                 
-                # (END) loop for all dimensions possibly in the nc file
-                if(os.path.isfile(outfile_temp)): 
-                    os.system('mv -f ' + outfile_temp + ' '+ outfile_new)
+
+
                     
             # (END) if-file contains 'fileheader'
         # (END) if-it's a file

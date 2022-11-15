@@ -9,7 +9,7 @@ from pyproj import Proj
 from pyproj import Transformer
 from pyproj import CRS
 from builtins import int
-from ast import literal_eval
+from scipy.ndimage import interpolation
 
 
 #
@@ -138,6 +138,141 @@ def mksrfdata_urban(fsurfnc_all, fmksrfnc_urban_raw, redo_grid=False):
             #end if '
         #end for
     
+#--------------------------------------------------------------------
+    
+def mksrfdata_SoilGrid(fsurfnc_all, fmksrfnc_soilgrid_dir, var='ORGANIC', redo_grid=False):
+    # var: one of 'ORGANIC', 'PCT_SAND', or 'PCT_CLAY'
+    
+    print('#--------------------------------------------------#')
+    print("Creating surface data  - soil om & sand/clay percentage from soilGrid ...")
+    fsurf_soils ='./surfdata_'+var.strip()+'.nc'
+    
+    #--------------------------------------
+    #
+    dnames_elm=['nlevsoi','lsmlat', 'lsmlon']
+    dnames_soilgrid=['layer','lat','lon']
+    if (redo_grid or os.path.isfile(fsurf_soils)==False):
+        
+        #fmksrfnc_soilgrid_dir='/Users/f9y/Documents/Works/NGEE/data/NGEEwatersheds/SoilGrids/SOMgdm3_sp_'
+        layers = ['0-5cm', '5-15cm', '15-30cm', '30-60cm', '60-100cm', '100-200cm']
+        zi = [0, 0.05, 0.15, 0.30, 0.60, 1.00, 2.00]  #meters
+        z = zi[:-1]+np.diff(zi)/2.0     # mid-point
+        z = np.insert(z,0, zi[0])           # top
+        z = np.append(z,zi[-1])             # bottom. Note inclusive of 'top' and 'bottom' would be good for interpolating
+        
+        for i in range(len(layers)):
+            ifile=fmksrfnc_soilgrid_dir+layers[i]+'.nc'
+            src1=Dataset(ifile,'r')
+            soil1=np.asarray(src1.variables['Band1']).astype('f4')
+            src1_fillvalue = 0.0#src1.variables['Band1']._FillValue
+            void1 = np.where(soil1==src1_fillvalue)
+            soil1 = np.expand_dims(soil1, axis=0)
+            if i==0:
+                src1_data = soil1                                      # top
+                src1_data = np.concatenate((src1_data, soil1), axis=0) # mid-point of 1st layer
+                x=np.asarray(src1.variables['lon']).astype('f4')
+                y=np.asarray(src1.variables['lat']).astype('f4')
+            else:
+                src1_data = np.concatenate((src1_data, soil1), axis=0)
+                if i==len(layers)-1: src1_data = np.concatenate((src1_data, soil1), axis=0) # bottom
+            src1.close()
+        
+        fn_interp = interpolate.RegularGridInterpolator((z,y,x), src1_data, bounds_error=False, fill_value=0.0)
+        src1_dims={}
+        src1_dims[dnames_soilgrid[0]] = z
+        src1_dims[dnames_soilgrid[1]] = y
+        src1_dims[dnames_soilgrid[2]] = x
+        
+        # ELM soil layer middle point
+        ncells = 10
+        jidx = np.array(range(ncells))+1 
+        zsoi = 0.025*(np.exp(0.5*(jidx-0.5))-1.0)       #ELM soil layer node depths - somewhere inside a layer but not centroid
+        dzsoi= np.zeros_like(zsoi)
+        dzsoi[0] = 0.5*(zsoi[0]+zsoi[1])                #thickness b/n two vertical interfaces (vertices)
+        for j in range(1,ncells-1):
+            dzsoi[j]= 0.5*(zsoi[j+1]-zsoi[j-1])
+        dzsoi[ncells-1] = zsoi[ncells-1]-zsoi[ncells-2]
+        
+        #soilv = np.empty((ncells,len(y),len(x)), dtype=float)
+        soilgrid=np.meshgrid(zsoi,y,x, indexing='ij')
+        soilgrid_list=np.reshape(soilgrid,(3,-1),order='C').T
+        src1_data = fn_interp(soilgrid_list)
+        if var=='ORGANIC':
+            scaling=0.1  # som from SoilGrid, unit seems to be hg/m3 but shown as g/dm3
+            src1_data = src1_data/0.58*scaling   # 0.58gC/gOM
+            src1_data[src1_data<=0.0]=0.0
+        if var=='PCT_SAND' or var=='PCT_CLAY':
+            scaling=0.1 # g/kg to percentage
+            src1_data = src1_data*scaling 
+        
+        src1_data=np.reshape(src1_data,(len(zsoi),len(y),len(x)))
+        del fn_interp
+        
+        with Dataset(fsurfnc_all,'r') as src2, Dataset(fsurf_soils, "w") as dst:
+            
+            #
+            for dname2, dimension2 in src2.dimensions.items():
+                if dname2 in dnames_elm:                        # dim name from standard ELM surface data
+                    i=np.where(np.asarray(dnames_elm)==dname2)[0][0]
+                    dimension1 = src1_dims[dnames_soilgrid[i]]
+                    if dname2!='nlevsoi': 
+                        len_dimension2 = len(dimension1)             # dim length from new data
+                    else:
+                        len_dimension2 = len(dimension2)
+                    dst.createDimension(dname2, len_dimension2 if not dimension2.isunlimited() else None)
+            #
+            vname = 'lsmlat'
+            vdim = ('lsmlat')
+            vtype = src1_dims['lat'].dtype
+            laty=dst.createVariable(vname, vtype, vdim)
+            laty.units = 'degrees_north'
+            laty.standard_name = 'latitude'
+            dst[vname][...] = np.copy(src1_dims['lat'][...])
+            
+            vname = 'lsmlon'
+            vdim = ('lsmlon')
+            vtype = src1_dims['lon'].dtype
+            lonx=dst.createVariable(vname, vtype, vdim)
+            lonx.units = 'degrees_east'
+            lonx.standard_name = 'longitude'
+            dst[vname][...] = np.copy(src1_dims['lon'][...])
+            
+            vname = 'LATIXY'
+            vdim = ('lsmlat','lsmlon')
+            vtype = src1_dims['lat'].dtype
+            lat2d=dst.createVariable(vname, vtype, vdim, fill_value=-999.)
+            lat2d.units = 'degrees_north'
+            lat2d.standard_name = 'latitude'
+            vals = dst.variables[vname][...]
+            vals = np.moveaxis(vals,0,1)
+            vals[:,...] = np.copy(src1_dims['lat'][...])
+            dst[vname][...] = np.moveaxis(vals,1,0)
+            del vals
+            
+            vname = 'LONGXY'
+            vdim = ('lsmlat','lsmlon')
+            vtype = src1_dims['lon'].dtype
+            lon2d=dst.createVariable(vname, vtype, vdim, fill_value=-999.)
+            lon2d.units = 'degrees_east'
+            lon2d.standard_name = 'longitude'
+            vals = dst.variables[vname][...]
+            vals[:,...] = np.copy(src1_dims['lon'][...])
+            dst[vname][...] = np.copy(vals)
+            del vals
+            
+            vname = var #'ORGANIC', 'PCT_CLAY','PCT_SAND'
+            if vname in src2.variables:
+                vdim = src2[vname].dimensions
+                vtype = src2[vname].dtype
+                var3d=dst.createVariable(vname, vtype, vdim, fill_value=-999.)
+                var3d.units = src2[vname].units
+                var3d.long_name = src2[vname].long_name
+                # 
+                src1_data[np.where(src1_data==src1_fillvalue)]=dst.variables[vname]._FillValue
+                src1_data[np.where(src1_data==np.NaN)]=dst.variables[vname]._FillValue
+                src1_data[np.where(src1_data==255)]=dst.variables[vname]._FillValue
+                dst[vname][...] = src1_data
+
 #--------------------------------------------------------------------
     
 def mksrfdata_soildtb(fsurfnc_all, fmksrfnc_soildtb, fmksrfnc_soildtb2='', fmksrfnc_soildtb_wt='', redo_grid=False):
@@ -605,7 +740,8 @@ ccsm_input = os.path.abspath(options.ccsm_input)
 #------------------- get site information ----------------------------------
 # the following are what to be modified (as tempalate or original datasets)
 domainfile_orig = ccsm_input+'/share/domains/domain.clm/domain.lnd.360x720_cruncep.c20190221.nc'
-surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_0.125x0.125_simyr1850_c190730.nc'
+#surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_0.125x0.125_simyr1850_c190730.nc'
+surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_360x720cru_simyr1850_c180216.nc'
 
 #get grid cells
 longx_orig = np.asarray(Dataset(surffile_orig).variables['LONGXY'])[0,:]
@@ -615,7 +751,7 @@ latiy_orig = np.asarray(Dataset(surffile_orig).variables['LATIXY'])[:,0]
 # get new TOPO
 # convert geotiff to nc
 fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Kougarok/surfdata_topo_50mx50m_simyr2020.c220721.nc'
-if True:
+if False:
     #fmksrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Teller/Teller_esl_aspect.nc'
     fmksrfnc_topo = './Kougarok_esl_aspect_slope.nc'
     mksrfdata_topo(surffile_orig, fmksrfnc_topo, bands=['esl','aspect','slope'], redo_grid=True)
@@ -630,7 +766,7 @@ if False: # edit as 'True' when needed to redo data
 
 #
 #
-fsrfnc_soildtb = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_soildtb_30x30sec.c220613.nc'
+fsrfnc_soildtb = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_soildtb_30x30sec_nwh.c220613.nc'
 # soil thickness data (30 secs resolution) --> surfdata ELM standard format
 if False: # edit as 'True' when needed to redo data
     #fmksrfnc_soildtb = ccsm_input+'/lnd/clm2/surfdata_map/high_res/average_soil_and_sedimentary-deposit_thickness.nc'  # this datasets NOT really averaged one
@@ -651,6 +787,27 @@ if False: # edit as 'True' when needed to redo data
     mksrfdata_lndunit(surffile_orig, fmksrfnc_soildtb_landmask, redo_grid=True)              # from raw data --> grided --> surfdata
 #
 #
+fsrfnc_soilorg = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_ORGANIC_spak.nc'
+# Soil OM density from SoilGrid
+if False: # edit as 'True' when needed to redo data
+    fmksrfnc_soilgrid_dirheader = ccsm_input+'/lnd/clm2/surfdata_map/high_res/SoilGrids_SPAK/SOMgdm3_sp_'
+    mksrfdata_SoilGrid(surffile_orig, fmksrfnc_soilgrid_dirheader, var='ORGANIC',redo_grid=True)
+    os.system('mv ./surfdata_ORGANIC.nc '+fsrfnc_soilorg)
+
+fsrfnc_soiltexture = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_SAND_CLAY_spak.nc'
+# Soil PCT_SAND from SoilGrid
+if False: # edit as 'True' when needed to redo data
+    fmksrfnc_soilgrid_dirheader = ccsm_input+'/lnd/clm2/surfdata_map/high_res/SoilGrids_SPAK/SOIL_CLAYgkg_sp_'
+    mksrfdata_SoilGrid(surffile_orig, fmksrfnc_soilgrid_dirheader, var='PCT_CLAY',redo_grid=True)
+    os.system('mv ./surfdata_PCT_CLAY.nc '+fsrfnc_soiltexture)
+
+# Soil PCT_CLAY from SoilGrid
+    fmksrfnc_soilgrid_dirheader = ccsm_input+'/lnd/clm2/surfdata_map/high_res/SoilGrids_SPAK/SOIL_SANDgkg_sp_'
+    mksrfdata_SoilGrid(surffile_orig, fmksrfnc_soilgrid_dirheader, var='PCT_SAND',redo_grid=True)
+    os.system('/usr/local/gcc-clang-darwin/nco/bin/ncks -A -v PCT_SAND ./surfdata_PCT_SAND.nc -o '+fsrfnc_soiltexture)
+
+#
+#
 fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/Tesfa_pnnl_PFT_0.05_MODIS_nwh201201.nc'
 
 
@@ -662,14 +819,18 @@ lat_min = 0.0; lat_max = 90.0
 lon_min = -180.0; lon_max = -15.0
 
 UNSTRUCTURED_DOMAIN = False
+#fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Council/surfdata_topo_50mx50m_simyr2020.c220721.nc'
+fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Kougarok/surfdata_topo_50mx50m_simyr2020.c220721.nc'
+#fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Teller/surfdata_topo_50mx50m_simyr2020.c220721.nc'
 if (os.path.exists(fsrfnc_topo)):
     # if all other high-res surfdata merged already, like following; otherwise comment the following out
-    fsrfnc_urban = '../high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
-    fsrfnc_lake_glacier = '../high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
-    fsrfnc_natveg_pft = '../high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
-    fsrfnc_soildtb = '../high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_urban = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_lake_glacier = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_soildtb = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_soildtb_30x30sec_nwh.c220613.nc'
 
-    
+    fsrfnc_soilorg = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_ORGANIC_spak.nc' 
+    fsrfnc_soiltexture = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_SAND_CLAY_spak.nc'
     
     fsurf_new = 'surfdata_userdefined_50mx50m.nc'
     interp_urb=True; interp_pft=True               # for sync spatial resolutions - original are 0.05deg or 3arcmin
@@ -1115,6 +1276,134 @@ if True:
                     del vdata, vdata_new, vlat, vlon
             fdata_src1.close()
             
+        # soil organic, clay, sand 
+        if os.path.isfile(fsrfnc_soilorg):
+            fdata_src1 = Dataset(fsrfnc_soilorg)
+            for vname in fdata_src1.variables.keys():
+                if vname in src2.variables.keys() and vname not in vnames and \
+                  ('ORGANIC' in vname):
+                    print ('variable: ', vname)
+                    vdim = fdata_src1.variables[vname].dimensions
+                    if 'gridcell' not in vdim and UNSTRUCTURED_DOMAIN:
+                        vdim_new=[]
+                        for i in range(len(vdim)):
+                            if vdim[i]=='lsmlon':
+                                vdim_new.append('gridcell')
+                            elif vdim[i]!='lsmlat':
+                                vdim_new.append(vdim[i])
+                        vdim = vdim_new
+
+                    vtype = src2.variables[vname].datatype
+                    dst.createVariable(vname, vtype, vdim)
+                    dst[vname].setncatts(src2[vname].__dict__)
+                    vnames.append(vname)
+                    
+                    vdata = np.asarray(fdata_src1.variables[vname])
+                    try:
+                        idx_void = np.where(vdata==fdata_src1.variables[vname]._FillValue)
+                        vdata_min = np.min(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
+                        vdata_max = np.max(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
+                        vdata[idx_void] = vdata_min  # nan is bad for interpolating
+                    except:
+                        idx_void = np.where((np.isnan(vdata) | ~np.isfinite(vdata)))
+                        if (len(idx_void[0])>0):
+                            vdata_min = np.min(vdata[np.where(~(np.isnan(vdata) | ~np.isfinite(vdata)))])
+                            vdata_max = np.max(vdata[np.where(~(np.isnan(vdata) | ~np.isfinite(vdata)))])
+                            vdata[idx_void] = vdata_min  # nan/inf is bad for interpolating
+                        else:
+                            vdata_min = 0.0
+                            vdata_max = 129.0    # 130 is the max. in ELM model
+                    vdata[vdata<vdata_min] = vdata_min
+                    vdata[vdata>vdata_max] = vdata_max
+                    vlat = np.asarray(fdata_src1.variables['lsmlat'])
+                    vlon = np.asarray(fdata_src1.variables['lsmlon'])
+                    vdata_new = np.asarray(dst.variables[vname][...])
+                    for i in range(vdata.shape[0]): #dim 'nlevsoi' in axis 0, lat/lon in the last 2
+                        if interp_soilorg:
+                            finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[i,...], kind='cubic')
+                        else:
+                            # nearest
+                            finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[i,...], kind='linear')
+                        
+                        if UNSTRUCTURED_DOMAIN: 
+                            temp =[finterp_src1(xx,yy) for xx,yy in zip(lon_new,lat_new)]
+                            temp = np.squeeze(np.asarray(temp))
+                        else:
+                            temp = finterp_src1(lon_new, lat_new)
+                        vdata_new[i,] = np.copy(temp)
+                        del temp
+                    #
+                    vdata_new[np.where(vdata_new<vdata_min)] = vdata_min
+                    vdata_new[np.where(vdata_new>vdata_max)] = vdata_max
+                    dst[vname][...] = np.copy(vdata_new)
+                    del vdata, vdata_new, vlat, vlon
+            fdata_src1.close()
+            
+        # soil texture (clay, sand, maybe gravel) 
+        if os.path.isfile(fsrfnc_soiltexture):
+            fdata_src1 = Dataset(fsrfnc_soiltexture)
+            for vname in fdata_src1.variables.keys():
+                if vname in src2.variables.keys() and vname not in vnames and \
+                  ('PCT_SAND' in vname or 'PCT_CLAY' in vname):
+                    print ('variable: ', vname)
+                    vdim = fdata_src1.variables[vname].dimensions
+                    if 'gridcell' not in vdim and UNSTRUCTURED_DOMAIN:
+                        vdim_new=[]
+                        for i in range(len(vdim)):
+                            if vdim[i]=='lsmlon':
+                                vdim_new.append('gridcell')
+                            elif vdim[i]!='lsmlat':
+                                vdim_new.append(vdim[i])
+                        vdim = vdim_new
+
+                    vtype = src2.variables[vname].datatype
+                    dst.createVariable(vname, vtype, vdim)
+                    dst[vname].setncatts(src2[vname].__dict__)
+                    vnames.append(vname)
+                    
+                    vdata = np.asarray(fdata_src1.variables[vname])
+                    try:
+                        idx_void = np.where(vdata==fdata_src1.variables[vname]._FillValue)
+                        vdata_min = np.min(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
+                        vdata_max = np.max(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
+                        vdata[idx_void] = vdata_min  # nan is bad for interpolating
+                    except:
+                        idx_void = np.where((np.isnan(vdata) | ~np.isfinite(vdata)))
+                        if (len(idx_void[0])>0):
+                            vdata_min = np.min(vdata[np.where(~(np.isnan(vdata) | ~np.isfinite(vdata)))])
+                            vdata_max = np.max(vdata[np.where(~(np.isnan(vdata) | ~np.isfinite(vdata)))])
+                            vdata[idx_void] = vdata_min  # nan/inf is bad for interpolating
+                        else:
+                            vdata_min = 0.0
+                            vdata_max = 100.0    # 100% is the max. in ELM model
+                    vdata[vdata<vdata_min] = vdata_min
+                    vdata[vdata>vdata_max] = vdata_max
+                    vlat = np.asarray(fdata_src1.variables['lsmlat'])
+                    vlon = np.asarray(fdata_src1.variables['lsmlon'])
+                    vdata_new = np.asarray(dst.variables[vname][...])
+                    for i in range(vdata.shape[0]): #dim 'nlevsoi' in axis 0, lat/lon in the last 2
+                        if interp_soiltexture:
+                            finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[i,...], kind='cubic')
+                        else:
+                            # nearest
+                            finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[i,...], kind='linear')
+                        
+                        if UNSTRUCTURED_DOMAIN: 
+                            temp =[finterp_src1(xx,yy) for xx,yy in zip(lon_new,lat_new)]
+                            temp = np.squeeze(np.asarray(temp))
+                        else:
+                            temp = finterp_src1(lon_new, lat_new)
+                        vdata_new[i,] = np.copy(temp)
+                        del temp
+                    #
+                    vdata_new[np.where(vdata_new<vdata_min)] = vdata_min
+                    vdata_new[np.where(vdata_new>vdata_max)] = vdata_max
+                    dst[vname][...] = np.copy(vdata_new)
+                    del vdata, vdata_new, vlat, vlon
+            fdata_src1.close()
+            
+        
+        
         #
     # end if true for doing merging all new high-res surfdata 
 
