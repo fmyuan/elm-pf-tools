@@ -407,31 +407,43 @@ def geotiff2nc(file, bandinfos):
     # file: file name
     # bandinfos in 2-D strings: tiff file' bands and its NC name, units, long_name, standard_name
     import datetime as dt
-    import gdal
+    import rasterio
     import re
 
-    gdalf = gdal.Open(file)
-    alldata = gdalf.ReadAsArray()
-    nband,nlat,nlon = np.shape(alldata)
-
-    b = gdalf.GetGeoTransform() #bbox, interval
-    lon = np.arange(nlon)*b[1]+b[0]
-    lat = np.arange(nlat)*b[5]+b[3]
+    f = rasterio.open(file, mode='r')
+    alldata = f.read()
+    nband,ny,nx = np.shape(alldata)
+        
 
     # create NetCDF output file
     ncof = Dataset(file+'.nc','w',clobber=True)
+    
+    # geox/y coordinates in 1-D (axis), centroid
+    geox = np.arange(nx)*f.transform[0]+f.transform[2]+f.transform[0]/2.0
+    geoy = np.arange(ny)*f.transform[4]+f.transform[5]+f.transform[4]/2.0
+        
+    
    
     # create dimensions, variables and attributes:
-    ncof.createDimension('lon',nlon)
-    ncof.createDimension('lat',nlat)
+    ncof.createDimension('geox',nx)
+    ncof.createDimension('geoy',ny)
 
-    lono = ncof.createVariable('lon','f4',('lon'))
-    lono.units = 'degrees_east'
-    lono.standard_name = 'longitude'
+    geoxo = ncof.createVariable('geox','f4',('geox'))
+    geoxo.units = 'degrees_east (m) or lat'
+    geoxo.standard_name = 'geo-reference x coordinates'
 
-    lato = ncof.createVariable('lat','f4',('lat'))
-    lato.units = 'degrees_north'
-    lato.standard_name = 'latitude'
+    geoyo = ncof.createVariable('geoy','f4',('geoy'))
+    geoyo.units = 'degrees_north (m) or lat'
+    geoyo.standard_name = 'geo-reference y coorindates'
+
+    georef = ncof.createVariable('crs','int')
+    georef.CRS = f.crs.wkt
+
+    bounds = ncof.createVariable('bounds','int')
+    bounds.box=f.bounds
+
+    res = ncof.createVariable('resolution','int')
+    res.box=f.res
 
     # create variables
     if('bands' in bandinfos.keys()):
@@ -442,7 +454,7 @@ def geotiff2nc(file, bandinfos):
     varo = {}
     for iv in range(0,nvars):
         v = bandinfos['bands'][iv]
-        varo[v] = ncof.createVariable(v, 'f4',  ('lat', 'lon'), fill_value=-1.0e20)
+        varo[v] = ncof.createVariable(v, 'f4',  ('geoy', 'geox'), fill_value=-1.0e20)
         if 'units' in bandinfos.keys():
             varo[v].units = bandinfos['units'][iv]
         if 'long_name' in bandinfos.keys():
@@ -453,9 +465,9 @@ def geotiff2nc(file, bandinfos):
         # write variable
         varo[v][:,:] = alldata[iv]
         
-    #write lon,lat
-    lono[:]=lon
-    lato[:]=lat
+    #write x,y
+    geoxo[:]=geox
+    geoyo[:]=geoy
 
     ncof.close()
 #
@@ -588,7 +600,8 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 #                             'percentage of herbaceous',
 #                             'percentage of barren']
 #           }
-
+#file='ext100x100m_topo_council.tif'
+#bandinfos={'bands':['aspect','esl','slope']}
 #geotiff2nc(file, bandinfos)
 
 #varmeanby1dim - examples for surface data generation to check single variable
