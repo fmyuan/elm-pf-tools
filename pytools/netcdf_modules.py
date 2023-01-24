@@ -428,11 +428,11 @@ def geotiff2nc(file, bandinfos):
     ncof.createDimension('geox',nx)
     ncof.createDimension('geoy',ny)
 
-    geoxo = ncof.createVariable('geox','f4',('geox'))
+    geoxo = ncof.createVariable('geox',np.double,('geox'))
     geoxo.units = 'degrees_east (m) or lat'
     geoxo.standard_name = 'geo-reference x coordinates'
 
-    geoyo = ncof.createVariable('geoy','f4',('geoy'))
+    geoyo = ncof.createVariable('geoy',np.double,('geoy'))
     geoyo.units = 'degrees_north (m) or lat'
     geoyo.standard_name = 'geo-reference y coorindates'
 
@@ -454,7 +454,7 @@ def geotiff2nc(file, bandinfos):
     varo = {}
     for iv in range(0,nvars):
         v = bandinfos['bands'][iv]
-        varo[v] = ncof.createVariable(v, 'f4',  ('geoy', 'geox'), fill_value=-1.0e20)
+        varo[v] = ncof.createVariable(v, np.double,  ('geoy', 'geox'), fill_value=-1.0e20)
         if 'units' in bandinfos.keys():
             varo[v].units = bandinfos['units'][iv]
         if 'long_name' in bandinfos.keys():
@@ -600,8 +600,22 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 #                             'percentage of herbaceous',
 #                             'percentage of barren']
 #           }
-#file='ext100x100m_topo_council.tif'
+#file='ext100x100m_topo_seward.tif'
 #bandinfos={'bands':['aspect','esl','slope']}
+#file='ext100x100m_arcticpft_seward.tif'
+#bandinfos={'bands':["arctic_lichen",
+#                    "arctic_bryophyte",
+#                    "arctic_forb",
+#                    "arctic_graminoid",
+#                    "arctic_evergreen_shrub",
+#                    "arctic_deciduous_dwarf_shrub",
+#                    "arctic_deciduous_low_shrub",
+#                    "arctic_low_to_tall_willowbirch_shrub",
+#                    "arctic_low_to_tall_alder_shrub",
+#                    "arctic_needleleaf_tree",
+#                    "arctic_broadleaf_tree",
+#                    "non_vegetated",
+#                    "water"]}
 #geotiff2nc(file, bandinfos)
 
 #varmeanby1dim - examples for surface data generation to check single variable
