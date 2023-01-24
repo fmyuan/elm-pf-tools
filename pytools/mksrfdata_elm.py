@@ -993,15 +993,26 @@ def mksrfdata_arcticpft(fsurfnc_all, fmksrfnc_arcticpft, redo=False):
                 vtype = src2.variables[vname].datatype
                 dst.createVariable(vname, vtype, vdim)
                 dst[vname].setncatts(src2[vname].__dict__)
-                dst[vname][...] = sumpft
+                vals = dst.variables[vname][...]
+                if 'gridcell' in vdim:
+                    vals[:,...] = sumpft.flatten()
+                else:
+                    vals[:,...] = sumpft
+                dst[vname][...] = np.copy(vals)
+                del vals
                 
                 # 'water' in original data shall be called 'lake' in ELM land units
                 vname = 'PCT_LAKE'
                 vtype = src2.variables[vname].datatype
                 dst.createVariable(vname, vtype, vdim)
                 dst[vname].setncatts(src2[vname].__dict__)
-                dst[vname][...] = 100.0-sumpft
-           
+                vals = dst.variables[vname][...]
+                if 'gridcell' in vdim:
+                    vals[:,...] = 100.0-sumpft.flatten()
+                else:
+                    vals[:,...] = 100.0-sumpft
+                dst[vname][...] = np.copy(vals)
+                del vals
         # 
 
 #--------------------------------------------------------------------
@@ -1020,7 +1031,8 @@ parser.add_option("--nco_path", dest="nco_path", default="", \
 
 ccsm_input = os.path.abspath(options.ccsm_input)
 
-#------------------- get site information ----------------------------------
+#---
+#------------------- get cru surface data as templatein ----------------------------------
 # the following are what to be modified (as tempalate or original datasets)
 #surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_0.125x0.125_simyr1850_c190730.nc'
 surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_360x720cru_simyr1850_c180216.nc'
@@ -1030,7 +1042,8 @@ longx_orig = np.asarray(Dataset(surffile_orig).variables['LONGXY'])[0,:]
 latiy_orig = np.asarray(Dataset(surffile_orig).variables['LATIXY'])[:,0]
 
 
-# get new TOPO
+#---
+#---get new TOPO (topo, std-elev, slope, aspect)
 # convert geotiff to nc (if not yet)
 fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_topo_100mx100m_simyr2020.c220721.nc'
 if False:
@@ -1038,25 +1051,26 @@ if False:
     mksrfdata_topo(surffile_orig, fmksrfnc_topo, bands=['aspect','esl','slope'], redo_grid=True)
     os.system('mv surfdata_topo.nc '+fsrfnc_topo)
 
-# get arctic pft data
-fsrfnc_arcticpft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2020.c230113.nc'
+#---
+#---get arctic pft data
+fsrfnc_arcticpft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2010.c230113.nc'
 if False:
     fmksrfnc_pft = './ext100x100m_arcticpft_seward.tif.nc'
     mksrfdata_arcticpft(surffile_orig, fmksrfnc_pft, redo=True)
     os.system('mv surfdata_arcticpft.nc '+fsrfnc_arcticpft)
 
 
-#
+#---
+#--- urban data --> surfdata ELM standard format
 fsrfnc_urban = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urban_0.05x0.05_simyr2000.c220127.nc'
-# urban data --> surfdata ELM standard format
 if False: # edit as 'True' when needed to redo data
     fmksrfnc_urban = ccsm_input+'/lnd/clm2/surfdata_map/high_res/mksrf_urban_0.05x0.05_simyr2000.c220127.nc'
     mksrfdata_urban(surffile_orig, fmksrfnc_urban, redo_grid=True)                   # from raw data --> grided --> surfdata
 
 #
-#
+#----
+#---- soil thickness data (30 secs resolution) --> surfdata ELM standard format
 fsrfnc_soildtb = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_soildtb_30x30sec_nwh.c220613.nc'
-# soil thickness data (30 secs resolution) --> surfdata ELM standard format
 if False: # edit as 'True' when needed to redo data
     #fmksrfnc_soildtb = ccsm_input+'/lnd/clm2/surfdata_map/high_res/average_soil_and_sedimentary-deposit_thickness.nc'  # this datasets NOT really averaged one
     fmksrfnc_soildtb = ccsm_input+'/lnd/clm2/surfdata_map/high_res/upland_hill-slope_soil_thickness.nc'
@@ -1069,7 +1083,7 @@ if False: # edit as 'True' when needed to redo data
 #
 fsrfnc_lake = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_lake_icedlnd_30x30sec.c220617.nc'
 fsrfnc_glacier = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_lake_icedlnd_30x30sec.c220617.nc'
-# land cover type included in soil thickness data (30 secs resolution) --> surfdata ELM standard format
+#--- land cover type included in soil thickness data (30 secs resolution) --> surfdata ELM standard format
 # including: ocean(0), upland(1), lowland(2), lake(3), perennial ice (4), assuming single coverage per grid
 # SO, here we aggregate them into 0.05-deg resolution, 
 if False: # edit as 'True' when needed to redo data
@@ -1078,20 +1092,20 @@ if False: # edit as 'True' when needed to redo data
 #
 #
 fsrfnc_soilorg = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_ORGANIC_spak.nc'
-# Soil OM density from SoilGrid
+#----- Soil OM density from SoilGrid
 if False: # edit as 'True' when needed to redo data
     fmksrfnc_soilgrid_dirheader = ccsm_input+'/lnd/clm2/surfdata_map/high_res/SoilGrids_SPAK/SOMgdm3_sp_'
     mksrfdata_SoilGrid(surffile_orig, fmksrfnc_soilgrid_dirheader, var='ORGANIC',redo_grid=True)
     os.system('mv ./surfdata_ORGANIC.nc '+fsrfnc_soilorg)
 
 fsrfnc_soiltexture = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_SAND_CLAY_spak.nc'
-# Soil PCT_SAND from SoilGrid
+#----- Soil PCT_SAND from SoilGrid
 if False: # edit as 'True' when needed to redo data
     fmksrfnc_soilgrid_dirheader = ccsm_input+'/lnd/clm2/surfdata_map/high_res/SoilGrids_SPAK/SOIL_CLAYgkg_sp_'
     mksrfdata_SoilGrid(surffile_orig, fmksrfnc_soilgrid_dirheader, var='PCT_CLAY',redo_grid=True)
     os.system('mv ./surfdata_PCT_CLAY.nc '+fsrfnc_soiltexture)
 
-# Soil PCT_CLAY from SoilGrid
+#----- Soil PCT_CLAY from SoilGrid
     fmksrfnc_soilgrid_dirheader = ccsm_input+'/lnd/clm2/surfdata_map/high_res/SoilGrids_SPAK/SOIL_SANDgkg_sp_'
     mksrfdata_SoilGrid(surffile_orig, fmksrfnc_soilgrid_dirheader, var='PCT_SAND',redo_grid=True)
     os.system('/usr/local/gcc-clang-darwin/nco/bin/ncks -A -v PCT_SAND ./surfdata_PCT_SAND.nc -o '+fsrfnc_soiltexture)
@@ -1101,13 +1115,15 @@ if False: # edit as 'True' when needed to redo data
 
 
 
-#####################
-# sync data for spatial content and resolution
+#-------####################
+#----- Sync data for spatial content and resolution
 
 lat_min = 0.0; lat_max = 90.0
 lon_min = -180.0; lon_max = -15.0
 
 UNSTRUCTURED_DOMAIN = False
+
+#----- high-res data files (various scales and extents)
 #fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Council/surfdata_topo_100mx100m_simyr2020.c220721.nc'
 #fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Kougarok/surfdata_topo_100mx100m_simyr2020.c220721.nc'
 fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Teller/surfdata_topo_100mx100m_simyr2020.c220721.nc'
@@ -1194,12 +1210,12 @@ if (os.path.exists(fsrfnc_natveg_pft)):
 surffile_orig = './temp/surfdata.nc'
 landuse_timeseries_orig = './temp/surfdata.pftdyn.nc'
 
-
-if True:
-    # write into nc file
+#----
+if False:
+#--------- write into nc file
     with Dataset(surffile_orig,'r') as src2, Dataset(fsurf_new, "w") as dst:
         
-        # new surfdata dimensions
+#------- new surfdata dimensions
         for dname2, dimension2 in src2.dimensions.items():
             len_dimension2 = len(dimension2)
             if dname2 == 'lsmlat': len_dimension2 = len(lat_new)
@@ -1294,7 +1310,7 @@ if True:
             
             vnames = ['lsmlat', 'lsmlon', 'LATIXY', 'LONGXY']
         
-        # copy TOPO data directly
+#------ copy TOPO data directly
         if (os.path.exists(fsrfnc_topo)):
             fdata_src1 = Dataset(fsrfnc_topo)
             for vname in fdata_src1.variables.keys():
@@ -1320,7 +1336,7 @@ if True:
                     del vdata
             fdata_src1.close()
 
-        # urban data
+#------ urban data
         if (os.path.isfile(fsrfnc_urban)):
             fdata_src1 = Dataset(fsrfnc_urban)
             vlat = np.asarray(fdata_src1.variables['LATIXY'][:,0])
@@ -1422,7 +1438,7 @@ if True:
                     #
             fdata_src1.close()
         
-        # PCT_LAKE
+#------ PCT_LAKE
         if os.path.isfile(fsrfnc_lake):
             fdata_src1 = Dataset(fsrfnc_lake)
             for vname in fdata_src1.variables.keys():
@@ -1472,7 +1488,7 @@ if True:
                     del vdata, vdata_new, vlon, vlat
             fdata_src1.close()
         
-        # PCT_GLACIER
+#------ PCT_GLACIER
         if os.path.isfile(fsrfnc_glacier):
             fdata_src1 = Dataset(fsrfnc_glacier)
             for vname in fdata_src1.variables.keys():
@@ -1522,7 +1538,7 @@ if True:
                     del vdata, vdata_new, vlon, vlat
             fdata_src1.close()
 
-        # soil 'aveDTB'
+#------ soil 'aveDTB'
         if os.path.isfile(fsrfnc_soildtb):
             fdata_src1 = Dataset(fsrfnc_soildtb)
             vname = 'aveDTB'
@@ -1575,7 +1591,7 @@ if True:
             
             fdata_src1.close()
             
-        # soil organic, clay, sand 
+#------- soil organic, clay, sand 
         if os.path.isfile(fsrfnc_soilorg):
             fdata_src1 = Dataset(fsrfnc_soilorg)
             for vname in fdata_src1.variables.keys():
@@ -1638,7 +1654,7 @@ if True:
                     del vdata, vdata_new, vlat, vlon
             fdata_src1.close()
             
-        # soil texture (clay, sand, maybe gravel) 
+#------ soil texture (clay, sand, maybe gravel) 
         if os.path.isfile(fsrfnc_soiltexture):
             fdata_src1 = Dataset(fsrfnc_soiltexture)
             for vname in fdata_src1.variables.keys():
@@ -1702,7 +1718,7 @@ if True:
             fdata_src1.close()
             
 
-        # natveg_pft
+#------- natveg pft data
         if os.path.isfile(fsrfnc_natveg_pft):
             fdata_src1 = Dataset(fsrfnc_natveg_pft)
             for vname in fdata_src1.variables.keys():
@@ -1867,8 +1883,8 @@ if True:
         
         
         
-        #-----------------------------------------------
-        # rest of surface data for ELM
+#-----------------------------------------------
+#------ rest of surface data for ELM
         for vname in src2.variables.keys():
             if vname not in vnames:
                 vdim = src2.variables[vname].dimensions
