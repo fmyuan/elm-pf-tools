@@ -10,7 +10,36 @@ from pyproj import Transformer
 from pyproj import CRS
 from builtins import int
 from scipy.ndimage import interpolation
+from numpy import double
+from rasterio import band
+from _operator import index
 
+# nearest_neibour for earth surface using kdtree
+def nearest_using_kdtree(data, latname='Latitude', lonname='Longitude',kpt=2):
+    import scipy.spatial as spatial
+    from math import radians, cos, sin, asin, sqrt
+   #"Based on https://stackoverflow.com/q/43020919/190597"
+    R = 6367000.0 # meters
+    def dist_to_arclength(chord_length):
+        """
+        https://en.wikipedia.org/wiki/Great-circle_distance
+        Convert Euclidean chord length to great circle arc length
+        """
+        central_angle = 2*np.arcsin(chord_length/(2.0*R)) 
+        arclength = R*central_angle
+        return arclength
+
+    phi = np.deg2rad(data[latname])
+    theta = np.deg2rad(data[lonname])
+    data['x'] = R * np.cos(phi) * np.cos(theta)
+    data['y'] = R * np.cos(phi) * np.sin(theta)
+    data['z'] = R * np.sin(phi)
+    points = list(zip(data['x'],data['y'],data['z']))
+    tree = spatial.KDTree(points)
+    distance, index = tree.query(points, k=kpt)
+    
+    #return nearest points other than itself
+    return dist_to_arclength(distance[:, 1:]), index[:,1:]
 
 #
 #-------------------- convert 'mksurf urban' to standard ELM surfdata -----------------------
@@ -510,24 +539,36 @@ def mksrfdata_topo(fsurfnc_all, fmksrfnc_lndgeo, bands=['aspect','esl','slope'],
     # 
     #dnames_elm=['lsmlat', 'lsmlon']
     dnames_elm=['gridcell']
-    dnames_lndtopo=['lon','lat'] #should be projected [x,y]
+    dnames_lndtopo=['geox','geoy'] #should be projected [x,y]
     if (redo_grid or os.path.isfile(fsurf_lndtopo)==False):
         src1=Dataset(fmksrfnc_lndgeo,'r')
         band = np.where(np.asarray(bands)=='esl')[0][0]
-        esl = np.asarray(src1.variables['Band'+str(band+1)]).astype('f4')
+        if 'esl' in src1.variables.keys():
+            esl = np.asarray(src1.variables['esl']).astype('f4')
+        else:
+            esl = np.asarray(src1.variables['Band'+str(band+1)]).astype('f4')
+
         band = np.where(np.asarray(bands)=='aspect')[0][0]
-        aspect = np.asarray(src1.variables['Band'+str(band+1)]).astype('f4')
+        if 'aspect' in src1.variables.keys():
+            aspect = np.asarray(src1.variables['aspect']).astype('f4')
+        else:
+            aspect = np.asarray(src1.variables['Band'+str(band+1)]).astype('f4')
+
         band = np.where(np.asarray(bands)=='slope')[0][0]
-        slope = np.asarray(src1.variables['Band'+str(band+1)]).astype('f4')
+        if 'slope' in src1.variables.keys():
+            slope = np.asarray(src1.variables['slope']).astype('f4')
+        else:
+            slope = np.asarray(src1.variables['Band'+str(band+1)]).astype('f4')
+
         area = np.copy(esl)
         area[:,:] = 25.e-6 # 5mx5m --> km^2
         x = np.asarray(src1.variables[dnames_lndtopo[0]])
         y = np.asarray(src1.variables[dnames_lndtopo[1]])
         src1.close()
        
-       # averaging over a box of 10x10, i.e. 5x5m --> 50x50m in this example
-        xlen = esl.shape[1]; xlen_new = 10
-        ylen = esl.shape[0]; ylen_new = 10
+       # averaging over a box of 20x20, i.e. 5x5m --> 100x100m in this example
+        xlen = esl.shape[1]; xlen_new = 20
+        ylen = esl.shape[0]; ylen_new = 20
         new_shp = (int(ylen/ylen_new), ylen_new, int(xlen/xlen_new), xlen_new)
         esl_new = esl.reshape(new_shp).mean(axis=(1,3))  # note: both xlen/ylen are multiple of xlen_new
         esl_std = esl.reshape(new_shp).std(axis=(1,3))   # note: both xlen/ylen are multiple of xlen_new
@@ -720,6 +761,248 @@ def mksrfdata_topo(fsurfnc_all, fmksrfnc_lndgeo, bands=['aspect','esl','slope'],
             f.write('\n')
         f.close()
 
+# create arcticpft datasets from Jitu's dataset
+def mksrfdata_arcticpft(fsurfnc_all, fmksrfnc_arcticpft, redo=False):
+    
+    print('#--------------------------------------------------#')
+    print("Creating surface data  - LATIXY, LONGXY, PCT_NAT_PFT")
+    fsurf_arcticpft ='./surfdata_arcticpft.nc'
+    
+    
+    #--------------------------------------
+    #
+    # datasets in original arctic pft tiff or nc file
+    bandinfos={'bands':["arctic_lichen",
+                    "arctic_bryophyte",
+                    "arctic_forb",
+                    "arctic_graminoid",
+                    "arctic_wet_graminoid",
+                    "arctic_evergreen_shrub",
+                    "arctic_evergreen_tall_shrub",
+                    "arctic_deciduous_dwarf_shrub",
+                    "arctic_deciduous_low_shrub",
+                    "arctic_low_to_tall_willowbirch_shrub",
+                    "arctic_low_to_tall_alder_shrub",
+                    "arctic_needleleaf_tree",
+                    "arctic_broadleaf_tree",
+                    "non_vegetated",
+                    "water"],
+                'pftnum': [1,2,11,12,13,5,6,7,8,9,10,3,4,0,-1]
+               };
+    
+    natpft = np.asarray(range(max(bandinfos['pftnum'])+1)) # this is the real arcticpft order number 
+    
+    #--------------------------------------
+    # 
+    dnames_elm=['gridcell']
+    dnames_lndtopo=['geox','geoy'] #should be projected [x,y]
+    if (redo or os.path.isfile(fsurf_arcticpft)==False):
+        src1=Dataset(fmksrfnc_arcticpft,'r')
+        pct_pft_orig = {}
+        for v in src1.variables.keys():
+            try:
+                iv = bandinfos['bands'].index(v)
+                pct_pft_orig[iv] = np.asarray(src1.variables[v]).astype(double)
+            except ValueError:
+                iv = -9999
+            
+            if v=='water':
+                pct_water = np.asarray(src1.variables[v]).astype(double)
+
+        x = np.asarray(src1.variables[dnames_lndtopo[0]])
+        y = np.asarray(src1.variables[dnames_lndtopo[1]])
+        src1.close()
+       
+        # assign data to elm-ordered array 
+        # AND have to make sure all PCTs summed to 100%
+        pct_nat_pft = np.zeros((len(natpft),len(y),len(x)),dtype=double)
+        for ip in natpft: 
+            iv = np.where(bandinfos['pftnum']==ip)[0][0]
+            if iv>=0 and iv in pct_pft_orig.keys(): pct_nat_pft[ip,...] = pct_pft_orig[iv]
+        sum_pct = np.sum(pct_nat_pft,0)
+        nonlnd_idx = np.where(sum_pct<=0.0)  # useful to mask later, either 'water' or 'non-land'
+        lnd_idx = np.where(sum_pct>0.0)
+        for ip in natpft: 
+            pct_nat_pft[ip][lnd_idx] = pct_nat_pft[ip][lnd_idx]/sum_pct[lnd_idx]*100.0
+        
+        # water fraction redoing (TODO)
+        
+        
+        
+        # x/y projection to lat/lon 
+        # NAD83/Alaska Albers, for AK Seward Peninsula, ifsar 5-m DEM data
+        #Proj4 = +proj=aea +lat_0=50 +lon_0=-154 +lat_1=55 +lat_2=65 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs
+        geoxy_proj_str = "+proj=aea +lat_0=50 +lon_0=-154 +lat_1=55 +lat_2=65 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
+        geoxyProj = CRS.from_proj4(geoxy_proj_str)
+        # EPSG: 4326
+        # Proj4: +proj=longlat +datum=WGS84 +no_defs
+        lonlatProj = CRS.from_epsg(4326) # in lon/lat coordinates
+        Txy2lonlat = Transformer.from_proj(geoxyProj, lonlatProj, always_xy=True)
+
+        xx_new, yy_new = np.meshgrid(x, y)
+        lon_new,lat_new = Txy2lonlat.transform(xx_new,yy_new)
+        ij=np.where(lon_new<0.0)
+        if(len(ij[0])>0): lon_new[ij]=lon_new[ij]+360.0 # for convenience, longitude from 0~360
+        
+        # write into nc file
+        with Dataset(fmksrfnc_pft,'r') as src1, Dataset(fsurfnc_all,'r') as src2, Dataset(fsurf_arcticpft, "w") as dst:
+            
+            # new surfdata dimensions
+            for dname2, dimension2 in src2.dimensions.items():
+                if dname2 in dnames_elm:
+                    i=np.where(np.asarray(dnames_elm)==dname2)[0][0]
+                    dimension1 = src1.dimensions[dnames_lndtopo[i]]
+                    len_dimension2 = len(dimension1)            # dim length from new data
+                    dst.createDimension(dname2, len_dimension2 if not dimension2.isunlimited() else None)
+                if dname2 == 'natpft':
+                    len_dimension2 = len(natpft)            # dim length from new data
+                    dst.createDimension(dname2, len_dimension2 if not dimension2.isunlimited() else None)
+            #
+            
+            # pft dim
+            pdim = ('natpft')
+            
+            # 2-D structured grids (lat/lon)
+            if 'lsmlat' in dnames_elm or 'lsmlon' in dnames_elm:
+                vname = 'lsmlat'
+                vdim = ('lsmlat')
+                vtype = src1.variables['lat'].datatype
+                laty=dst.createVariable(vname, vtype, vdim)
+                laty.units = 'degrees_north'
+                laty.standard_name = 'latitude'
+                dst[vname][...] = np.copy(src1.variables['lat'][...])
+                
+                vname = 'lsmlon'
+                vdim = ('lsmlon')
+                vtype = src1.variables['lon'].datatype
+                lonx=dst.createVariable(vname, vtype, vdim)
+                lonx.units = 'degrees_east'
+                lonx.standard_name = 'longitude'
+                dst[vname][...] = np.copy(src1.variables['lon'][...])
+
+                gdim = ('lsmlat','lsmlon')
+                pgdim = ('natpft','lsmlat','lsmlon')
+            
+            else:
+                #1d unstructured domain
+                gdim = ('gridcell')
+                len_dimension2 = lat_new.size
+                dst.createDimension('gridcell', len_dimension2)
+
+                pgdim = ('natpft','gridcell')
+
+                
+                xdim = ('geox')
+                dst.createDimension('geox', x.size)
+                vname = 'geox'
+                vtype = x.dtype
+                x1d=dst.createVariable(vname, vtype, xdim, fill_value=nan)
+                x1d.units = 'm'
+                x1d.standard_name = 'geo-projected coordinate x'
+                dst[vname][...] = x
+                
+                ydim = ('geoy')
+                dst.createDimension('geoy', y.size)
+                vname = 'geoy'
+                vtype = y.dtype
+                y1d=dst.createVariable(vname, vtype, ydim, fill_value=nan)
+                y1d.units = 'm'
+                y1d.standard_name = 'geo-projected coordinate y'
+                dst[vname][...] = y
+                
+                vname = 'gridcell_jy'
+                vtype = np.int32
+                yy=dst.createVariable(vname, vtype, gdim, fill_value=-9999)
+                yy.units = '-'
+                yy.standard_name = 'geo-projected coordinate y indices, 0-based, for gridcell'
+                dst[vname][...] = np.unravel_index(range(yy_new.size), yy_new.shape)[0]
+                
+                vname = 'gridcell_ix'
+                vtype = np.int32
+                xx=dst.createVariable(vname, vtype, gdim, fill_value=-9999)
+                xx.units = '-'
+                xx.standard_name = 'geo-projected coordinate x indices, 0-based, for gridcell'
+                dst[vname][...] = np.unravel_index(range(xx_new.size), xx_new.shape)[1]
+            
+            vname = 'LATIXY'
+            vdim = gdim
+            vtype = src2.variables['LATIXY'].datatype
+            lat2d=dst.createVariable(vname, vtype, vdim, fill_value=nan)
+            lat2d.units = 'degrees_north'
+            lat2d.standard_name = 'latitude'
+            vals = dst.variables[vname][...]
+            if 'gridcell' in gdim:
+                vals[:,...] = lat_new.flatten()
+                dst[vname][...] = np.copy(vals)
+            else:
+                vals = np.moveaxis(vals,0,1)
+                vals[:,...] = np.copy(src1.variables['lat'][...])
+                dst[vname][...] = np.moveaxis(vals,1,0)
+            del vals
+            
+            vname = 'LONGXY'
+            vdim = gdim
+            vtype = src2.variables['LONGXY'].datatype
+            lon2d=dst.createVariable(vname, vtype, vdim, fill_value=nan)
+            lon2d.units = 'degrees_east'
+            lon2d.standard_name = 'longitude'
+            vals = dst.variables[vname][...]
+            if 'gridcell' in gdim:
+                vals[:,...] = lon_new.flatten()
+            else:
+                vals[:,...] = lon_new
+            dst[vname][...] = np.copy(vals)
+            del vals
+                        
+            vname = 'natpft'
+            vdim = pdim
+            variable = src2.variables[vname]
+            dst.createVariable(vname, variable.datatype, vdim, fill_value=-99)
+            dst[vname].setncatts(src2[vname].__dict__)
+            vals = dst.variables[vname][...]
+            vals[:] = natpft
+            dst[vname][...] = np.copy(vals)
+            del vals
+
+            #double PCT_NAT_PFT(natpft, lsmlat, lsmlon) ;
+            vname = 'PCT_NAT_PFT'
+            vdim = pgdim
+            variable = src2.variables[vname]
+            dst.createVariable(vname, variable.datatype, vdim, fill_value=nan)
+            dst[vname].setncatts(src2[vname].__dict__)
+            vals = dst.variables[vname][...]
+            if 'gridcell' in vdim:
+                for ip in natpft:
+                    vals[ip,...] = pct_nat_pft[ip].flatten()
+            else:
+                vals[:,...] = pct_nat_pft
+            dst[vname][...] = np.copy(vals)
+            del vals
+
+            #need to re-calculate 'water' fraction from above
+            vals_sum = np.sum(pct_nat_pft, axis=0)
+            
+            # if 'sum' is less than 100, the residue is actually 'water' in original data
+            # then need to adjust PCT_NATVEG in a gridcell
+            sumpft = np.ones_like(vals_sum)*100.0
+            idx=np.where(vals_sum<100.0) # excluding 100 and above
+            if len(idx[0])>0:
+                sumpft[idx]=vals_sum[idx]
+                vname = 'PCT_NATVEG'
+                vdim = gdim
+                vtype = src2.variables[vname].datatype
+                dst.createVariable(vname, vtype, vdim)
+                dst[vname].setncatts(src2[vname].__dict__)
+                dst[vname][...] = sumpft
+                
+                # 'water' in original data shall be called 'lake' in ELM land units
+                vname = 'PCT_LAKE'
+                vtype = src2.variables[vname].datatype
+                dst.createVariable(vname, vtype, vdim)
+                dst[vname].setncatts(src2[vname].__dict__)
+                dst[vname][...] = 100.0-sumpft
+           
+        # 
 
 #--------------------------------------------------------------------
 
@@ -739,7 +1022,6 @@ ccsm_input = os.path.abspath(options.ccsm_input)
 
 #------------------- get site information ----------------------------------
 # the following are what to be modified (as tempalate or original datasets)
-domainfile_orig = ccsm_input+'/share/domains/domain.clm/domain.lnd.360x720_cruncep.c20190221.nc'
 #surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_0.125x0.125_simyr1850_c190730.nc'
 surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_360x720cru_simyr1850_c180216.nc'
 
@@ -749,13 +1031,20 @@ latiy_orig = np.asarray(Dataset(surffile_orig).variables['LATIXY'])[:,0]
 
 
 # get new TOPO
-# convert geotiff to nc
-fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Kougarok/surfdata_topo_50mx50m_simyr2020.c220721.nc'
+# convert geotiff to nc (if not yet)
+fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_topo_100mx100m_simyr2020.c220721.nc'
 if False:
-    #fmksrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Teller/Teller_esl_aspect.nc'
-    fmksrfnc_topo = './Kougarok_esl_aspect_slope.nc'
-    mksrfdata_topo(surffile_orig, fmksrfnc_topo, bands=['esl','aspect','slope'], redo_grid=True)
+    fmksrfnc_topo = './ext100x100m_topo_seward.tif.nc'
+    mksrfdata_topo(surffile_orig, fmksrfnc_topo, bands=['aspect','esl','slope'], redo_grid=True)
     os.system('mv surfdata_topo.nc '+fsrfnc_topo)
+
+# get arctic pft data
+fsrfnc_arcticpft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2020.c230113.nc'
+if False:
+    fmksrfnc_pft = './ext100x100m_arcticpft_seward.tif.nc'
+    mksrfdata_arcticpft(surffile_orig, fmksrfnc_pft, redo=True)
+    os.system('mv surfdata_arcticpft.nc '+fsrfnc_arcticpft)
+
 
 #
 fsrfnc_urban = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urban_0.05x0.05_simyr2000.c220127.nc'
@@ -778,7 +1067,8 @@ if False: # edit as 'True' when needed to redo data
 
 #
 #
-fsrfnc_lake_glacier = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_lake_icedlnd_30x30sec.c220617.nc'
+fsrfnc_lake = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_lake_icedlnd_30x30sec.c220617.nc'
+fsrfnc_glacier = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_lake_icedlnd_30x30sec.c220617.nc'
 # land cover type included in soil thickness data (30 secs resolution) --> surfdata ELM standard format
 # including: ocean(0), upland(1), lowland(2), lake(3), perennial ice (4), assuming single coverage per grid
 # SO, here we aggregate them into 0.05-deg resolution, 
@@ -808,7 +1098,6 @@ if False: # edit as 'True' when needed to redo data
 
 #
 #
-fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/Tesfa_pnnl_PFT_0.05_MODIS_nwh201201.nc'
 
 
 
@@ -819,22 +1108,33 @@ lat_min = 0.0; lat_max = 90.0
 lon_min = -180.0; lon_max = -15.0
 
 UNSTRUCTURED_DOMAIN = False
-#fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Council/surfdata_topo_50mx50m_simyr2020.c220721.nc'
-fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Kougarok/surfdata_topo_50mx50m_simyr2020.c220721.nc'
-#fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Teller/surfdata_topo_50mx50m_simyr2020.c220721.nc'
+#fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Council/surfdata_topo_100mx100m_simyr2020.c220721.nc'
+#fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Kougarok/surfdata_topo_100mx100m_simyr2020.c220721.nc'
+fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Teller/surfdata_topo_100mx100m_simyr2020.c220721.nc'
 if (os.path.exists(fsrfnc_topo)):
     # if all other high-res surfdata merged already, like following; otherwise comment the following out
-    fsrfnc_urban = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
-    fsrfnc_lake_glacier = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
-    fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_urban = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE'#surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+ 
+    fsrfnc_glacier = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE'#surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_lake  = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE'#surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    
+    #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/Tesfa_pnnl_PFT_0.05_MODIS_nwh201201.nc'
+    #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    
+    fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE'#ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2010.c230113.nc'
+    # data of arctic pfts, as in file below, include 'water' which is for lake in ELM land units 
+    #fsrfnc_lake = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2010.c230113.nc'
+
     fsrfnc_soildtb = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_soildtb_30x30sec_nwh.c220613.nc'
 
-    fsrfnc_soilorg = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_ORGANIC_spak.nc' 
-    fsrfnc_soiltexture = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_SAND_CLAY_spak.nc'
+    fsrfnc_soilorg = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_ORGANIC_spak.nc' 
+    fsrfnc_soiltexture = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_SAND_CLAY_spak.nc'
     
-    fsurf_new = 'surfdata_userdefined_50mx50m.nc'
-    interp_urb=True; interp_pft=True               # for sync spatial resolutions - original are 0.05deg or 3arcmin
+    fsurf_new = 'surfdata_default_100mx100m.nc'
+    #fsurf_new = 'surfdata_arcticpft_100mx100m.nc'
+    interp_urb=True; interp_pft=False               # for sync spatial resolutions - original are 0.05deg or 3arcmin
     interp_soiltdb=True; interp_lakeglacier=True   # for sync spatial resolutions - original are 30arcsec
+    interp_soilorg=False; interp_soiltexture=False
     # 
     lat_new = np.asarray(Dataset(fsrfnc_topo).variables['LATIXY'][...])
     lon_new = np.asarray(Dataset(fsrfnc_topo).variables['LONGXY'][...])
@@ -861,21 +1161,38 @@ else:
     if False:
         #30secx30sec
         fsurf_new = 'surfdata_urb_lake_glacier_avedtb_natpft_30secx30sec_nwh.c20220725.nc'
-        interp_urb=True; interp_pft=True               # for sync spatial resolutions - original are 0.05deg or 3arcmin
-        interp_soiltdb=False; interp_lakeglacier=False # for sync spatial resolutions - original are 30arcsec
+        interp_urb=True              # for sync spatial resolutions - original are 0.05deg or 3arcmin
+        interp_pft=False
+        interp_soiltdb=False;        # for sync spatial resolutions - original are 30arcsec
+        interp_lakeglacier=False
         # 30 arcsec
         lat_new = np.asarray(Dataset(fsrfnc_soildtb).variables['lsmlat'][...])
         lon_new = np.asarray(Dataset(fsrfnc_soildtb).variables['lsmlon'][...])
 
 # 
-
 lon_new[np.where(lon_new>180.0)]=lon_new[np.where(lon_new>180.0)]-360.0
 lat_new = lat_new[np.where((lat_new>=lat_min) & (lat_new<=lat_max))]
 lon_new = lon_new[np.where((lon_new>=lon_min) & (lon_new<=lon_max))]
 
-numurbl_new = Dataset(fsrfnc_urban).dimensions['numurbl']
-nlevurb_new = Dataset(fsrfnc_urban).dimensions['nlevurb']
-numrad_new  = Dataset(fsrfnc_urban).dimensions['numrad']
+if (os.path.exists(fsrfnc_urban)):
+    numurbl_new = Dataset(fsrfnc_urban).dimensions['numurbl']
+    nlevurb_new = Dataset(fsrfnc_urban).dimensions['nlevurb']
+    numrad_new  = Dataset(fsrfnc_urban).dimensions['numrad']
+
+if (os.path.exists(fsrfnc_natveg_pft)):
+    natpft_new = Dataset(fsrfnc_natveg_pft).dimensions['natpft']
+
+
+'''
+ Merge high-res data from above single nc files into ONE 
+'''
+
+# coarse original surface data
+#surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_360x720cru_simyr1850_c180216.nc'
+
+# interpolated original surface data for high-res
+surffile_orig = './temp/surfdata.nc'
+landuse_timeseries_orig = './temp/surfdata.pftdyn.nc'
 
 
 if True:
@@ -884,21 +1201,23 @@ if True:
         
         # new surfdata dimensions
         for dname2, dimension2 in src2.dimensions.items():
-            if dname2 == 'lsmlat':
-                len_dimension2 = len(lat_new)
-            elif dname2 == 'lsmlon':
+            len_dimension2 = len(dimension2)
+            if dname2 == 'lsmlat': len_dimension2 = len(lat_new)
+            if dname2 == 'lsmlon':
                 if UNSTRUCTURED_DOMAIN:
                     len_dimension2 = 1
                 else:
                     len_dimension2 = len(lon_new)
-            elif dname2 == 'numurbl':
-                len_dimension2 = len(numurbl_new)
-            elif dname2 == 'nlevurb':
-                len_dimension2 = len(nlevurb_new)
-            elif dname2 == 'numbrad':
-                len_dimension2 = len(numrad_new)
-            else:
-                len_dimension2 = len(dimension2)
+            if(os.path.exists(fsrfnc_urban)):
+                if dname2 == 'numurbl':
+                    len_dimension2 = len(numurbl_new)
+                if dname2 == 'nlevurb':
+                    len_dimension2 = len(nlevurb_new)
+                if dname2 == 'numbrad':
+                    len_dimension2 = len(numrad_new)
+            if(os.path.exists(fsrfnc_natveg_pft)):
+                if dname2 == 'natpft': len_dimension2 = len(natpft_new)
+            
             dst.createDimension(dname2, len_dimension2 if not dimension2.isunlimited() else None)
         #
         if UNSTRUCTURED_DOMAIN:
@@ -977,7 +1296,6 @@ if True:
         
         # copy TOPO data directly
         if (os.path.exists(fsrfnc_topo)):
-            fdata_src1 = Dataset(fsrfnc_urban)
             fdata_src1 = Dataset(fsrfnc_topo)
             for vname in fdata_src1.variables.keys():
                 if vname in src2.variables.keys() and vname not in vnames and \
@@ -1104,12 +1422,12 @@ if True:
                     #
             fdata_src1.close()
         
-        # PCT_LAKE, PCT_GLACIER
-        if os.path.isfile(fsrfnc_lake_glacier):
-            fdata_src1 = Dataset(fsrfnc_lake_glacier)
+        # PCT_LAKE
+        if os.path.isfile(fsrfnc_lake):
+            fdata_src1 = Dataset(fsrfnc_lake)
             for vname in fdata_src1.variables.keys():
                 if vname in src2.variables.keys() and vname not in vnames and \
-                  ('PCT_LAKE' in vname or 'PCT_GLACIER' in vname):
+                  ('PCT_LAKE' in vname in vname):
                     print ('variable: ', vname)
                     vdim = fdata_src1.variables[vname].dimensions
                     if 'gridcell' not in vdim and UNSTRUCTURED_DOMAIN:
@@ -1154,6 +1472,56 @@ if True:
                     del vdata, vdata_new, vlon, vlat
             fdata_src1.close()
         
+        # PCT_GLACIER
+        if os.path.isfile(fsrfnc_glacier):
+            fdata_src1 = Dataset(fsrfnc_glacier)
+            for vname in fdata_src1.variables.keys():
+                if vname in src2.variables.keys() and vname not in vnames and \
+                  ('PCT_GLACIER' in vname):
+                    print ('variable: ', vname)
+                    vdim = fdata_src1.variables[vname].dimensions
+                    if 'gridcell' not in vdim and UNSTRUCTURED_DOMAIN:
+                        vdim_new=[]
+                        for i in range(len(vdim)):
+                            if vdim[i]=='lsmlon':
+                                vdim_new.append('gridcell')
+                            elif vdim[i]!='lsmlat':
+                                vdim_new.append(vdim[i])
+                        vdim = vdim_new
+                    
+                    vtype = src2.variables[vname].datatype
+                    dst.createVariable(vname, vtype, vdim)
+                    dst[vname].setncatts(src2[vname].__dict__)
+                    vnames.append(vname)
+                    
+                    vdata = np.asarray(fdata_src1.variables[vname])
+                    try:
+                        idx_void = np.where(vdata==fdata_src1.variables[vname]._FillValue)
+                        vdata_min = np.min(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
+                        vdata_max = np.max(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
+                        vdata[idx_void] = vdata_min  # nan is bad for interpolating
+                    except:
+                        vdata_min = 0.0
+                        vdata_max = 100.0
+                        
+                    vlat = np.asarray(fdata_src1.variables['lsmlat'])
+                    vlon = np.asarray(fdata_src1.variables['lsmlon'])
+                    if interp_lakeglacier:
+                        finterp_src1 =interpolate.interp2d(vlon, vlat, vdata, kind='cubic')
+                    else:
+                        finterp_src1 =interpolate.interp2d(vlon, vlat, vdata, kind='linear')
+                    
+                    if UNSTRUCTURED_DOMAIN: 
+                        vdata_new = [finterp_src1(xx,yy) for xx,yy in zip(lon_new,lat_new)]
+                        vdata_new = np.squeeze(np.asarray(vdata_new))
+                    else:
+                        vdata_new = finterp_src1(lon_new, lat_new)
+                        
+                    vdata_new[np.where(vdata_new<0.0)]=0.0; vdata_new[np.where(vdata_new>100.0)]=100.0
+                    dst[vname][...] = np.copy(vdata_new)
+                    del vdata, vdata_new, vlon, vlat
+            fdata_src1.close()
+
         # soil 'aveDTB'
         if os.path.isfile(fsrfnc_soildtb):
             fdata_src1 = Dataset(fsrfnc_soildtb)
@@ -1205,75 +1573,6 @@ if True:
             dst[vname][...] = np.copy(vdata_new)
             del vdata, vdata_new, vlat, vlon
             
-            fdata_src1.close()
-            
-        # natveg
-        if os.path.isfile(fsrfnc_natveg_pft):
-            fdata_src1 = Dataset(fsrfnc_natveg_pft)
-            for vname in fdata_src1.variables.keys():
-                if vname in src2.variables.keys() and vname not in vnames and \
-                  ('PCT_PFT' in vname or 'PCT_NAT_PFT' in vname or 'PCT_NATVEG' in vname):
-                    print ('variable: ', vname)
-                    vdim = fdata_src1.variables[vname].dimensions
-                    if 'gridcell' not in vdim and UNSTRUCTURED_DOMAIN:
-                        vdim_new=[]
-                        for i in range(len(vdim)):
-                            if vdim[i]=='lsmlon':
-                                vdim_new.append('gridcell')
-                            elif vdim[i]!='lsmlat':
-                                vdim_new.append(vdim[i])
-                        vdim = vdim_new
-
-                    vtype = src2.variables[vname].datatype
-                    dst.createVariable(vname, vtype, vdim)
-                    dst[vname].setncatts(src2[vname].__dict__)
-                    vnames.append(vname)
-                    
-                    vdata = np.asarray(fdata_src1.variables[vname])
-                    try:
-                        idx_void = np.where(vdata==fdata_src1.variables[vname]._FillValue)
-                        vdata_min = np.min(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
-                        vdata_max = np.max(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
-                        vdata[idx_void] = vdata_min  # nan is bad for interpolating
-                    except:
-                        idx_void = np.where((np.isnan(vdata) | ~np.isfinite(vdata)))
-                        if (len(idx_void[0])>0):
-                            vdata_min = np.min(vdata[np.where(~(np.isnan(vdata) | ~np.isfinite(vdata)))])
-                            vdata_max = np.max(vdata[np.where(~(np.isnan(vdata) | ~np.isfinite(vdata)))])
-                            vdata[idx_void] = vdata_min  # nan/inf is bad for interpolating
-                        else:
-                            vdata_min = 0.0
-                            vdata_max = 100.0
-                    vdata[vdata<vdata_min] = vdata_min
-                    vdata[vdata>vdata_max] = vdata_max
-                    vlat = np.asarray(fdata_src1.variables['lsmlat'])
-                    vlon = np.asarray(fdata_src1.variables['lsmlon'])
-                    vdata_new = np.asarray(dst.variables[vname][...])
-                    for i in range(vdata.shape[0]): #dim 'pft' in axis 0, lat/lon in the last 2
-                        if interp_pft:
-                            finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[i,...], kind='cubic')
-                        else:
-                            # nearest
-                            finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[i,...], kind='linear')
-                        
-                        if UNSTRUCTURED_DOMAIN: 
-                            temp =[finterp_src1(xx,yy) for xx,yy in zip(lon_new,lat_new)]
-                            temp = np.squeeze(np.asarray(temp))
-                        else:
-                            temp = finterp_src1(lon_new, lat_new)
-                        vdata_new[i,] = np.copy(temp)
-                        del temp
-                    #
-                    vdata_new[np.where(vdata_new<vdata_min)] = vdata_min
-                    vdata_new[np.where(vdata_new>vdata_max)] = vdata_max
-                    #need to make sure all pfts summed to 100%
-                    vdata_sum = np.sum(vdata_new, axis=0)
-                    for i in range(vdata.shape[0]):
-                        vdata_new[i,...] = vdata_new[i,...]/vdata_sum*100.0
-                    
-                    vdata_new[np.where(vdata_new<0.0)]=0.0; vdata_new[np.where(vdata_new>100.0)]=100.0
-                    dst[vname][...] = np.copy(vdata_new)
-                    del vdata, vdata_new, vlat, vlon
             fdata_src1.close()
             
         # soil organic, clay, sand 
@@ -1402,10 +1701,186 @@ if True:
                     del vdata, vdata_new, vlat, vlon
             fdata_src1.close()
             
-        
-        
+
+        # natveg_pft
+        if os.path.isfile(fsrfnc_natveg_pft):
+            fdata_src1 = Dataset(fsrfnc_natveg_pft)
+            for vname in fdata_src1.variables.keys():
+                if vname in src2.variables.keys() and vname not in vnames and \
+                  ('PCT_PFT' in vname or 'PCT_NAT_PFT' in vname or 'PCT_NATVEG' in vname):
+                    
+                    if 'natpft' not in vnames:
+                        print('variable: ','natpft')
+                        if 'natpft' in fdata_src1.variables.keys():
+                            vdim = fdata_src1.variables['natpft'].dimensions
+                        else:
+                            vdim = src2.variables['natpft'].dimensions
+                        vtype = src2.variables['natpft'].datatype
+                        dst.createVariable('natpft', vtype, vdim)
+                        dst['natpft'].setncatts(src2['natpft'].__dict__)
+                        dst['natpft'][...] = np.asarray(range(len(natpft_new)))
+                        vnames.append('natpft')
+                    
+                    print ('variable: ', vname)
+                    vdim = fdata_src1.variables[vname].dimensions
+                    if 'gridcell' not in vdim and UNSTRUCTURED_DOMAIN:
+                        vdim_new=[]
+                        for i in range(len(vdim)):
+                            if vdim[i]=='lsmlon':
+                                vdim_new.append('gridcell')
+                            elif vdim[i]!='lsmlat':
+                                vdim_new.append(vdim[i])
+                        vdim = vdim_new
+                        
+                        
+                    vtype = src2.variables[vname].datatype
+                    dst.createVariable(vname, vtype, vdim)
+                    dst[vname].setncatts(src2[vname].__dict__)
+                    vnames.append(vname)
+                    
+                    vdata = np.asarray(fdata_src1.variables[vname])
+                    try:
+                        idx_void = np.where(vdata==fdata_src1.variables[vname]._FillValue)
+                        vdata_min = np.min(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
+                        vdata_max = np.max(vdata[np.where(vdata!=fdata_src1.variables[vname]._FillValue)])
+                        vdata[idx_void] = vdata_min  # nan is bad for interpolating
+                    except:
+                        idx_void = np.where((np.isnan(vdata) | ~np.isfinite(vdata)))
+                        if (len(idx_void[0])>0):
+                            vdata_min = np.min(vdata[np.where(~(np.isnan(vdata) | ~np.isfinite(vdata)))])
+                            vdata_max = np.max(vdata[np.where(~(np.isnan(vdata) | ~np.isfinite(vdata)))])
+                            vdata[idx_void] = vdata_min  # nan/inf is bad for interpolating
+                        else:
+                            vdata_min = 0.0
+                            vdata_max = 100.0
+                    vdata[vdata<vdata_min] = vdata_min
+                    vdata[vdata>vdata_max] = vdata_max
+                    datain2D = False
+                    if 'lsmlat' in fdata_src1.variables.keys() and \
+                       'lsmlat' in fdata_src1.variables.keys():
+                        datain2D=True
+                        vlat = np.asarray(fdata_src1.variables['lsmlat'])
+                        vlon = np.asarray(fdata_src1.variables['lsmlon'])
+                    elif 'LATIXY' in fdata_src1.variables.keys() and \
+                       'LONGXY' in fdata_src1.variables.keys():
+                        datain2D=False
+                        vlat = np.asarray(fdata_src1.variables['LATIXY'])
+                        vlon = np.asarray(fdata_src1.variables['LONGXY'])
+                    else:
+                        print('natpft data dimensions must be either in 2D (lsmlat,lsmlont) or 1D non-regular (gridcell) !')
+                    
+                    vdata_new = np.asarray(dst.variables[vname][...])
+                    for i in range(vdata.shape[0]): #dim 'pft' in axis 0, lat/lon in the last 2
+                        if datain2D:
+                            if interp_pft:
+                                finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[i,...], kind='cubic')
+                            else:
+                                # nearest
+                                finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[i,...], kind='linear')
+                            
+                            if UNSTRUCTURED_DOMAIN: 
+                                temp =[finterp_src1(xx,yy) for xx,yy in zip(lon_new,lat_new)]
+                                temp = np.squeeze(np.asarray(temp))
+                            else:
+                                temp = finterp_src1(lon_new, lat_new)
+                        else:
+                            # nearest search
+                            len_new = len(lon_new)
+                            allpoints={}
+                            allpoints['Latitude']=np.append(lat_new, vlat)
+                            allpoints['Longitude']=np.append(lon_new, vlon)
+                            
+                            # because mixed points, must make sure nearest points are NONE of lat_new/lon_new
+                            AllNearest=False
+                            Kpts = 2
+                            idx_void = None
+                            while not AllNearest:
+                                dist,idx=nearest_using_kdtree(allpoints, latname='Latitude', lonname='Longitude',kpt=Kpts)
+                                if idx_void is None:
+                                    idx_new = idx[0:len_new]-len_new # for vlat/vlon real index, must adjust 'idx' in mixed points 
+                                else:
+                                    # fill in the negative idx only
+                                    idx_new[idx_void] = (idx[...,0:len_new]-len_new)[idx_void]
+                                idx_void= np.where(idx_new<0)
+                                if (len(idx_void[0])>0):
+                                    Kpts = Kpts+1
+                                    # this will re-do the nearest search but with 1 more Kpts
+                                else:
+                                    AllNearest=True # exit 'while' block
+                            # by now, idx_new should be all non-negative
+                            temp = vdata[i,idx_new.flatten()]
+                            temp[temp<0.0001]=0.0
+                            
+                        vdata_new[i,] = np.copy(temp)
+                        del temp
+                    #
+                    vdata_new[np.where(vdata_new<vdata_min)] = vdata_min
+                    vdata_new[np.where(vdata_new>vdata_max)] = vdata_max
+                    
+                    #need to make sure all natural pfts summed to 100%
+                    vdata_sum = np.sum(vdata_new, axis=0)
+                    
+                    for i in range(vdata.shape[0]):
+                        vdata_new[i,...] = vdata_new[i,...]/vdata_sum*100.0
+                    
+                    vdata_new[np.where(vdata_new<0.0)]=0.0; vdata_new[np.where(vdata_new>100.0)]=100.0
+                    dst[vname][...] = np.copy(vdata_new)
+                    
+                    # if 'sum' is less than 100, the residue is actually 'water' in original data
+                    # then need to adjust PCT_NATVEG in a gridcell
+                    vdata_sumpft = np.ones_like(vdata_sum)*100.0
+                    idx=np.where(vdata_sum<100.0) # excluding 100 and above
+                    if len(idx[0])>0:
+                        vdata_sumpft[idx]=vdata_sum[idx]
+                        vname = 'PCT_NATVEG'
+                        if vname not in vnames: 
+                            vnames.append(vname)
+                            print ('variable: ', vname)
+                            if 'gridcell' in vdim:  # PCT_NAT_PFT's dim
+                                vdim_new = ('gridcell')
+                            elif ('lsmlat' in vdim and 'lsmlon' in vdim):
+                                vdim_new = ('lsmlat','lsmlon')
+                            elif ('lat' in vdim and 'lon' in vdim):
+                                vdim_new = ('lat','lon')
+                                    
+                            vtype = src2.variables[vname].datatype
+                            dst.createVariable(vname, vtype, vdim_new)
+                            dst[vname].setncatts(src2[vname].__dict__)
+                            dst[vname][...] = vdata_sumpft
+                        
+                        # 'water' in original data shall be called 'lake' in ELM land units
+                        vname = 'PCT_LAKE'
+                        if vname not in vnames: 
+                            vnames.append(vname)
+                            print ('variable: ', vname)
+                            vtype = src2.variables[vname].datatype
+                            dst.createVariable(vname, vtype, vdim_new)
+                            dst[vname].setncatts(src2[vname].__dict__)
+                            temp=100.0-vdata_sumpft
+                            temp[np.where(temp<0.0001)]=0.0
+                            dst[vname][...] = temp
+                    
+                    #
+                    del vdata, vdata_new, vlat, vlon, vdata_sum, vdata_sumpft,temp
+            fdata_src1.close()
         #
-    # end if true for doing merging all new high-res surfdata 
+        
+        
+        
+        #-----------------------------------------------
+        # rest of surface data for ELM
+        for vname in src2.variables.keys():
+            if vname not in vnames:
+                vdim = src2.variables[vname].dimensions
+                vtype = src2.variables[vname].datatype
+                dst.createVariable(vname, vtype, vdim)
+                dst[vname].setncatts(src2[vname].__dict__)
+                dst[vname][...] = np.asarray(src2.variables[vname])
+                vnames.append(vname)
+            #
+        #
+    #with both 'src2' (original) and 'dst' ncfiles open
+# end if true for doing merging all new high-res surfdata 
 
 
 
