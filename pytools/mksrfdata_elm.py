@@ -1124,9 +1124,9 @@ lon_min = -180.0; lon_max = -15.0
 UNSTRUCTURED_DOMAIN = False
 
 #----- high-res data files (various scales and extents)
-#fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Council/surfdata_topo_100mx100m_simyr2020.c220721.nc'
+fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Council/surfdata_topo_100mx100m_simyr2020.c220721.nc'
 #fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Kougarok/surfdata_topo_100mx100m_simyr2020.c220721.nc'
-fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Teller/surfdata_topo_100mx100m_simyr2020.c220721.nc'
+#fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Teller/surfdata_topo_100mx100m_simyr2020.c220721.nc'
 if (os.path.exists(fsrfnc_topo)):
     # if all other high-res surfdata merged already, like following; otherwise comment the following out
     fsrfnc_urban = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE'#surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
@@ -1137,7 +1137,7 @@ if (os.path.exists(fsrfnc_topo)):
     #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/Tesfa_pnnl_PFT_0.05_MODIS_nwh201201.nc'
     #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
     
-    fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE'#ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2010.c230113.nc'
+    fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2010.c230113.nc'
     # data of arctic pfts, as in file below, include 'water' which is for lake in ELM land units 
     #fsrfnc_lake = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2010.c230113.nc'
 
@@ -1146,8 +1146,8 @@ if (os.path.exists(fsrfnc_topo)):
     fsrfnc_soilorg = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_ORGANIC_spak.nc' 
     fsrfnc_soiltexture = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_SAND_CLAY_spak.nc'
     
-    fsurf_new = 'surfdata_default_100mx100m.nc'
-    #fsurf_new = 'surfdata_arcticpft_100mx100m.nc'
+    #fsurf_new = 'surfdata_default_100mx100m.nc'
+    fsurf_new = 'surfdata_arcticpft_100mx100m.nc'
     interp_urb=True; interp_pft=False               # for sync spatial resolutions - original are 0.05deg or 3arcmin
     interp_soiltdb=True; interp_lakeglacier=True   # for sync spatial resolutions - original are 30arcsec
     interp_soilorg=False; interp_soiltexture=False
@@ -1207,11 +1207,11 @@ if (os.path.exists(fsrfnc_natveg_pft)):
 #surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_360x720cru_simyr1850_c180216.nc'
 
 # interpolated original surface data for high-res
-surffile_orig = './temp/surfdata.nc'
-landuse_timeseries_orig = './temp/surfdata.pftdyn.nc'
+surffile_orig = './default/surfdata.nc'
+landuse_timeseries_orig = './default/surfdata.pftdyn.nc'
 
 #----
-if False:
+if True:
 #--------- write into nc file
     with Dataset(surffile_orig,'r') as src2, Dataset(fsurf_new, "w") as dst:
         
@@ -1232,7 +1232,7 @@ if False:
                 if dname2 == 'numbrad':
                     len_dimension2 = len(numrad_new)
             if(os.path.exists(fsrfnc_natveg_pft)):
-                if dname2 == 'natpft': len_dimension2 = len(natpft_new)
+                if dname2 == 'natpft' or dname2=='lsmpft': len_dimension2 = len(natpft_new)
             
             dst.createDimension(dname2, len_dimension2 if not dimension2.isunlimited() else None)
         #
@@ -1835,9 +1835,12 @@ if False:
                     
                     #need to make sure all natural pfts summed to 100%
                     vdata_sum = np.sum(vdata_new, axis=0)
-                    
+
+                    idx_nonzero = np.where(vdata_sum>0.0)
                     for i in range(vdata.shape[0]):
-                        vdata_new[i,...] = vdata_new[i,...]/vdata_sum*100.0
+                        vdata_new[i,idx_nonzero] = vdata_new[i,idx_nonzero]/vdata_sum[idx_nonzero]*100.0
+                    idx_zero = np.where(vdata_sum<=0.0) # ELM will check even for non-natveg land unit
+                    vdata_new[0,idx_zero] = 100.0       # So, put 100.0 as non_vegetated
                     
                     vdata_new[np.where(vdata_new<0.0)]=0.0; vdata_new[np.where(vdata_new>100.0)]=100.0
                     dst[vname][...] = np.copy(vdata_new)
@@ -1891,7 +1894,18 @@ if False:
                 vtype = src2.variables[vname].datatype
                 dst.createVariable(vname, vtype, vdim)
                 dst[vname].setncatts(src2[vname].__dict__)
-                dst[vname][...] = np.asarray(src2.variables[vname])
+                
+                if 'lsmpft' in vdim and os.path.isfile(fsrfnc_natveg_pft):
+                    # this is for a few SP variables - need more work (TODO)
+                    vdata_new = np.asarray(dst.variables[vname][...])
+                    temp = np.asarray(src2.variables[vname])
+                    lsmpft_new = min(vdata_new.shape[1],temp.shape[1])# need to be more general (TODO)
+                    vdata_new[:,0:lsmpft_new,...] = temp[:,0:lsmpft_new,...]
+                    dst[vname][...] = np.copy(vdata_new)
+                else:
+                    dst[vname][...] = np.asarray(src2.variables[vname])
+                
+                    
                 vnames.append(vname)
             #
         #
