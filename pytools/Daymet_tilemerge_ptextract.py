@@ -229,6 +229,21 @@ if len(wdir_all)>0:
     data = np.asarray(data,np.float)
     lon_pts=data[:,i]
     lat_pts=data[:,j]
+    idx=np.where(lon_pts<0.0)
+    if (len(idx[0])>0): lon_pts[idx]=lon_pts+360.0  # in case different lon system
+    idx=np.where(lon<0.0)
+    if (len(idx[0])>0): lon[idx]=lon+360.0  # in case different lon system
+    if (np.min(lat_pts)>np.max(lat) or np.max(lat_pts)<np.min(lat) or \
+        np.min(lon_pts)>np.max(lon) or np.max(lon_pts)<np.min(lon)):
+        print('ERROR: points_list are NOT within ranges of searched longitude/latitudes ! ')
+        if (np.min(lat_pts)>np.max(lat) or np.max(lat_pts)<np.min(lat)):
+            print('    points_list: lat -', np.min(lat_pts), np.max(lat_pts))
+            print('    searching ranges: lat -', np.min(lat), np.max(lat))
+        if (np.min(lon_pts)>np.max(lon) or np.max(lon_pts)<np.min(lon)):
+            print('    points_list: lon -', np.min(lon_pts), np.max(lon_pts))
+            print('    searching ranges: lon -', np.min(lon), np.max(lon))
+        sys.exit(-1)
+    
     # search nearest points
     gidx_pts=np.empty(shape=(0), dtype=int)
     allpoints={}
@@ -292,7 +307,7 @@ else:
 # read-in datasets one by one for extracted pts and merging
 if len(tile_idir)>0 and len(alldirfiles)>0: # to skip the following loop
         #
-        ncdirout=options.workdir
+        ncdirout=cwdir
         zno_name=str(g_zno).zfill(2)
         #
         for ifile in range(len(alldirfiles)):
@@ -328,11 +343,13 @@ if len(tile_idir)>0 and len(alldirfiles)>0: # to skip the following loop
                     break # break 'for dir2 in workdir2:'
                 else:
                     
-                    dim_name = ['n']
+                    dim_name = ['n'] # cpl_bypass format met data dimension
                     if ('domain' in ncfile):
                         dim_name = ['ni']
                     elif ('surfdata' in ncfile):
                         dim_name = ['gridcell']
+                    elif ('clm2.h' in ncfile or 'elm.h' in ncfile):
+                        dim_name = ['lndgrid']
                     
                     gidx=tile_gid[ig]
                     tmpnc = 'temp_'+zno_name+'_'+str(ifile)+'.nc'
