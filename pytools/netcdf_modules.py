@@ -565,6 +565,7 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 #dupexpand('landuse.timeseries_1x1pt_kougarok-NGEE_simyr1850-2015_c181015m64.nc', 'test6x1.nc', ['lsmlat','lsmlon'], [1,6])
 
 # merge 2 files along 1-only named-dimension
+#mergefilesby1dim('f1.nc', 'f2.nc', 'fout.nc', 'n')
 #files=['tmp00.nc','tmp01.nc','tmp02.nc','tmp03.nc','tmp04.nc','tmp05.nc','tmp06.nc', 
 #       'tmp07.nc', 'tmp08.nc','tmp09.nc','tmp10.nc','tmp11.nc']
 #f0='tmp0.nc'

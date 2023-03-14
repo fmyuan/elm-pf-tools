@@ -479,7 +479,10 @@ if (options.elmheader != ""):
                                         dimensions=new_dims, \
                                         zlib=True, fill_value=FillValue)
                 dst[vname].setncatts(src[name].__dict__)
-                
+                # if scaling/offset used for packing, then unpacking for visualization in Visit or QGIS
+                if ('add_offset' in dst[vname].__dict__): dst[vname].add_offset = 0.0
+                if ('scale_factor' in dst[vname].__dict__): dst[vname].scale_factor = 1.0
+                     
                 # re-assign data from gidx to (yidx,xidx)
                 # gidx should be in order already
                 #dst_data = np.asarray(dst[vname])
@@ -526,6 +529,9 @@ if (options.elmheader != ""):
                                         dimensions = vdims, \
                                         zlib=True)
                 dst[vname].setncatts(src[name].__dict__)
+                # if scaling/offset used for packing, then unpacking for visualization in Visit or QGIS
+                if ('add_offset' in dst[vname].__dict__): dst[vname].add_offset = 0.0
+                if ('scale_factor' in dst[vname].__dict__): dst[vname].scale_factor = 1.0
                 dst[vname][:] = src[name][:]
                 
             #
