@@ -566,11 +566,10 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 
 # merge 2 files along 1-only named-dimension
 #mergefilesby1dim('f1.nc', 'f2.nc', 'fout.nc', 'n')
-#files=['tmp00.nc','tmp01.nc','tmp02.nc','tmp03.nc','tmp04.nc','tmp05.nc','tmp06.nc', 
-#       'tmp07.nc', 'tmp08.nc','tmp09.nc','tmp10.nc','tmp11.nc']
-#f0='tmp0.nc'
-#fout='tmp_out.nc'
-#dimname='lsmpft'
+#files=['qbot1.nc','qbot2.nc','qbot3.nc','qbot4.nc','qbot5.nc']
+#f0='tmp1.nc'
+#fout='GSWP3_daymet4_QBOT_1980-2014_z01.nc'
+#dimname='n'
 #os.system('cp -rf '+ files[0]+' '+f0)
 #for f in files[1:]:
 #    mergefilesby1dim(f0, f, fout, dimname)

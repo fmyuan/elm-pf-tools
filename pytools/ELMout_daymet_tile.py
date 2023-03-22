@@ -410,14 +410,20 @@ if (options.elmheader != ""):
                         # note: have to exclude NON-vegetated/bare land unit (i.e. lunit=1)
                         lunit=1
                         if (dim == 'landunit'): 
-                            #idx_lun = np.where(src.variables['land1d_ityplun'][...]==lunit)[0]
-                            idx_lun = np.where(src.variables['land1d_ityplunit'][...]==lunit)[0]
+                            try:
+                                idx_lun = np.where(src.variables['land1d_ityplun'][...]==lunit)[0]
+                            except Exception as e:
+                                idx_lun = np.where(src.variables['land1d_ityplunit'][...]==lunit)[0]
                         if (dim == 'column'): 
-                            #idx_lun = np.where(src.variables['cols1d_ityplun'][...]==lunit)[0]
-                            idx_lun = np.where(src.variables['cols1d_itype_lunit'][...]==lunit)[0]
+                            try:
+                                idx_lun = np.where(src.variables['cols1d_ityplun'][...]==lunit)[0]
+                            except Exception as e:
+                                idx_lun = np.where(src.variables['cols1d_itype_lunit'][...]==lunit)[0]
                         if (dim == 'pft'): 
-                            #idx_lun = np.where(src.variables['pfts1d_ityplun'][...]==lunit)[0]
-                            idx_lun = np.where(src.variables['pfts1d_itype_lunit'][...]==lunit)[0]
+                            try:
+                                idx_lun = np.where(src.variables['pfts1d_ityplun'][...]==lunit)[0]
+                            except Exception as e:
+                                idx_lun = np.where(src.variables['pfts1d_itype_lunit'][...]==lunit)[0]
                         len_dim = idx_lun.size
                         if idim==0:
                             src_data = src_data[idx_lun,...]
