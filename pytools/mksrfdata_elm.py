@@ -762,7 +762,7 @@ def mksrfdata_topo(fsurfnc_all, fmksrfnc_lndgeo, bands=['aspect','esl','slope'],
         f.close()
 
 # create arcticpft datasets from Jitu's dataset
-def mksrfdata_arcticpft(fsurfnc_all, fmksrfnc_arcticpft, redo=False):
+def mksrfdata_arcticpft(fsurfnc_all, fmksrfnc_arcticpft, redo=False, OriginType=False):
     
     print('#--------------------------------------------------#')
     print("Creating surface data  - LATIXY, LONGXY, PCT_NAT_PFT")
@@ -790,7 +790,14 @@ def mksrfdata_arcticpft(fsurfnc_all, fmksrfnc_arcticpft, redo=False):
                 'pftnum': [1,2,11,12,13,5,6,7,8,9,10,3,4,0,-1]
                };
     
-    natpft = np.asarray(range(max(bandinfos['pftnum'])+1)) # this is the real arcticpft order number 
+    if OriginType:
+        # lichen as not_vegetated (0), moss/forb/graminoids as c3 arctic grass (12),
+        # evergreen shrub(9), deci. boreal_shrub(11),
+        # evergreen boreal tree(2), deci boreal tree (3)
+        bandinfos['pftnum'] = [0,12,12,12,12,9,9,11,11,11,11,2,3,0,-1]
+        natpft = np.asarray(range(17))
+    else:
+        natpft = np.asarray(range(max(bandinfos['pftnum'])+1)) # this is the real arcticpft order number 
     
     #--------------------------------------
     # 
@@ -798,6 +805,8 @@ def mksrfdata_arcticpft(fsurfnc_all, fmksrfnc_arcticpft, redo=False):
     dnames_lndtopo=['geox','geoy'] #should be projected [x,y]
     if (redo or os.path.isfile(fsurf_arcticpft)==False):
         src1=Dataset(fmksrfnc_arcticpft,'r')
+
+        
         pct_pft_orig = {}
         for v in src1.variables.keys():
             try:
@@ -817,8 +826,10 @@ def mksrfdata_arcticpft(fsurfnc_all, fmksrfnc_arcticpft, redo=False):
         # AND have to make sure all PCTs summed to 100%
         pct_nat_pft = np.zeros((len(natpft),len(y),len(x)),dtype=double)
         for ip in natpft: 
-            iv = np.where(bandinfos['pftnum']==ip)[0][0]
-            if iv>=0 and iv in pct_pft_orig.keys(): pct_nat_pft[ip,...] = pct_pft_orig[iv]
+            iv = np.where(bandinfos['pftnum']==ip)[0]
+            for i in iv: # in case having multiple classes
+                if i>=0 and i in pct_pft_orig.keys(): 
+                    pct_nat_pft[ip,...] = pct_nat_pft[ip,...]+pct_pft_orig[i]
         sum_pct = np.sum(pct_nat_pft,0)
         nonlnd_idx = np.where(sum_pct<=0.0)  # useful to mask later, either 'water' or 'non-land'
         lnd_idx = np.where(sum_pct>0.0)
@@ -1053,10 +1064,12 @@ if False:
 
 #---
 #---get arctic pft data
-fsrfnc_arcticpft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2010.c230113.nc'
+#fsrfnc_arcticpft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2010.c230113.nc'
+fsrfnc_arcticpft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_originpft_seward_100mx100m_simyr2010.c230113.nc'
 if False:
     fmksrfnc_pft = './ext100x100m_arcticpft_seward.tif.nc'
-    mksrfdata_arcticpft(surffile_orig, fmksrfnc_pft, redo=True)
+    #mksrfdata_arcticpft(surffile_orig, fmksrfnc_pft, redo=True)
+    mksrfdata_arcticpft(surffile_orig, fmksrfnc_pft, redo=True, OriginType=True)
     os.system('mv surfdata_arcticpft.nc '+fsrfnc_arcticpft)
 
 
@@ -1124,8 +1137,8 @@ lon_min = -180.0; lon_max = -15.0
 UNSTRUCTURED_DOMAIN = False
 
 #----- high-res data files (various scales and extents)
-fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Council/surfdata_topo_100mx100m_simyr2020.c220721.nc'
-#fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Kougarok/surfdata_topo_100mx100m_simyr2020.c220721.nc'
+#fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Council/surfdata_topo_100mx100m_simyr2020.c220721.nc'
+fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Kougarok/surfdata_topo_100mx100m_simyr2020.c220721.nc'
 #fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Teller/surfdata_topo_100mx100m_simyr2020.c220721.nc'
 if (os.path.exists(fsrfnc_topo)):
     # if all other high-res surfdata merged already, like following; otherwise comment the following out
@@ -1137,7 +1150,8 @@ if (os.path.exists(fsrfnc_topo)):
     #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/Tesfa_pnnl_PFT_0.05_MODIS_nwh201201.nc'
     #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
     
-    fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2010.c230113.nc'
+    fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_originpft_seward_100mx100m_simyr2010.c230113.nc'  # arctic-pft re-classified into original ELM PFTs
+    #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2010.c230113.nc'  # totally new classes of arctic pft
     # data of arctic pfts, as in file below, include 'water' which is for lake in ELM land units 
     #fsrfnc_lake = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2010.c230113.nc'
 
@@ -1146,8 +1160,8 @@ if (os.path.exists(fsrfnc_topo)):
     fsrfnc_soilorg = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_ORGANIC_spak.nc' 
     fsrfnc_soiltexture = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_SAND_CLAY_spak.nc'
     
-    #fsurf_new = 'surfdata_default_100mx100m.nc'
-    fsurf_new = 'surfdata_arcticpft_100mx100m.nc'
+    fsurf_new = 'surfdata_newpft_100mx100m.nc'   # new pft fraction but in original ELM classes
+    #fsurf_new = 'surfdata_arcticpft_100mx100m.nc' # new pft fractions AND arctic classes
     interp_urb=True; interp_pft=False               # for sync spatial resolutions - original are 0.05deg or 3arcmin
     interp_soiltdb=True; interp_lakeglacier=True   # for sync spatial resolutions - original are 30arcsec
     interp_soilorg=False; interp_soiltexture=False
@@ -1717,8 +1731,8 @@ if True:
                     del vdata, vdata_new, vlat, vlon
             fdata_src1.close()
             
-
-#------- natveg pft data
+#---
+#--- natveg pft data
         if os.path.isfile(fsrfnc_natveg_pft):
             fdata_src1 = Dataset(fsrfnc_natveg_pft)
             for vname in fdata_src1.variables.keys():
