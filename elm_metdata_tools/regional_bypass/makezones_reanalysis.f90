@@ -1,9 +1,6 @@
 program makezones
 
 
-!Take the CLM CRU-NCEP data and aggregate by time over the spinup period (1901-1920)
-!  and "chop" it up into 24 longitundinal zones
-
 use netcdf
 implicit none
 include 'mpif.h'
@@ -17,7 +14,7 @@ character(len=4) yst, startyrst, endyrst
 character(len=4) mst, myidst
 character(len=4) zst
 character(len=1) rst
-character(len=150) metvars, myforcing, mydomain, forcdir, myres
+character(len=150) metvars, myforcing, mydomain, forcdir, myres, odir
 character(len=300) fname, filename_base
 character(len=200) met_prefix
 character(len=20) met_type
@@ -72,28 +69,58 @@ call MPI_Comm_size(MPI_COMM_WORLD, np, ierr)
 ! -------------------------------------------------------------
 ! USER-SPECIFIED forcing data input directory, file header, domain, and period
 
-met_type = 'GSWP3_daymet4'!'GSWP3'! 'CRUJRA' ! 'CRU-NCEP'
+met_type = 'GSWP3_daymet4' !'ESM_daymet4' !'GSWP3_daymet4'!'GSWP3'! 'CRUJRA' ! 'CRU-NCEP'
 
 !Set the input data path
 !forcdir = '/lustre/or-hydra/cades-ccsi/proj-shared/project_acme/ACME_inputdata/atm/datm7/atm_forcing.datm7.CRUJRA.0.5d.v1.c190604'
 !forcdir = '/lustre/or-hydra/cades-ccsi/proj-shared/project_acme/cesminput_ngee/atm/datm7' // &
 !           '/atm_forcing.datm7.GSWP3_daymet.56x24pt_kougarok-GRID'
-forcdir = '/nfs/data/ccsi/f9y/GSWP3_daymet' // &
-            '/TILE13867'
+!forcdir = '/nfs/data/ccsi/f9y/GSWP3_daymet' // &
+!            '/TILE13867'
+
+forcdir = '/gpfs/alpine/proj-shared/cli146/GSWP3_daymet' // &
+            '/TILE10835'
+
+!forcdir = '/gpfs/alpine/proj-shared/cli146/Deeksha/climate-forcing/City_ELM' // &
+!          '/Chicago' // &
+!          '/Daymet2019_1980_2019/'
+!          '/ACCESS-CM2_ssp585_r1i1p1f1_DBCCA_Daymet_1980_2019'
+!          '/ACCESS-CM2_ssp585_r1i1p1f1_DBCCA_Daymet_2020_2059'
+!          '/ACCESS-CM2_ssp585_r1i1p1f1_DBCCA_Daymet_2060_2099'
+!          '/BCC-CSM2-MR_ssp585_r1i1p1f1_DBCCA_Daymet_1980_2019'
+!          '/BCC-CSM2-MR_ssp585_r1i1p1f1_DBCCA_Daymet_2020_2059'
+!          '/BCC-CSM2-MR_ssp585_r1i1p1f1_DBCCA_Daymet_2060_2099'
+!          '/CNRM-ESM2-1_ssp585_r1i1p1f2_DBCCA_Daymet_1980_2019'
+!          '/CNRM-ESM2-1_ssp585_r1i1p1f2_DBCCA_Daymet_2020_2059'
+!          '/CNRM-ESM2-1_ssp585_r1i1p1f2_DBCCA_Daymet_2060_2099'
+!          '/MPI-ESM1-2-HR_ssp585_r1i1p1f1_DBCCA_Daymet_1980_2019'
+!          '/MPI-ESM1-2-HR_ssp585_r1i1p1f1_DBCCA_Daymet_2020_2059'
+!          '/MPI-ESM1-2-HR_ssp585_r1i1p1f1_DBCCA_Daymet_2060_2099'
+!          '/MRI-ESM2-0_ssp585_r1i1p1f1_DBCCA_Daymet_1980_2019'
+!          '/MRI-ESM2-0_ssp585_r1i1p1f1_DBCCA_Daymet_2020_2059'
+!          '/MRI-ESM2-0_ssp585_r1i1p1f1_DBCCA_Daymet_2060_2099'
+!          '/NorESM2-MM_ssp585_r1i1p1f1_DBCCA_Daymet_1980_2019'
+!          '/NorESM2-MM_ssp585_r1i1p1f1_DBCCA_Daymet_2020_2059'
+!          '/NorESM2-MM_ssp585_r1i1p1f1_DBCCA_Daymet_2060_2099'
+
+
+!
+odir = './'
 zoffset = 0   ! zone index counting previously generated data set (e.g. DAYMET tile already processed)
 zoffset_n = 0 ! zone n-index counting previously generated data set
 
 !Set the file header of the forcing, excluding 'clmforc.'
 !myforcing = 'cruncep.V8.c2017'
 !myforcing = 'CRUJRAV1.1.c2019.0.5x0.5'
-!myforcing = 'GSWP3_daymet.56x24pt_kougarok-GRID'
-myforcing = 'Daymet4.1km'
-
+!myforcing = 'GSWP3_daymet.56x24pt_kougarok-GRID.'
+myforcing = 'Daymet4.1km.'
+!myforcing = ''
 
 ! domain/mask
 !mydomain = 'domain.lnd.GSWP3_daymet.56x24pt_kougarok-GRID'
 mydomain = ' '
 fstmetfile = 'TPHWL3Hrly/clmforc.Daymet4.1km.TPQWL.1980-01.nc' ! have to get info on grid no. and their centroids
+!fstmetfile = 'TPHWL1Hrly/clmforc.TPQWL.1980-01.nc' ! have to get info on grid no. and their centroids
 mask_varname = 'TBOT'
 
 ! if setting the following as non-'-9999.0' value, mask will cut off by them
@@ -110,13 +137,18 @@ ymax = -9999.0
 !ymin = 65.149
 !ymax = 65.175
 
+xmin = -110.0628+360.0
+xmax = -110.0428+360.0
+ymin = 31.7305
+ymax = 31.7505
+
 !Set the date range and time resolution
 !startyear = 1901
 !endyear   = 2017
 !res       = 6      !Timestep in hours
-startyear = 1980
-endyear   = 2014
-res       = 3      !Timestep in hours
+startyear = 1980   ! defaut 1980
+endyear   = 2014   ! defaut 2014
+res       = 3      ! Timestep in hours
 
 !!-----------------------------------------------------------------
 
@@ -194,12 +226,18 @@ elseif(trim(fstmetfile) /= '') then
     ierr = nf90_open(trim(fname), NF90_NOWRITE, ncid)
     if (myid==0) print*, 'domain: ', trim(fname),  ' - ',  trim(nf90_strerror(ierr))
     ierr = nf90_inq_dimid(ncid, "x", dimid1)
+    if (ierr /=0) then
+       ierr = nf90_inq_dimid(ncid, "lon", dimid1)
+    endif
     ierr = nf90_inquire_dimension(ncid, dimid1, len = ni)
     if (ierr /= 0) then
        print *, 'error in dimension ni -', trim(nf90_strerror(ierr))
        stop
     endif
     ierr = nf90_inq_dimid(ncid, "y", dimid1)
+    if (ierr /=0) then
+       ierr = nf90_inq_dimid(ncid, "lat", dimid1)
+    endif
     ierr = nf90_inquire_dimension(ncid, dimid1, len = nj)
     if (ierr /= 0) then
        print *, 'error in dimension nj - ', trim(nf90_strerror(ierr))
@@ -214,16 +252,32 @@ elseif(trim(fstmetfile) /= '') then
     allocate(xc1d(ni))
     allocate(yc1d(nj))
     allocate(mask(ni,nj))
-    ierr = nf90_inq_varid(ncid, 'lon', varid)
-    ierr = nf90_get_var(ncid, varid, xc)
-    ierr = nf90_inq_varid(ncid, 'lat', varid)
-    ierr = nf90_get_var(ncid, varid, yc)
 
-    ierr = nf90_inq_varid(ncid, 'x', varid)  ! daymet geox in meters
-    ierr = nf90_get_var(ncid, varid, xc1d)
+    if (trim(met_type(1:12)) == 'GSWP3_daymet') then
+      ierr = nf90_inq_varid(ncid, 'lon', varid)
+      ierr = nf90_get_var(ncid, varid, xc)
+      ierr = nf90_inq_varid(ncid, 'lat', varid)
+      ierr = nf90_get_var(ncid, varid, yc)
 
-    ierr = nf90_inq_varid(ncid, 'y', varid)  ! daymet geoy in meters
-    ierr = nf90_get_var(ncid, varid, yc1d)
+      ierr = nf90_inq_varid(ncid, 'x', varid)  ! daymet geox axis in meters
+      ierr = nf90_get_var(ncid, varid, xc1d)
+
+      ierr = nf90_inq_varid(ncid, 'y', varid)  ! daymet geoy axis in meters
+      ierr = nf90_get_var(ncid, varid, yc1d)
+    else
+      ierr = nf90_inq_varid(ncid, 'lon', varid)  ! lon axis in degree
+      ierr = nf90_get_var(ncid, varid, xc1d)
+      ierr = nf90_inq_varid(ncid, 'lat', varid)  ! lat axis in degree
+      ierr = nf90_get_var(ncid, varid, yc1d)
+      
+      do j=1, nj
+        do i=1,ni
+          xc(i,j) = xc1d(i)
+          yc(i,j) = yc1d(j)
+        end do
+      end do
+
+    end if
 
     ! mask based on if metvar values are filled or NaN
     ierr = nf90_inq_varid(ncid, trim(mask_varname), varid)
@@ -282,9 +336,9 @@ elseif(trim(fstmetfile) /= '') then
 
 endif
 
-if (myid .eq. 0) open(unit=8, file=trim(forcdir) // '/cpl_bypass_full' // trim(site) // '/' // 'zone_mappings.txt')
-if (myid .eq. 0) then
-  open(unit=9, file=trim(forcdir) // '/cpl_bypass_full' // trim(site) // '/' // 'daymet_elm_mappings.txt')
+if (myid .eq. 0) open(unit=8, file=trim(odir) // '/cpl_bypass_full' // trim(site) // '/' // 'zone_mappings.txt')
+if (myid .eq. 0 .and. index(trim(met_type),'daymet') .gt. 0) then
+  open(unit=9, file=trim(odir) // '/cpl_bypass_full' // trim(site) // '/' // 'daymet_elm_mappings.txt')
   write(9,*) '     lon          lat           geox            geoy        i     j     g '
 
 endif
@@ -372,11 +426,22 @@ do v=myid+1,7,np
    ! GSWP3
    if(trim(met_type) == 'GSWP3' .or. trim(met_type(1:12)) == 'GSWP3_daymet') then
      if (v .eq. 1) met_prefix = trim(forcdir) // '/Precip' // trim(myres) // &
-         '/clmforc.' // trim(myforcing) // '.Prec.'
+         '/clmforc.' // trim(myforcing) // 'Prec.'
+
      if (v .eq. 2) met_prefix = trim(forcdir) // '/Solar' // trim(myres) // &
-         '/clmforc.' // trim(myforcing) // '.Solr.'
+         '/clmforc.' // trim(myforcing) // 'Solr.'
      if (v .ge. 3) met_prefix = trim(forcdir) // '/TPHWL' // trim(myres) // &
-         '/clmforc.' // trim(myforcing) // '.TPQWL.'
+         '/clmforc.' // trim(myforcing) // 'TPQWL.'
+
+   elseif(trim(met_type) == 'ESM_daymet4') then
+     if (v .eq. 1) met_prefix = trim(forcdir) // '/Precip' // trim(myres) // &
+         '/clmforc.' // trim(myforcing) // 'PRECTmms.'
+
+     if (v .eq. 2) met_prefix = trim(forcdir) // '/Solar' // trim(myres) // &
+         '/clmforc.' // trim(myforcing) // 'Solr.'
+     if (v .ge. 3) met_prefix = trim(forcdir) // '/TPHWL' // trim(myres) // &
+         '/clmforc.' // trim(myforcing) // 'TPQWL.'
+
 
    elseif(trim(met_type) == 'CRUJRA') then
    ! CRUJRA
@@ -384,7 +449,7 @@ do v=myid+1,7,np
      if (v .eq. 2) met_prefix = trim(forcdir) // '/clmforc.' // trim(myforcing) // '.Solr.'
      if (v .ge. 3) met_prefix = trim(forcdir) // '/clmforc.' // trim(myforcing) // '.TPQWL.'
 
-   elseif(trim(met_type) == 'CRUJRA') then
+   elseif(trim(met_type) == 'CRU-NCEP') then
 
    !CRU-NCEP v7
      if (v .eq. 1) met_prefix = trim(forcdir) // '/atm_forcing.datm7.' &
@@ -419,24 +484,41 @@ do v=myid+1,7,np
            stop
          endif
 
-         ierr = nf90_inq_varid(ncid, 'LONGXY', varid)
-         if (ierr/=0) then
-           ierr = nf90_inq_varid(ncid, 'lon', varid)
-           if(ierr/=0) then
-             print *, "invalid variable 'LONGXY' or 'lon' ",trim(nf90_strerror(ierr))
-             stop
+         ! if known grid-centroid lon/lat (full 2D)
+         if (trim(fstmetfile) /= '') then
+           longxy = xc
+           latixy = yc
+         else
+           ! if not yet, read in grid-centroid lon/lat (note: make sure it's full 2D)
+           ierr = nf90_inq_varid(ncid, 'LONGXY', varid)
+           if (ierr==0) then
+             ierr = nf90_get_var(ncid, varid, longxy)
+
+             ierr = nf90_inq_varid(ncid, 'LATIXY', varid)
+             if (ierr/=0) then
+               print *, "invalid variable 'LATIXY'",trim(nf90_strerror(ierr))
+               stop
+             else           
+               ierr = nf90_get_var(ncid, varid, latixy)
+             endif
+           else
+             ierr = nf90_inq_varid(ncid, 'lon', varid)
+             ierr = nf90_get_var(ncid, varid, longxy)           
+
+             if(ierr==0) then
+               ierr = nf90_inq_varid(ncid, 'lat', varid)
+               if (ierr/=0) then      
+                 print *, "invalid variable 'lon' ",trim(nf90_strerror(ierr))
+                 stop
+               else 
+                 ierr = nf90_get_var(ncid, varid, latixy)
+               endif
+             endif
            endif
+         
          endif
-         ierr = nf90_get_var(ncid, varid, longxy)
-         ierr = nf90_inq_varid(ncid, 'LATIXY', varid)
-         if (ierr/=0) then
-           ierr = nf90_inq_varid(ncid, 'lat', varid)
-           if(ierr/=0) then
-             print *, "invalid variable 'LATIXY' or 'lat' ",trim(nf90_strerror(ierr))
-             stop
-           endif
-         endif
-         ierr = nf90_get_var(ncid, varid, latixy)
+
+         ! get monthly metdata
          ierr = nf90_inq_varid(ncid, trim(metvars), varid)
          starti(1:3) = 1
          starti(1)   = zstarti(z)
@@ -488,10 +570,12 @@ do v=myid+1,7,np
                                xindx = -9999  ! when joint tiles, the x/y index need to be re-done
                                yindx = -9999
                            endif
-                           write(9,'(f12.5,1x,f12.6,1x, 2(f15.1, 1x),3(I5,1x))') longxy(starti(1)+i-1,j), &
+                           if (index(trim(met_type),'daymet') .gt. 0) then
+                              write(9,'(f12.5,1x,f12.6,1x, 2(f20.6, 1x),3(I5,1x))') longxy(starti(1)+i-1,j), &
                                 latixy(starti(1)+i-1,j),              &
                                 xc1d(starti(1)+i-1), yc1d(j),         &
                                 xindx, yindx, ng+zoffset_n
+                           endif
                         !else
                         !   write(8,'(2(f10.3,1x),2(I5,1x))') xmax, latixy(starti(1)+i,j), &
                         !        z+zoffset, count_zone(z)+zoffset_n
@@ -517,12 +601,12 @@ do v=myid+1,7,np
             write(zst,'(I4)') 1000+z+zoffset
             !if (y .eq. startyear .and. m .eq. 1) then
             if (NEW_NC) then
-               if(trim(met_type(1:12)) == 'GSWP3_daymet') then
-                 fname = trim(forcdir) // '/cpl_bypass_full' // trim(site) // '/' // trim(met_type) &
+               if(trim(met_type(1:5)) == 'GSWP3' .or. trim(met_type) == 'ESM_daymet4') then
+                 fname = trim(odir) // '/cpl_bypass_full' // trim(site) // '/' // trim(met_type) &
                       // '_' // trim(metvars) // '_' // startyrst // '-' // endyrst // '_z' // &
                     zst(3:4) // '.nc'
                else
-                 fname = trim(forcdir) // '/cpl_bypass_full' // trim(site) // '/' // trim(myforcing) &
+                 fname = trim(odir) // '/cpl_bypass_full' // trim(site) // '/' // trim(myforcing) &
                       // '_' // trim(metvars) // '_' // startyrst // '-' // endyrst // '_z' // &
                     zst(3:4) // '.nc'
                endif

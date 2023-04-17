@@ -2,7 +2,8 @@
 
 cwd=$(pwd)
 
-DAYMET_ROOT=/nfs/data/ccsi/f9y/GSWP3_daymet
+#DAYMET_ROOT=/nfs/data/ccsi/f9y/GSWP3_daymet
+DAYMET_ROOT=/gpfs/alpine/proj-shared/cli146/GSWP3_daymet
 
 TILE=$1 ###e.g. 13867 #daymet tile index
 

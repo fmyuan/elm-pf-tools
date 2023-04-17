@@ -62,6 +62,10 @@ Files list as following (SEE 'Tiles_DaymetV3.png' for daymet tile index) (note t
 /home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_155XX.tar;
 
 
+YOU may directly download those, OR, if on HPSS connected system (OLCF), you may run a command like (to extract one tile data, 12270 in Daymet_122XX.tar):
+htar -xvf /home/5v1/Daymet_ESM/Daymet_ESM_tiles/Daymet_ESM_122XX.tar ????/12270
+
+
 2. UNTAR 1 or more *.tar, as specified, in 'untar_daymetfiles.sbatch'
 
 FILEs are arranged like following:
