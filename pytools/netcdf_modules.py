@@ -557,11 +557,11 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 #os.system('rm -rf test02.nc')
 
 # duplicately expanding nc files along named dimension(s)
-#dupexpand('surfdata.nc', 'surfdata_3x1pt.nc', dim_name=['lsmlat','lsmlon'], dim_len=[1,3])
-#dupexpand('surfdata.pftdyn.nc', 'surfdata.pftdyn_3x1pt.nc', dim_name=['lsmlat','lsmlon'], dim_len=[1,3])
+#dupexpand('surfdata.nc', 'surfdata_5x1pt.nc', dim_name=['lsmlat','lsmlon'], dim_len=[1,5])
+#dupexpand('surfdata.pftdyn.nc', 'surfdata.pftdyn_5x1pt.nc', dim_name=['lsmlat','lsmlon'], dim_len=[1,5])
 #dupexpand('surfdata.nc', 'surfdata_3x1pt.nc', dim_name='gridcell', dim_len=3)
 #dupexpand('domain.nc', 'domain_3x1pt.nc', dim_name='ni', dim_multipler=3)
-#dupexpand('domain.lnd.1x1pt_Oakharbor-GRID_navy.nc', 'domain.lnd.3x1pt_Oakharbor-GRID_navy.nc', dim_name=['nj','ni'], dim_len=[1,3])
+#dupexpand('domain.lnd.1x1pt_Oakharbor-GRID_navy.nc', 'domain.lnd.5x1pt_Oakharbor-GRID_navy.nc', dim_name=['nj','ni'], dim_len=[1,3])
 #dupexpand('landuse.timeseries_1x1pt_kougarok-NGEE_simyr1850-2015_c181015m64.nc', 'test6x1.nc', ['lsmlat','lsmlon'], [1,6])
 
 # merge 2 files along 1-only named-dimension

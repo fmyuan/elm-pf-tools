@@ -10,9 +10,44 @@ from pyproj import Transformer
 from pyproj import CRS
 from builtins import int
 from scipy.ndimage import interpolation
-from numpy import double
+from numpy import double, float32
 from rasterio import band
 from _operator import index
+
+
+#---
+#---Trucating or unstructured domain_surface data for ELM
+def mksrfdata_domain(domainfile_orig, surffile_orig, surfdynfile_orig, fmksrfnc_domain, unstructured=True):
+    print('#--------------------------------------------------#')
+    print("Trucating domain/surface/land.timeseries data ")
+    
+    #--------------------------------------
+    # converting from partial global to global
+    dnames_elm=['lsmlat', 'lsmlon']
+    dnames_=['latitude','longitude']
+    lmask_name = 'permafrost_region_mask'
+    if (os.path.isfile(fmksrfnc_domain)==True):
+        src0=Dataset(fmksrfnc_domain,'r')
+        lmask = np.asarray(src0.variables[lmask_name]).astype(np.int16)
+        try:
+            src0_fillvalue = src0.variables[lmask_name]._FillValue
+        except:
+            src0_fillvalue = np.iinfo(np.int16).min
+        lmask_idx = np.where((lmask!=src0_fillvalue) & (lmask>0) & (lmask<np.iinfo(np.int16).max))
+        src0.close()
+
+        lmask[:,:] = 0
+        lmask[lmask_idx] = 1
+        #for trimming row/colum 
+        idx_x = np.where(np.sum(lmask,0)>0)
+        idx_y = np.where(np.sum(lmask,1)>0)
+        
+        # domain.nc
+        if (os.path.isfile(domainfile_orig)==True):
+            src1=Dataset(domainfile_orig,'r')
+            
+        
+
 
 # nearest_neibour for earth surface using kdtree
 def nearest_using_kdtree(data, latname='Latitude', lonname='Longitude',kpt=2):
@@ -1044,14 +1079,28 @@ ccsm_input = os.path.abspath(options.ccsm_input)
 
 #---
 #------------------- get cru surface data as templatein ----------------------------------
+
 # the following are what to be modified (as tempalate or original datasets)
-#surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_0.125x0.125_simyr1850_c190730.nc'
-surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_360x720cru_simyr1850_c180216.nc'
+
+domainfile_orig = ccsm_input+'/share/domains/domain.clm/domain.lnd.360x720_cruncep.c20190221.nc'
+
+
+#surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_360x720cru_simyr1850_c180216.nc'
+surffile_orig = ccsm_input+'/lnd/clm2/surfdata_map/surfdata_0.5x0.5_simyr1850_c211019.nc'
+
+surfdynfile_orig = ccsm_input+'/lnd/clm2/surfdata_map/landuse.timeseries_0.5x0.5_HIST_simyr1850-2015_c211019.nc'
 
 #get grid cells
 longx_orig = np.asarray(Dataset(surffile_orig).variables['LONGXY'])[0,:]
 latiy_orig = np.asarray(Dataset(surffile_orig).variables['LATIXY'])[:,0]
 
+
+#---
+#---get new domain (xc,yc,xv,yv, mask, area), surfdata, landuse.timeseries
+# truncate or unstructed (if not yet)
+if True:
+    fmksrfnc_domain = '/Users/f9y/Documents/Works/BenRECCAP/RECCAP2_permafrost_regions_isimip3.nc'
+    mksrfdata_domain(domainfile_orig, surffile_orig, surfdynfile_orig, fmksrfnc_domain, unstructured=False)
 
 #---
 #---get new TOPO (topo, std-elev, slope, aspect)
@@ -1225,7 +1274,7 @@ surffile_orig = './default/surfdata.nc'
 landuse_timeseries_orig = './default/surfdata.pftdyn.nc'
 
 #----
-if True:
+if False:
 #--------- write into nc file
     with Dataset(surffile_orig,'r') as src2, Dataset(fsurf_new, "w") as dst:
         

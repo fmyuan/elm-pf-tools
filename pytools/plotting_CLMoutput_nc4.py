@@ -132,10 +132,10 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
         gridtext.append("0 line ")
 
     # add a zero-degree-C line for 'TBOT'
-    if(varname == 'TBOT' or varname == 'TSOI'):
-        plt.plot([min(t),max(t)],[273.15,273.15],'k--')
+    #if(varname == 'TBOT' or varname == 'TSOI'):
+        #plt.plot([min(t),max(t)],[273.15,273.15],'k--')
         #plt.plot([1,12],[273.15,273.15],'k--')
-        gridtext.append("0 oC")
+        #gridtext.append("0 oC")
 
     if(len(sdata.shape)>1):
         if sdata_std is not None:
@@ -182,7 +182,7 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
     #if ('Snow Depth' in varname): plt.ylim([0.0,2.0])
  
      # appending unit
-    if varname=='TBOT': varname='Air Temperature (oC)'
+    if varname=='TBOT': varname='Air Temperature (K)'
     if varname=='TSOI': varname='Near-surface Soil Temperature (K)'
     if varname=='TLAI': varname='Total LAI (m2/m2)'
     if varname=='GPP': varname='GPP (10^-6 gC/m2/s)'

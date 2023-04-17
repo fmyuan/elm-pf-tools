@@ -201,7 +201,7 @@ parser.add_option("--elmheader", dest="elmheader", default="", \
                   help = "ELM output Netcdf file header with path but no .nc ")
 parser.add_option("--daymet_elm_mapfile", dest="gridmap", default="daymet_elm_mapping.txt", \
                   help = "DAYMET tile 2D to 1D landmasked grid mapping file ")
-parser.add_option("--proj_name", dest="proj", default="lcc-daymet", \
+parser.add_option("--proj_name", dest="proj_name", default="lcc-daymet", \
                   help = "project name used in mapping file ")
 parser.add_option("--elm_varname", dest="elm_varname", default="ALL", \
                   help = "ELM output Netcdf file's variable name to process, ALL for all")
@@ -301,7 +301,10 @@ if (options.elmheader != ""):
         if 'daymet' in options.gridmap:
             ncfile_out = 'daymet-'+ncfile.split('/')[-1]
         else:
-            ncfile_out = 'projection-'+ncfile.split('/')[-1]
+            if options.proj_name!='':
+                ncfile_out = 'projection-'+ncfile.split('/')[-1]
+            else:
+                ncfile_out = '2d-'+ncfile.split('/')[-1]
         dst = Dataset(ncfile_out, mode='w',format=ncformat)
 
         print ('Processing - ', ncfile, '==> ', ncfile_out)
@@ -324,7 +327,7 @@ if (options.elmheader != ""):
         
         # add geox/geoy dimensions, if not in src. 
         # note: here by default, daymet's projection is assummed.
-        if 'geox' not in dst.dimensions: 
+        if 'geox' not in dst.dimensions and options.proj_name!='': 
             geox_dim = dst.createDimension('geox',  len(xx))
             geoy_dim = dst.createDimension('geoy',  len(yy))
             
@@ -341,7 +344,7 @@ if (options.elmheader != ""):
             vgeoy[:] = yy
             
             vproj = dst.createVariable('proj4', np.int8)
-            if options.proj == 'lcc-daymet':
+            if options.proj_name == 'lcc-daymet':
                 vproj.grid_mapping_name = "lcc"
                 vproj.longitude_of_central_meridian = -100.
                 vproj.latitude_of_projection_origin = 42.5
@@ -351,8 +354,7 @@ if (options.elmheader != ""):
                 vproj.semi_major_axis = 6378137.
                 vproj.inverse_flattening = 298.257223563
             else:
-                vproj.grid_mapping_name = options.proj
-            #vproj[:] = options.proj.strip()
+                vproj.grid_mapping_name = options.proj_name
                 
 
         # copy all data in src, and do 1D-grid --> 2D-geox/geoy copy
@@ -396,8 +398,13 @@ if (options.elmheader != ""):
                     i = i + 1
                     if dim in ('gridcell','lndgrid', 'n', dim_domain): 
                         idim = i
-                        new_dims.append('geoy')
-                        new_dims.append('geox')
+                        if (options.proj_name==''):
+                            if dim in ('gridcell','lndgrid', 'n'):
+                                new_dims.append('lsmlat')
+                                new_dims.append('lsmlon')
+                        else:
+                            new_dims.append('geoy')
+                            new_dims.append('geox')
                     elif (dim in ('landunit','column','pft')) and \
                          ('gridcell' in src.dimensions.keys() \
                            or 'lndgrid' in src.dimensions.keys() \
