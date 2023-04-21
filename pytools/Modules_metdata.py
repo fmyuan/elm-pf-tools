@@ -81,9 +81,9 @@ def calcFLDS(tk, pres_pa, q_kgkg=[], rh_100=[]):
     #
     return FLDS
 
-
-# ---------------------------------------------------------------
-# extract a set of met variables from CPL_BYPASS directory 
+#
+#------- ------- extract a set of met variables from CPL_BYPASS directory 
+#
 def clm_metdata_cplbypass_extranction(filedir,met_type, lon, lat, ncopath=''):
     #
     if('GSWP3' in met_type):
@@ -724,8 +724,7 @@ def singleNCDCReadCsvfile(filename, ncdc_type, missing):
 
     return siteinfo, data_header, tdata
 
-# ---------------------------------------------------------------
-# read a met variables from CPL_BYPASS directory 
+#------ ------ Read a met variables from CPL_BYPASS directory 
 def clm_metdata_cplbypass_read(filedir,met_type, vars, lons=[-999], lats=[-999]):
     #
     if (len(lons)!=len(lats)):
@@ -907,8 +906,7 @@ def clm_metdata_cplbypass_read(filedir,met_type, vars, lons=[-999], lats=[-999])
     #    
     return zone, zline, vdims,met
     
-# ---------------------------------------------------------------
-# read a met variables from CLM full met directory 
+#------ ------ read a met variables from CLM full met directory 
 def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
     #
     # datm domain file  
@@ -1238,7 +1236,244 @@ def singleReadCsvfile(filename):
     clm_header = clm_data.keys()
 
     return clm_header, clm_data
+
+
+#
+# ------- CRU-JRA met forcing data convertion-extraction for CLM/ELM ------------------------------------
+#
+def clm_metdata_CRUJRA(crujra_dirfilehead, template_clm_metfile=''):
+    # CRU-JRA data formats
+    #  file naming (a full year, 6-hourly): 
+          #crujra.v2.3.5d.$VAR.yyyy.365d.noc.nc
+          #   where, $VAR - tmp, spfh, pre, pres, dswrf, dlwrf, ugrid, vgrd
+    # CLM/ELM data format from 'template', but generally following CRU-NCEP format
+    #    e.g.  under datm7/atm_forcing.datm7.CRUJAR.0.5d.v2.c2023/
+    #          clmforc.CRUJRAV2.3.c2023.0.5x0.5.TPQWL.yyyy-mm.nc
+    #          clmforc.CRUJRAV2.3.c2023.0.5x0.5.Solr.yyyy-mm.nc
+    #          clmforc.CRUJRAV2.3.c2023.0.5x0.5.Prec.yyyy-mm.nc
+    #   where,
+    #     Solr  - from 'dswrf' (FSDS)
+    #     Prec  - from 'pre' (PRECTmms) 
+    #     TPQWL - from 'tmp' (TBOT), 'pres' (PSRF), 'spfh' (QBOT), 'ugrd/vgrd' (WIND), 'dlwrf' (FLDS)
+    crujra_vars1 = ['time','lat','lon','dswrf']
+    clm_vars1    = ['time','LATIXY','LONGXY','FSDS']
+
+    crujra_vars2 = ['time','lat','lon','pre']
+    clm_vars2    = ['time','LATIXY','LONGXY','PRECTmms']
+
+    crujra_vars3 = ['time','lat','lon','tmp', 'pres', 'spfh', 'dlwrf', 'ugrd', 'vgrd']   # don't change the order here
+    clm_vars3    = ['time','LATIXY','LONGXY','TBOT','PSRF', 'QBOT', 'FLDS', 'WIND']
     
+    #checking where is the original data
+    filehead = crujra_dirfilehead.split('/')[-1]
+    crujradir  = crujra_dirfilehead.replace(filehead, '')
+    dirfiles = os.listdir(crujradir)
+
+    if template_clm_metfile=='':
+        metfile_tpqwl0 = 'clmforc.CRUJRAV2.3.c2023.0.5x0.5.TPQWL.yyyy-mm.nc'
+        metfile_solr0 = 'clmforc.CRUJRAV2.3.c2023.0.5x0.5.Solr.yyyy-mm.nc'
+        metfile_prec0 = 'clmforc.CRUJRAV2.3.c2023.0.5x0.5.Prec.yyyy-mm.nc'
+    else:
+        metfile_new0 = template_clm_metfile
+    
+    for dirfile in dirfiles:
+        # in metdata directory
+        if(os.path.isfile(crujradir+'/'+dirfile)): 
+            if(filehead in dirfile):
+            
+                print('\n file: '+dirfile)
+    
+                metfile = crujradir+'/'+dirfile
+                metvar  = dirfile.split('.')[-5] # *.$VAR.yyyy.365d.noc.nc
+                metyyyy = int(dirfile.split('.')[-4])
+                
+                fmetdata = Dataset(metfile,'r')
+                metdata_t= np.asarray(fmetdata.variables['time']) # days since 1901-01-01 00:00:00
+                if 'ugrd' in metfile:
+                    metfile2 = metfile.replace('ugrd','vgrd')
+                    fmetdata2 = Dataset(metfile2,'r')
+                    
+                # clm offline met filenames
+                if template_clm_metfile =='':
+                    if metvar in crujra_vars1: 
+                        metfile_new0 = metfile_solr0
+                        clm_vars    = clm_vars1
+                        crujra_vars = crujra_vars1
+                    if metvar in crujra_vars2: 
+                        metfile_new0 = metfile_prec0
+                        clm_vars    = clm_vars2
+                        crujra_vars = crujra_vars2
+                    if metvar in crujra_vars3: 
+                        metfile_new0 = metfile_tpqwl0
+                        clm_vars    = clm_vars3
+                        crujra_vars = crujra_vars3
+                    fmetdata_tmpl = Dataset(metfile_new0, 'r')
+    
+                # monthly files for clm offline met data
+                mdays_range = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365]
+                metdata_t_yr = metdata_t - (metyyyy - 1901)*365.0
+                for im in range(1,13):
+                    
+                    v_ym = metfile_new0.split('.')[-3:]
+                    metfile_new = metfile_new0.replace(v_ym[0]+'.'+v_ym[1]+'.'+v_ym[2], '')
+                    metfile_new = metfile_new+v_ym[0]+'.' \
+                        +str(metyyyy)+'-'+str(im).zfill(2)+'.nc'
+
+                    #
+                    print('dirfile: '+dirfile + '  =======>  '+metfile_new)
+
+                    tindx = np.where((metdata_t_yr>=mdays_range[im-1]) & (metdata_t_yr<mdays_range[im]))
+
+                    if not os.path.isfile(metfile_new):
+                        dst = Dataset(metfile_new, mode='w',format=fmetdata_tmpl.file_format)
+                        # create new nc file from template
+                        # dimensions
+                        unlimited_dim=''
+                        unlimited_size=0
+                        for dname, dimension in fmetdata_tmpl.dimensions.items():
+                            if dname in fmetdata.dimensions:
+                                if dname=='time':
+                                    ldim = tindx[0].size
+                                else:
+                                    ldim = fmetdata.dimensions[dname].size
+                                
+                                dst.createDimension(dname, (ldim if not dimension.isunlimited() else None))
+                                # unlimited dimension name to be included dst output
+                                if dimension.isunlimited():
+                                    unlimited_dim = dname
+                                    unlimited_size = ldim
+
+                        #global attributes
+                        if 'Solr' in metfile_new:
+                            dst.case_title = "offline ELM format of CRUJRA V2.3 6-Hourly Atmospheric Forcing: Downward Shortwave Radiation"
+                        elif 'Prec' in metfile_new:
+                            dst.case_title = "offline ELM format of CRUJRA V2.3 6-Hourly Atmospheric Forcing: Total Precipitation"
+                        elif 'TPQWL' in metfile_new:
+                            dst.case_title = "offline ELM format of CRUJRA V2.3 6-Hourly Atmospheric Forcing: temperature, pressure, specific humidity, wind, downward Longwave Radiation"
+                        dst.data_source = "Data is provided from the Japanese 55-year Reanalysis (JRA-55) project carried out by the Japan Meteorological Agency (JMA), and from CRU, UEA, Norwich UK"
+                        dst.data_source_ftp = "ftp://ftp.ceda.ac.uk/badc/cru/data/cru_jra/cru_jra_2.3/"
+                        dst.data_source_citation = ("University of East Anglia Climatic Research Unit; "+
+                                             " Harris, I.C. (2022): CRU JRA v2.3: A forcings dataset of gridded land surface blend of Climatic Research Unit (CRU) and Japanese reanalysis (JRA) data;" +
+                                             " Jan.1901 - Dec.2021.. NERC EDS Centre for Environmental Data Analysis,"+
+                                             " date of citation. https://catalogue.ceda.ac.uk/uuid/38715b12b22043118a208acd61771917")
+                        dst.references = "data source contact: i.harris@uea.ac.uk"
+                        dst.history = '2023-04-21: CRU-JRA v2.3 data format covertion to offline ELM style'
+                        dst.contact = 'F.-M. Yuan, CCSI/ESD-ORNL. yuanf@ornl.gov'
+
+
+                        
+                        # variables
+                        for vname in fmetdata_tmpl.variables.keys():
+                            
+                            vdtype = fmetdata_tmpl.variables[vname].datatype
+                            vdims  = np.asarray(fmetdata_tmpl.variables[vname].dimensions)
+                            # new Filling value
+                            try:
+                                vFillvalue = fmetdata_tmpl.variables[vname]._FillValue
+                            except:
+                                vFillvalue = np.finfo(vdtype).max
+                            
+                            x = dst.createVariable(vname, vdtype, \
+                                        dimensions=vdims, \
+                                        zlib=True, fill_value=vFillvalue)
+                            dst[vname].setncatts(fmetdata_tmpl[vname].__dict__)
+                            if vname == 'time':
+                                dst[vname].units = "days since "+str(metyyyy)+'-'+str(im).zfill(2)+"-01 00:00:00"
+
+                            # data name/type in crujra
+                            v_idx = clm_vars.index(vname)
+                            if crujra_vars[v_idx] not in fmetdata.variables.keys(): continue
+                            if vname!=crujra_vars[v_idx]: # checking variable name in crujra data
+                                print(vname,' is in CRU-JRA data file: ', dirfile, 'as: ', crujra_vars[v_idx])
+                            # missing/Filling in crujra dataset
+                            try:
+                                vFillMissing = fmetdata.variables[crujra_vars[v_idx]]._FillValue
+                            except:
+                                try:
+                                    vFillMissing = fmetdata.variables[crujra_vars[v_idx]].missing_value
+                                except:
+                                    vFillMissing = np.finfo(fmetdata.variables[crujra_vars[v_idx]].datatype).max
+
+                            # write data
+                            if vname == 'time':
+                                dst[vname][...] = metdata_t_yr[tindx] - mdays_range[im-1]
+                            elif vname == 'LATIXY':
+                                dst[vname][...] = np.transpose(np.tile(np.asarray(fmetdata[crujra_vars[v_idx]]),(fmetdata.dimensions['lon'].size,1)))
+                            elif vname == 'LONGXY':
+                                dst[vname][...] = np.tile(np.asarray(fmetdata[crujra_vars[v_idx]]),(fmetdata.dimensions['lat'].size,1))
+                            elif 'time' in vdims and crujra_vars[v_idx] in fmetdata.variables.keys():
+                                tmp_data = np.asarray(fmetdata[crujra_vars[v_idx]])[tindx,]
+                                idx_err = np.where((tmp_data==vFillMissing) | (tmp_data>1.e10)) #due to data storage in nc, might has Fillvalue issue 
+                                if vname=='WIND':
+                                    tmp_data2= np.asarray(fmetdata2[crujra_vars[v_idx+1]])[tindx,]
+                                    idx_err = np.where((tmp_data==vFillMissing) | (tmp_data>1.e10) \
+                                                      | (tmp_data2==vFillMissing) | (tmp_data2>1.e10)) #due to data storage in nc, might has Fillvalue issue 
+                                    tmp_data = tmp_data/2.0 + tmp_data2/2.0
+                                elif vname=='FSDS':
+                                    tmp_data = tmp_data/6.0/3600.0  # unit: J/m2/6hr --> w/m2
+                                elif vname=='PRECTmms':
+                                    tmp_data = tmp_data/6.0/3600.0  # unit: mm/6hr --> mm/s
+                                if len(idx_err[0])>0: tmp_data[idx_err]=vFillvalue
+                                dst[vname][...] = tmp_data
+           
+                        
+                    else:
+                        print('writing data into exiting file: ', metfile_new)
+                        # TPQWL file actually combines 5 vars
+                        dst = Dataset(metfile_new, mode='a')
+                    
+                        # write met data only
+                        for vname in fmetdata_tmpl.variables.keys():
+                            if vname not in ['time','LATIXY','LONGXY']:
+                            
+                                # data name/type in crujra
+                                v_idx = clm_vars.index(vname)
+                                if crujra_vars[v_idx] not in fmetdata.variables.keys(): continue
+                                # missing/Filling in crujra dataset
+                                try:
+                                    vFillMissing = fmetdata.variables[crujra_vars[v_idx]]._FillValue
+                                except:
+                                    try:
+                                        vFillMissing = fmetdata.variables[crujra_vars[v_idx]].missing_value
+                                    except:
+                                        vFillMissing = np.finfo(fmetdata.variables[crujra_vars[v_idx]].datatype).max
+
+                                
+                                vdtype = fmetdata_tmpl.variables[vname].datatype
+                                vdims  = np.asarray(fmetdata_tmpl.variables[vname].dimensions)
+                                # new missing/Filling
+                                try:
+                                    vFillvalue = fmetdata_tmpl.variables[vname]._FillValue
+                                except:
+                                    vFillvalue = np.finfo(vdtype).max
+                                if 'time' in vdims and crujra_vars[v_idx] in fmetdata.variables.keys():
+                                    if vname!=crujra_vars[v_idx]: # checking variable name in crujra data
+                                        print(vname,' is in CRU-JRA data file: ', dirfile, 'as: ', crujra_vars[v_idx])
+                                    tmp_data = np.asarray(fmetdata[crujra_vars[v_idx]])[tindx,]
+                                    idx_err = np.where((tmp_data==vFillMissing) | (tmp_data>1.e10)) #due to data storage in nc, might has Fillvalue issue 
+                                    if vname=='WIND':
+                                        tmp_data2= np.asarray(fmetdata2[crujra_vars[v_idx+1]])[tindx,]
+                                        idx_err = np.where((tmp_data==vFillMissing) | (tmp_data>1.e10) \
+                                                          | (tmp_data2==vFillMissing) | (tmp_data2>1.e10)) #due to data storage in nc, might has Fillvalue issue 
+                                        tmp_data = tmp_data/2.0 + tmp_data2/2.0
+                                    elif vname=='FSDS':
+                                        tmp_data = tmp_data/6.0/3600.0  # unit: J/m2/6hr --> w/m2
+                                    elif vname=='PRECTmms':
+                                        tmp_data = tmp_data/6.0/3600.0  # unit: mm/6hr --> mm/s
+                                    if len(idx_err[0])>0: tmp_data[idx_err]=vFillvalue
+                                    dst[vname][...] = tmp_data
+                        #
+                    #monthly ending
+                    dst.close()
+                # yearly ending
+                fmetdata_tmpl.close()
+                fmetdata.close()
+            #file list checking (multiple years, with 1 file for each year)
+        #file list ending
+    #
+    print('DONE!')
+    #
+#
 ##################################################################################
 # test modules
 
@@ -1268,6 +1503,11 @@ def singleReadCsvfile(filename):
 #odata_header,odata = \
 #    singleReadCsvfile('5_minute_data_v21.csv')
     
+
+#clm_metdata_CRUJRA('./rawdata/crujra.v2.3.5d')
+
+####################################################################################################
+#
     
 
 

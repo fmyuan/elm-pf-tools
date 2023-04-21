@@ -4,18 +4,19 @@
 # Version     :
 # ============================================================================
 
-#FC_ROOT := /usr/local/gcc-x/gcc-x-clang
-#MPI_ROOT := /usr/local/gcc-x/mpich-3.3
-#NETCDF_PATH := /usr/local/gcc-x/netcdf-4.x-hdf5
+FC_ROOT := /usr/local/gcc-clang-darwin/gcc-x-clang
+MPI_ROOT := /usr/local/gcc-clang-darwin/openmpi-4.x-gcc
+NETCDF_PATH := /usr/local/gcc-clang-darwin/netcdf-4.x-hdf5-openmpi
+NETCDF_F_PATH := $(NETCDF_PATH)
 
 #FC_ROOT := /software/dev_tools/swtree/cs400_centos7.5_pe2018/gcc/8.1.0/centos7.5_gnu4.8.5
 #MPI_ROOT := /software/dev_tools/swtree/cs400_centos7.5_pe2018/openmpi/3.1.5/centos7.5_gnu8.1.0
 #NETCDF_PATH := /software/user_tools/current/cades-ccsi/netcdf4/openmpi-3.1-gcc-8.1
 
-MPI_ROOT := /sw/andes/spack-envs/base/opt/linux-rhel8-x86_64/gcc-9.3.0/openmpi-4.0.4-skxqfeiocc5jtuw3y6dwtnxzzqjp5ffs
-FC_ROOT := /sw/andes/gcc/9.3.0
-NETCDF_PATH := /sw/andes/spack-envs/base/opt/linux-rhel8-x86_64/gcc-9.3.0/netcdf-c-4.7.4-dslyq2nupd5wb222cwn7p7qvka4ei5uk
-NETCDF_F_PATH := /sw/andes/spack-envs/base/opt/linux-rhel8-x86_64/gcc-9.3.0/netcdf-fortran-4.5.3-2ehk7dtlhazxhugbfmp77brtto3z2x5l
+#MPI_ROOT := /sw/andes/spack-envs/base/opt/linux-rhel8-x86_64/gcc-9.3.0/openmpi-4.0.4-skxqfeiocc5jtuw3y6dwtnxzzqjp5ffs
+#FC_ROOT := /sw/andes/gcc/9.3.0
+#NETCDF_PATH := /sw/andes/spack-envs/base/opt/linux-rhel8-x86_64/gcc-9.3.0/netcdf-c-4.7.4-dslyq2nupd5wb222cwn7p7qvka4ei5uk
+#NETCDF_F_PATH := /sw/andes/spack-envs/base/opt/linux-rhel8-x86_64/gcc-9.3.0/netcdf-fortran-4.5.3-2ehk7dtlhazxhugbfmp77brtto3z2x5l
 
 PATH := $(FC_ROOT)/bin:$(PATH)
 

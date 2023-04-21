@@ -21,7 +21,7 @@ character(len=20) met_type
 
 integer ierr, ncid, varid, dimid1
 ! met data zoning parameters
-integer, parameter:: ngzx = 50000           ! max. grids in a N-S strip (i.e. zone)
+integer, parameter:: ngzx = 15000           ! max. grids in a N-S strip (i.e. zone)
 integer nzx, nz, ng                         ! min. and actual numbers of zones (N-S strips), total masked grids
 integer, pointer :: ngi(:), zng(:)          ! actual masked grids in each x/longitude interval and each zone
 integer nzg                                 ! max. zone i-axis intervals
@@ -69,17 +69,18 @@ call MPI_Comm_size(MPI_COMM_WORLD, np, ierr)
 ! -------------------------------------------------------------
 ! USER-SPECIFIED forcing data input directory, file header, domain, and period
 
-met_type = 'GSWP3_daymet4' !'ESM_daymet4' !'GSWP3_daymet4'!'GSWP3'! 'CRUJRA' ! 'CRU-NCEP'
+met_type = 'CRUJRA' !'ESM_daymet4' !'GSWP3_daymet4'!'GSWP3'! 'CRUJRA' ! 'CRU-NCEP'
 
 !Set the input data path
-!forcdir = '/lustre/or-hydra/cades-ccsi/proj-shared/project_acme/ACME_inputdata/atm/datm7/atm_forcing.datm7.CRUJRA.0.5d.v1.c190604'
+forcdir = '/lustre/or-scratch/cades-ccsi/proj-shared/project_acme/e3sm_inputdata/atm/datm7/CRUJRAv2'
+
 !forcdir = '/lustre/or-hydra/cades-ccsi/proj-shared/project_acme/cesminput_ngee/atm/datm7' // &
 !           '/atm_forcing.datm7.GSWP3_daymet.56x24pt_kougarok-GRID'
 !forcdir = '/nfs/data/ccsi/f9y/GSWP3_daymet' // &
 !            '/TILE13867'
 
-forcdir = '/gpfs/alpine/proj-shared/cli146/GSWP3_daymet' // &
-            '/TILE10835'
+!forcdir = '/gpfs/alpine/proj-shared/cli146/GSWP3_daymet' // &
+!            '/TILE10835'
 
 !forcdir = '/gpfs/alpine/proj-shared/cli146/Deeksha/climate-forcing/City_ELM' // &
 !          '/Chicago' // &
@@ -111,16 +112,17 @@ zoffset_n = 0 ! zone n-index counting previously generated data set
 
 !Set the file header of the forcing, excluding 'clmforc.'
 !myforcing = 'cruncep.V8.c2017'
-!myforcing = 'CRUJRAV1.1.c2019.0.5x0.5'
+myforcing = 'CRUJRAV2.3.c2023.0.5x0.5'
 !myforcing = 'GSWP3_daymet.56x24pt_kougarok-GRID.'
-myforcing = 'Daymet4.1km.'
+!myforcing = 'Daymet4.1km.'
 !myforcing = ''
 
 ! domain/mask
 !mydomain = 'domain.lnd.GSWP3_daymet.56x24pt_kougarok-GRID'
 mydomain = ' '
-fstmetfile = 'TPHWL3Hrly/clmforc.Daymet4.1km.TPQWL.1980-01.nc' ! have to get info on grid no. and their centroids
+!fstmetfile = 'TPHWL3Hrly/clmforc.Daymet4.1km.TPQWL.1980-01.nc' ! have to get info on grid no. and their centroids
 !fstmetfile = 'TPHWL1Hrly/clmforc.TPQWL.1980-01.nc' ! have to get info on grid no. and their centroids
+fstmetfile = 'TPHWL6Hrly/clmforc.CRUJRAV2.3.c2023.0.5x0.5.TPQWL.1901-01.nc' ! have to get info on grid no. and their centroids
 mask_varname = 'TBOT'
 
 ! if setting the following as non-'-9999.0' value, mask will cut off by them
@@ -137,18 +139,20 @@ ymax = -9999.0
 !ymin = 65.149
 !ymax = 65.175
 
-xmin = -110.0628+360.0
-xmax = -110.0428+360.0
-ymin = 31.7305
-ymax = 31.7505
+!xmin = -110.0628+360.0
+!xmax = -110.0428+360.0
+!ymin = 31.7305
+!ymax = 31.7505
 
 !Set the date range and time resolution
-!startyear = 1901
-!endyear   = 2017
-!res       = 6      !Timestep in hours
-startyear = 1980   ! defaut 1980
-endyear   = 2014   ! defaut 2014
-res       = 3      ! Timestep in hours
+startyear = 1901
+endyear   = 2021
+res       = 6      !Timestep in hours
+
+!startyear = 1980   ! defaut 1980
+!endyear   = 2014   ! defaut 2014
+!res       = 3      ! Timestep in hours
+
 
 !!-----------------------------------------------------------------
 
@@ -266,16 +270,26 @@ elseif(trim(fstmetfile) /= '') then
       ierr = nf90_get_var(ncid, varid, yc1d)
     else
       ierr = nf90_inq_varid(ncid, 'lon', varid)  ! lon axis in degree
-      ierr = nf90_get_var(ncid, varid, xc1d)
-      ierr = nf90_inq_varid(ncid, 'lat', varid)  ! lat axis in degree
-      ierr = nf90_get_var(ncid, varid, yc1d)
-      
-      do j=1, nj
-        do i=1,ni
-          xc(i,j) = xc1d(i)
-          yc(i,j) = yc1d(j)
-        end do
-      end do
+      if (ierr == 0) then
+          ierr = nf90_get_var(ncid, varid, xc1d)
+          ierr = nf90_inq_varid(ncid, 'lat', varid)  ! lat axis in degree
+          ierr = nf90_get_var(ncid, varid, yc1d)
+
+          do j=1, nj
+            do i=1,ni
+              xc(i,j) = xc1d(i)
+              yc(i,j) = yc1d(j)
+            end do
+          end do
+      else
+          ierr = nf90_inq_varid(ncid, 'LONGXY', varid)  ! centroid of a grid
+          ierr = nf90_get_var(ncid, varid, xc)
+          ierr = nf90_inq_varid(ncid, 'LATIXY', varid)  ! centroid of a grid
+          ierr = nf90_get_var(ncid, varid, yc)
+          xc1d = xc(:,1)
+          yc1d = yc(1,:)
+      end if
+
 
     end if
 
@@ -339,7 +353,10 @@ endif
 if (myid .eq. 0) open(unit=8, file=trim(odir) // '/cpl_bypass_full' // trim(site) // '/' // 'zone_mappings.txt')
 if (myid .eq. 0 .and. index(trim(met_type),'daymet') .gt. 0) then
   open(unit=9, file=trim(odir) // '/cpl_bypass_full' // trim(site) // '/' // 'daymet_elm_mappings.txt')
-  write(9,*) '     lon          lat           geox            geoy        i     j     g '
+  write(9,*) '     lon          lat           geox            geoy        z     i     j     g '
+else
+  open(unit=9, file=trim(odir) // '/cpl_bypass_full' // trim(site) // '/' // 'cplbypass_mappings.txt')
+  write(9,*) '     lon          lat        grid-x       grid-y       z     i     j     g '
 
 endif
 ! possible zone number and its grids
@@ -445,9 +462,12 @@ do v=myid+1,7,np
 
    elseif(trim(met_type) == 'CRUJRA') then
    ! CRUJRA
-     if (v .eq. 1) met_prefix = trim(forcdir) // '/clmforc.' // trim(myforcing) // '.Prec.'
-     if (v .eq. 2) met_prefix = trim(forcdir) // '/clmforc.' // trim(myforcing) // '.Solr.'
-     if (v .ge. 3) met_prefix = trim(forcdir) // '/clmforc.' // trim(myforcing) // '.TPQWL.'
+     if (v .eq. 1) met_prefix = trim(forcdir)  // '/Precip' // trim(myres) // &
+         '/clmforc.' // trim(myforcing) // '.Prec.'
+     if (v .eq. 2) met_prefix = trim(forcdir) // '/Solar' // trim(myres) // &
+         '/clmforc.' // trim(myforcing) // '.Solr.'
+     if (v .ge. 3) met_prefix = trim(forcdir) // '/TPHWL' // trim(myres) // &
+         '/clmforc.' // trim(myforcing) // '.TPQWL.'
 
    elseif(trim(met_type) == 'CRU-NCEP') then
 
@@ -557,8 +577,8 @@ do v=myid+1,7,np
 
                      ng = ng + 1
                      if (myid .eq. 0) then 
-                        !if (longxy((z-1)*nzg+i,j) .ge. 0.25) then
-                           write(8,'(f12.5,1x,f12.6,1x,2(I5,1x))') longxy(starti(1)+i-1,j), &
+
+                           write(8,'(f12.5,1x,f12.6,1x,I5,1x,I9)') longxy(starti(1)+i-1,j), &
                                 latixy(starti(1)+i-1,j), &
                                 z+zoffset, count_zone(z)+zoffset_n  ! offset only for writing zone_mappings.txt
 
@@ -570,16 +590,10 @@ do v=myid+1,7,np
                                xindx = -9999  ! when joint tiles, the x/y index need to be re-done
                                yindx = -9999
                            endif
-                           if (index(trim(met_type),'daymet') .gt. 0) then
-                              write(9,'(f12.5,1x,f12.6,1x, 2(f20.6, 1x),3(I5,1x))') longxy(starti(1)+i-1,j), &
+                           write(9,'(f12.6,1x,f12.6,1x, 2(f12.6, 1x),3(I5,1x),I9)') longxy(starti(1)+i-1,j), &
                                 latixy(starti(1)+i-1,j),              &
                                 xc1d(starti(1)+i-1), yc1d(j),         &
-                                xindx, yindx, ng+zoffset_n
-                           endif
-                        !else
-                        !   write(8,'(2(f10.3,1x),2(I5,1x))') xmax, latixy(starti(1)+i,j), &
-                        !        z+zoffset, count_zone(z)+zoffset_n
-                        !end if
+                                z+zoffset, xindx, yindx, ng+zoffset_n
                      end if
                      longxy_out(z, count_zone(z)) = longxy(starti(1)+i-1,j)
                      latixy_out(z, count_zone(z)) = latixy(starti(1)+i-1,j)

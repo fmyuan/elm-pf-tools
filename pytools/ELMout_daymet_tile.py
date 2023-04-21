@@ -356,6 +356,22 @@ if (options.elmheader != ""):
             else:
                 vproj.grid_mapping_name = options.proj_name
                 
+        elif 'lon' not in dst.dimensions and options.proj_name=='': 
+            geox_dim = dst.createDimension('lon',  len(xx))
+            geoy_dim = dst.createDimension('lat',  len(yy))
+            
+            vgeox = dst.createVariable('lon', np.float32, ('lon',))
+            vgeox.units = 'degree'
+            vgeox.long_name = 'longitude'
+            vgeox.standard_name = "longitude"
+            vgeox[:] = xx
+                
+            vgeoy = dst.createVariable('lat', np.float32, ('lat',))
+            vgeoy.units = 'degree'
+            vgeoy.long_name = 'latitude'
+            vgeoy.standard_name = "latitude"
+            vgeoy[:] = yy
+            
 
         # copy all data in src, and do 1D-grid --> 2D-geox/geoy copy
         for name, variable in src.variables.items():
@@ -400,8 +416,8 @@ if (options.elmheader != ""):
                         idim = i
                         if (options.proj_name==''):
                             if dim in ('gridcell','lndgrid', 'n'):
-                                new_dims.append('lsmlat')
-                                new_dims.append('lsmlon')
+                                new_dims.append('lon')
+                                new_dims.append('lat')
                         else:
                             new_dims.append('geoy')
                             new_dims.append('geox')
