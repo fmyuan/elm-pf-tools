@@ -10,7 +10,6 @@ import math
 from optparse import OptionParser
 import numpy as np
 
-import netcdf_modules as nfmod
 from builtins import int, float
 
 #-------------------Local functions --------------------------------------------
@@ -38,7 +37,7 @@ def Daymet_pixel_extract(mapfile, lonlat_pts=[], geoxy_pts=[]):
     gidx=np.asanyarray(data[:,6],int)-1
     
     # extrac pixel either by paired lat/lon or geox/geoy
-    f = open('Extracted_'+mapfile, 'w')
+    f = open('Extracted_'+mapfile.split('/')[-1], 'w')
     fheader='   lon          lat            geox            geoy        i     j     g '
     
     pts_idx=[]
@@ -120,6 +119,15 @@ if(options.outdir.startswith('/')):
 else:
     outdir = './'
 
+if ('/' in options.header):
+    filehead = options.header.split('/')[-1]
+    indir = options.header.replace(filehead, '')
+    indir = os.path.abspath(indir)
+    if(not indir.endswith('/')): indir = indir+'/'
+else:
+    indir = './'
+    filehead = options.header
+
 
 #------------extract all data as needed -----------------------------------
 if (os.path.isdir(outdir.strip())):
@@ -129,39 +137,59 @@ if (os.path.isdir(outdir.strip())):
     for ip in range(len(optionx)):
         lonlat_pts.append([float(optionx[ip]),float(optiony[ip])])
 
-    pts_index = Daymet_pixel_extract(options.mapfile, lonlat_pts)
+    pts_index = Daymet_pixel_extract(indir+options.mapfile, lonlat_pts)
     if len(pts_index)<=0:
-        print('Error: NO point found in daymet_elm_map -', options.mapfile)
+        print('Error: NO point found in daymet_elm_map -', indir+options.mapfile)
         system.exit(-1)
 
     #checking where is the original data
-    dirfiles = os.listdir(outdir)
+    dirfiles = os.listdir(indir)
     for dirfile in dirfiles:
-        filehead = options.header
         filehead_new = filehead+'_'+options.newdata_affix
         
-        # in outdir directory
-        if(os.path.isfile(outdir+'/'+dirfile)): # file names
-            if(filehead in dirfile):
+        # indir directory
+        if(os.path.isfile(indir+'/'+dirfile)): # file name with path
+            if(dirfile.startswith(filehead)):
             
                 print('\n file: '+dirfile)
     
-                outfile_old = outdir+'/'+dirfile
+                outfile_orig = indir+'/'+dirfile
                 #
                 outfile_temp = outdir+'/temp.nc'
-                os.system('cp -f ' + outfile_old + ' '+ outfile_temp)
+                os.system('cp -f ' + outfile_orig + ' '+ outfile_temp)
                 
                 for ipt in range(len(pts_index)):
                     wdigit=int(math.log10(len(pts_index)))
                     dirfile_new = dirfile.replace(filehead,filehead_new+str(ipt).zfill(wdigit))
                     outfile_new = outdir+'/'+dirfile_new
 
-                    print('INFO: extracting clm output - \n', outfile_old, '\n -->', outfile_new)
+                    print('INFO: extracting clm output - \n', outfile_orig, '\n -->', outfile_new)
                     
+                    # first try 2D daymet-projection data format
                     dim_string = ' -d geox,'+str(pts_index[ipt][0])+','+str(pts_index[ipt][0]) \
                                 +' -d geoy,'+str(pts_index[ipt][1])+','+str(pts_index[ipt][1])
-                    os.system(ncopath+'./ncks --no_abc -O'+ dim_string+ \
+                    ierr = os.system(ncopath+'./ncks --no_abc -O'+ dim_string+ \
                           ' '+outfile_temp.strip()+' -o '+outfile_new.strip())
+                    if (ierr!=0):
+                        print('Instead using dimension: lndgrid')
+                        dim_string = ' -d lndgrid,'+str(pts_index[ipt][2])+','+str(pts_index[ipt][2])
+                        ierr = os.system(ncopath+'./ncks --no_abc -O'+ dim_string+ \
+                              ' '+outfile_temp.strip()+' -o '+outfile_new.strip())
+                        if (ierr!=0):
+                            print('Instead using dimension: gridcell')
+                            dim_string = ' -d gridcell,'+str(pts_index[ipt][2])+','+str(pts_index[ipt][2])
+                            ierr = os.system(ncopath+'./ncks --no_abc -O'+ dim_string+ \
+                                  ' '+outfile_temp.strip()+' -o '+outfile_new.strip())
+                            if (ierr!=0):
+                                raise RuntimeError('Error: not dimension names of geox/geoy, lndgrid, or, gridcell in '+outfile_time.strip())
+                            else:
+                                out_dims = ['gridcell']
+  
+                        else:
+                            out_dims = ['lndgrid']
+                    else:
+                        out_dims = ['geox', 'geoy']
+                    
 
                 #
                 os.system('rm -rf '+outfile_temp.strip())
@@ -177,25 +205,23 @@ if (os.path.isdir(outdir.strip())):
                                  '" -exec rm {} \; ')
                 
                 #point dim 'record' from 'ncecat' swap to 'geox' position
-                #print(ncopath+'./ncpdq -h -O -a geox,record '+outdir+'/temp0.nc -o '+outdir+'/temp1.nc')
-                ierr = os.system(ncopath+'./ncpdq -h -O -a geox,record '+outdir+'/temp0.nc -o '+outdir+'/temp1.nc')
+                dim0=out_dims[0]
+                ierr = os.system(ncopath+'./ncpdq -h -O -a '+dim0+',record '+outdir+'/temp0.nc -o '+outdir+'/temp1.nc')
                 if(ierr!=0): raise RuntimeError('Error: ncpdq ')
-                
                 # remove 'geox/geoy' dims
-                ierr = os.system(ncopath+'ncwa -h -O -a geox '+outdir+'/temp1.nc -o '+outdir+'/temp2.nc')
-                if(ierr!=0): raise RuntimeError('Error: ncwa ')
-                ierr = os.system(ncopath+'ncwa -h -O -a geoy '+outdir+'/temp2.nc -o '+outdir+'/temp1.nc')
-                if(ierr!=0): raise RuntimeError('Error: ncwa ')
+                for dimx in out_dims:
+                    ierr = os.system(ncopath+'./ncwa -h -O -a '+dimx+' '+outdir+'/temp1.nc -o '+outdir+'/temp1.nc')
+                    if(ierr!=0): raise RuntimeError('Error: ncwa ')
+                    ierr = os.system(ncopath+'./ncks --no_abc -O -x -v geox '+outdir+'/temp1.nc -o '+outdir+'/temp1.nc')
+                    if(ierr!=0): raise RuntimeError('Error: ncks ')
                 # rename 'record' dim to 'gridcell'
                 ierr = os.system(ncopath+'ncrename -h -O -d record,gridcell '+outdir+'/temp1.nc '+outdir+'/temp2.nc')
                 if(ierr!=0): raise RuntimeError('Error: ncrename ')
                 #rename temp filename to new file name
-                ierr = os.system(ncopath+'./ncks --no_abc -O -x -v geox,geoy '+outdir+'/temp2.nc -o '+outdir+'/multi_'+dirfile.replace(filehead,filehead_new))
-                if(ierr!=0): 
-                    raise RuntimeError('Error: ncks ')
-                else:
-                    os.system('rm -f '+outdir+'/temp*.nc')
-
+                os.system('mv '+outdir+'/temp2.nc '+outdir+options.newdata_affix+'_'+dirfile)
+                os.system('rm -f '+outdir+'/temp*.nc')
+                
+                
 
             # (END) if-file contains 'fileheader'
         # (END) if-it's a file
