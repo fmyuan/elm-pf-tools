@@ -207,6 +207,12 @@ parser.add_option("--elm_varname", dest="elm_varname", default="ALL", \
                   help = "ELM output Netcdf file's variable name to process, ALL for all")
 parser.add_option("--mapfile_redoxy", dest="redoxy", default=False, \
                   help = " redo x/y index in mapfile ", action="store_true")
+parser.add_option("--mapfile_resx", dest="resx", default="1000", \
+                  help = " when redo x/y, reset x res. in mapfile, default 1000m")
+parser.add_option("--mapfile_resy", dest="resy", default="1000", \
+                  help = " when redo x/y, reset y res. in mapfile, default 1000m")
+parser.add_option("--mapfile_offsetxy", dest="offsetxy", default=False, \
+                  help = " offset x/y index in mapfile, i.e. shifting mini. to (0,0) ", action="store_true")
 
 (options, args) = parser.parse_args()
 
@@ -269,8 +275,13 @@ if (options.elmheader != ""):
     
     # mapping file reading for the first (primary) workdir
     mapfile = options.gridmap.strip()
-    [xx, yy, xidx, yidx, gidx] = Daymet_ELM_mapinfo(options.workdir+mapfile, redoxy=options.redoxy)
-    
+    [xx, yy, xidx, yidx, gidx] = Daymet_ELM_mapinfo(options.workdir+mapfile, \
+                                    redoxy=options.redoxy, \
+                                    resx=float(options.resx), resy=float(options.resy))
+    if (options.offsetxy):
+        xidx = xidx - np.min(xidx)
+        yidx = yidx - np.min(yidx)
+        gidx = gidx - np.min(gidx)
 
 
     # some tests, should be commented out normally

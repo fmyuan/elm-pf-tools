@@ -4,14 +4,16 @@ import sys
 import glob
 import re
 import math
+from cmath import nan
 from optparse import OptionParser
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.pyplot import xlim, ylim
+from matplotlib.ticker import FormatStrFormatter
+
 from Modules_CLMoutput_nc4 import CLM_NcRead_1simulation
 from Modules_CLMoutput_nc4 import CLMvar_1Dtseries
-from cmath import nan
-from matplotlib.pyplot import ylim
 
 
 # ---------------------------------------------------------------
@@ -112,10 +114,10 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
         varname=varname+' (kgC/m2)'
         sdata = sdata/1000.0
 
-    if(varname == 'SNOW' or varname == 'RAIN'):         
+    if(varname == 'SNOW' or varname == 'RAIN'):
         varname=varname+' (mm/d)'
         sdata = sdata*86400.0
-    if(varname in ['SNOW_DEPTH','SNOWDP']):         
+    if(varname in ['SNOW_DEPTH','SNOWDP']):
         varname='Snow Depth'+' (m)'
 
     if(varname in ['ALT']):
@@ -159,12 +161,29 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
                 igrd = sdata.shape[1]-i-1 # this will reversely plot data point
                 gridtext.append(("Site "+str(igrd+1)))
                 #gridtext.append(("Area for Site "+str(igrd+4)))
-                if(varname == 'SNOW' or varname == 'RAIN'):         
+                if(varname == 'SNOW' or varname == 'RAIN'):
                     plt.bar(t, sdata[:,igrd])
                 else:
-                    plt.plot(t, sdata[:,igrd])
+                    plt.plot(t, sdata[:,igrd], label=("Site "+str(igrd+1)))
+                
+                #trending line added
+                if (varname=='FSNO' or 'Snow Depth' in varname):
+                    tindx=np.where((t>=1980) & (t<=2015))[0]
+                    t1=t[tindx]
+                    y1=sdata[tindx,igrd]
+                    y1_trend = np.polyfit(t1, y1, 1)
+                    funcy1 = np.poly1d(y1_trend)
+                    plt.plot(t1,funcy1(t1), '--', label=None)
+
+                    #tindx=np.where((t>=2002) & (t<=2014))[0]
+                    #t2=t[tindx]
+                    #y2=sdata[tindx,igrd]
+                    #y2_trend = np.polyfit(t2, y2, 1)
+                    #funcy2 = np.poly1d(y2_trend)
+                    #plt.plot(t2,funcy2(t2), '--', label=None)
+
+                
             #gridtext.append(["NAMC","DSLT","AS","WBT","TT-WBT","TT"])
-            #gridtext.append("Daymet_Tile13868")
 
     else:
         #gridtext.append(("GRID "+str(0)))
@@ -176,12 +195,15 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
             plt.plot(t, sdata)
         
     # user-defined x/y limits
-    #if ('LAI' in varname): plt.ylim([0.0,3.0])
-    #if ('ALT' in varname): plt.ylim([-0.5,5.0])
+    if ('YEAR' in t_unit): plt.xlim(1980,2019)
+    
+    if ('LAI' in varname): plt.ylim([0.1,0.9])
+    if ('Active Layer Depth' in varname): plt.ylim([-0.1,1.5])
     #if ('SNOW' in varname): plt.ylim([0.0,20.0])
-    #if ('Snow Depth' in varname): plt.ylim([0.0,2.0])
- 
-     # appending unit
+    if ('Snow Depth' in varname): plt.ylim([0.0,1.0])
+    if ('FSNO' in varname): plt.ylim([0.3,0.8])
+
+     # mannually edit x/y axis labels
     if varname=='TBOT': varname='Air Temperature (K)'
     if varname=='TSOI': varname='Near-surface Soil Temperature (K)'
     if varname=='TLAI': varname='Total LAI (m2/m2)'
@@ -189,22 +211,17 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
     if varname=='NEE': varname='NEE (10^-6 gC/m2/s)'
     if varname=='HR': varname='Hetero Respiration (10^-6 gC/m2/s)'
     if varname=='total_SOILICE': varname='total Soil Ice (kg/m2)'
-
-    #if isubplot==1: plt.legend((gridtext), loc=1, fontsize=12)
-    
-    
-    # plot X/Y axis label, if manually change
-    #t_unit = 'Days'
+    if varname=='FSNO': varname='Snow cover fraction (-)'
     #varname = ' surface water head (mm)'
     #varname = 'Snow water equivalent (mm)'
 
-    plt.xlabel(t_unit, fontsize=10, fontweight='bold')
-    plt.ylabel(varname, fontsize=10, fontweight='bold')
-    
+    # x/y ticklabel properties
     ax_user=plt.gca()
-    ax_user.tick_params(axis = 'both', which = 'both', labelsize = 10)
-    #ax_user.set_xticklabels(ax_user.get_xticks(), weight='bold')
-    #ax_user.set_yticklabels(ax_user.get_yticks(), weight='bold')
+    ax_user.tick_params(axis = 'both', which = 'both', labelsize = 16)
+    ax_user.set_xticklabels(ax_user.get_xticks(), weight='bold')
+    ax_user.xaxis.set_major_formatter(FormatStrFormatter('%i'))
+    ax_user.set_yticklabels(ax_user.get_yticks(), weight='bold')
+    ax_user.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
     if ('Active Layer ' in varname): ax_user.invert_yaxis()
 
     lx = 0.30
@@ -214,6 +231,9 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
     plt.rcParams["font.weight"] = "bold"
     plt.rcParams["axes.labelweight"] = "bold"
     plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=18, fontweight='bold')
+    if isubplot==1: plt.legend(fontsize=14)
+    plt.xlabel(t_unit, fontsize=16, fontweight='bold')
+    plt.ylabel(varname, fontsize=16, fontweight='bold')
 
 #-------------------Parse options-----------------------------------------------
 
@@ -433,9 +453,11 @@ for var in varnames:
 
     if((zdim_indx<0 and pdim_indx<0) or max(iz,ip)>=0):
         if (options.annually or options.seasonally):
-            GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, sdata_std=gdata_std, \
+            #GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, sdata_std=gdata_std, \
+            #            varname=vname, plotlabel='1kmx1km Resolution', plottype='errorbar')
+            GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, \
                         #varname=vname, plotlabel='0.5degx0.5deg Resolution', plottype='errorbar')
-                        varname=vname, plotlabel='1kmx1km Resolution', plottype='errorbar')
+                        varname=vname, plotlabel='1kmx1km Resolution')
         else:
             GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, \
                         #varname=vname, plotlabel='Site '+str(iy+1))
