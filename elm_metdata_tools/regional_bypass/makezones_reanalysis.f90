@@ -21,7 +21,7 @@ character(len=20) met_type
 
 integer ierr, ncid, varid, dimid1
 ! met data zoning parameters
-integer, parameter:: ngzx = 15000           ! max. grids in a N-S strip (i.e. zone)
+integer, parameter:: ngzx = 50000           ! max. grids in a N-S strip (i.e. zone)
 integer nzx, nz, ng                         ! min. and actual numbers of zones (N-S strips), total masked grids
 integer, pointer :: ngi(:), zng(:)          ! actual masked grids in each x/longitude interval and each zone
 integer nzg                                 ! max. zone i-axis intervals
@@ -48,6 +48,7 @@ character(len=150) fstmetfile, mask_varname
 double precision, pointer :: xc(:,:), xc1d(:), yc(:,:), yc1d(:), xv(:,:,:), yv(:,:,:)
 double precision :: xmin, xmax, ymin, ymax
 character(len=20) site
+logical :: UNSTRUCTURED
 
 integer nty, ntm, ntd
 integer startyear, endyear
@@ -69,10 +70,10 @@ call MPI_Comm_size(MPI_COMM_WORLD, np, ierr)
 ! -------------------------------------------------------------
 ! USER-SPECIFIED forcing data input directory, file header, domain, and period
 
-met_type = 'CRUJRA' !'ESM_daymet4' !'GSWP3_daymet4'!'GSWP3'! 'CRUJRA' ! 'CRU-NCEP'
+met_type = 'ESM_daymet4' !'ESM_daymet4' !'GSWP3_daymet4'!'GSWP3'! 'CRUJRA' ! 'CRU-NCEP'
 
 !Set the input data path
-forcdir = '/lustre/or-scratch/cades-ccsi/proj-shared/project_acme/e3sm_inputdata/atm/datm7/CRUJRAv2'
+!forcdir = '/lustre/or-scratch/cades-ccsi/proj-shared/project_acme/e3sm_inputdata/atm/datm7/CRUJRAv2'
 
 !forcdir = '/lustre/or-hydra/cades-ccsi/proj-shared/project_acme/cesminput_ngee/atm/datm7' // &
 !           '/atm_forcing.datm7.GSWP3_daymet.56x24pt_kougarok-GRID'
@@ -82,10 +83,10 @@ forcdir = '/lustre/or-scratch/cades-ccsi/proj-shared/project_acme/e3sm_inputdata
 !forcdir = '/gpfs/alpine/proj-shared/cli146/GSWP3_daymet' // &
 !            '/TILE10835'
 
-!forcdir = '/gpfs/alpine/proj-shared/cli146/Deeksha/climate-forcing/City_ELM' // &
-!          '/Chicago' // &
-!          '/Daymet2019_1980_2019/'
-!          '/ACCESS-CM2_ssp585_r1i1p1f1_DBCCA_Daymet_1980_2019'
+
+forcdir = '/gpfs/alpine/proj-shared/cli144/5v1/CMIP6_City' // &
+          '/Knoxville' // &
+          '/ACCESS-CM2_ssp585_r1i1p1f1'
 !          '/ACCESS-CM2_ssp585_r1i1p1f1_DBCCA_Daymet_2020_2059'
 !          '/ACCESS-CM2_ssp585_r1i1p1f1_DBCCA_Daymet_2060_2099'
 !          '/BCC-CSM2-MR_ssp585_r1i1p1f1_DBCCA_Daymet_1980_2019'
@@ -112,17 +113,19 @@ zoffset_n = 0 ! zone n-index counting previously generated data set
 
 !Set the file header of the forcing, excluding 'clmforc.'
 !myforcing = 'cruncep.V8.c2017'
-myforcing = 'CRUJRAV2.3.c2023.0.5x0.5'
+!myforcing = 'CRUJRAV2.3.c2023.0.5x0.5'
+!myforcing = 'CRUJRAV1.1.c2019.0.5x0.5'
 !myforcing = 'GSWP3_daymet.56x24pt_kougarok-GRID.'
 !myforcing = 'Daymet4.1km.'
-!myforcing = ''
+myforcing = ''
 
 ! domain/mask
+UNSTRUCTURED = .false.
 !mydomain = 'domain.lnd.GSWP3_daymet.56x24pt_kougarok-GRID'
 mydomain = ' '
 !fstmetfile = 'TPHWL3Hrly/clmforc.Daymet4.1km.TPQWL.1980-01.nc' ! have to get info on grid no. and their centroids
-!fstmetfile = 'TPHWL1Hrly/clmforc.TPQWL.1980-01.nc' ! have to get info on grid no. and their centroids
-fstmetfile = 'TPHWL6Hrly/clmforc.CRUJRAV2.3.c2023.0.5x0.5.TPQWL.1901-01.nc' ! have to get info on grid no. and their centroids
+!fstmetfile = 'TPHWL6Hrly/clmforc.CRUJRAV2.3.c2023.0.5x0.5.TPQWL.1901-01.nc' ! have to get info on grid no. and their centroids
+fstmetfile = 'TPHWL1Hrly/clmforc.TPQWL.1980-01.nc' ! have to get info on grid no. and their centroids
 mask_varname = 'TBOT'
 
 ! if setting the following as non-'-9999.0' value, mask will cut off by them
@@ -145,14 +148,16 @@ ymax = -9999.0
 !ymax = 31.7505
 
 !Set the date range and time resolution
-startyear = 1901
-endyear   = 2021
-res       = 6      !Timestep in hours
-
 !startyear = 1980   ! defaut 1980
 !endyear   = 2014   ! defaut 2014
 !res       = 3      ! Timestep in hours
 
+!startyear = 1901
+!endyear   = 2017
+!res       = 6      !Timestep in hours
+startyear = 1980   ! defaut 1980
+endyear   = 2099   ! defaut 2014
+res       = 1      ! Timestep in hours
 
 !!-----------------------------------------------------------------
 
@@ -226,26 +231,50 @@ if (trim(mydomain) /= '') then
 
 ! NO domain file, so have to build one from the first metdata
 elseif(trim(fstmetfile) /= '') then
+
     fname = trim(forcdir) // '/' // trim(fstmetfile)
     ierr = nf90_open(trim(fname), NF90_NOWRITE, ncid)
-    if (myid==0) print*, 'domain: ', trim(fname),  ' - ',  trim(nf90_strerror(ierr))
+    if (myid==0) print*, 'domain info from: ', trim(fname),  ' - ',  trim(nf90_strerror(ierr))
+
+    ! dim: ni
     ierr = nf90_inq_dimid(ncid, "x", dimid1)
-    if (ierr /=0) then
-       ierr = nf90_inq_dimid(ncid, "lon", dimid1)
+    if (ierr/=0) ierr = nf90_inq_dimid(ncid, "lon", dimid1)
+    if (ierr/=0) then
+       ierr = nf90_inq_dimid(ncid, "grd", dimid1) ! 1-D unstructured
+       if (ierr==0) UNSTRUCTURED=.true.
     endif
-    ierr = nf90_inquire_dimension(ncid, dimid1, len = ni)
-    if (ierr /= 0) then
-       print *, 'error in dimension ni -', trim(nf90_strerror(ierr))
+    if (ierr/=0) then
+       print *, 'STOPPED: CANNOT get info on dimension ni - ', trim(nf90_strerror(ierr))
        stop
+       !
+    else
+    
+       ierr = nf90_inquire_dimension(ncid, dimid1, len = ni)
+       if (ierr /= 0) then
+          print *, 'error in dimension ni -', trim(nf90_strerror(ierr))
+          stop
+       endif
     endif
+    
+    !dim: nj
     ierr = nf90_inq_dimid(ncid, "y", dimid1)
-    if (ierr /=0) then
-       ierr = nf90_inq_dimid(ncid, "lat", dimid1)
-    endif
-    ierr = nf90_inquire_dimension(ncid, dimid1, len = nj)
-    if (ierr /= 0) then
-       print *, 'error in dimension nj - ', trim(nf90_strerror(ierr))
-       stop
+    if (ierr/=0) ierr = nf90_inq_dimid(ncid, "lat", dimid1)
+    if (ierr==0) then
+       ierr = nf90_inquire_dimension(ncid, dimid1, len = nj)
+       if (ierr /= 0) then
+          print *, 'error in dimension nj - ', trim(nf90_strerror(ierr))
+          stop
+       endif
+    else
+       ! in case that 'grd' as 1D unstructed dimension, nj=1
+       ierr = nf90_inq_dimid(ncid, "grd", dimid1)
+       if (ierr==0) then
+          nj = 1
+       else
+          print *, 'CANNOT get info on dimension nj - ', trim(nf90_strerror(ierr))
+          stop
+       endif
+
     endif
 
     if (myid==0) print *, ' domain info - ni, nj, ng', ni, nj, ni*nj
@@ -254,7 +283,11 @@ elseif(trim(fstmetfile) /= '') then
     allocate(xc(ni,nj))
     allocate(yc(ni,nj))
     allocate(xc1d(ni))
-    allocate(yc1d(nj))
+    if (UNSTRUCTURED) then
+      allocate(yc1d(ni))
+    else
+      allocate(yc1d(nj))
+    endif
     allocate(mask(ni,nj))
 
     if (trim(met_type(1:12)) == 'GSWP3_daymet') then
@@ -269,27 +302,44 @@ elseif(trim(fstmetfile) /= '') then
       ierr = nf90_inq_varid(ncid, 'y', varid)  ! daymet geoy axis in meters
       ierr = nf90_get_var(ncid, varid, yc1d)
     else
-      ierr = nf90_inq_varid(ncid, 'lon', varid)  ! lon axis in degree
-      if (ierr == 0) then
+
+      if (UNSTRUCTURED) then
+        ierr = nf90_inq_varid(ncid, 'lon', varid)
+        ierr = nf90_get_var(ncid, varid, xc)
+        ierr = nf90_inq_varid(ncid, 'lat', varid)
+        ierr = nf90_get_var(ncid, varid, yc)
+        ierr = nf90_inq_varid(ncid, 'x', varid)  ! daymet geox axis in meters
+        ierr = nf90_get_var(ncid, varid, xc1d)
+        ierr = nf90_inq_varid(ncid, 'y', varid)  ! daymet geoy axis in meters
+        ierr = nf90_get_var(ncid, varid, yc1d)
+
+      else
+        ! 2-D grids
+        ierr = nf90_inq_varid(ncid, 'lon', varid)  ! lon axis in degree
+        if (ierr==0) then
+          ! lon/lat as grid mesh axis (middle)
           ierr = nf90_get_var(ncid, varid, xc1d)
           ierr = nf90_inq_varid(ncid, 'lat', varid)  ! lat axis in degree
           ierr = nf90_get_var(ncid, varid, yc1d)
-
+      
           do j=1, nj
             do i=1,ni
               xc(i,j) = xc1d(i)
               yc(i,j) = yc1d(j)
             end do
           end do
-      else
+
+        else
+          ! don't have axis but full list of 2D grids' locations
           ierr = nf90_inq_varid(ncid, 'LONGXY', varid)  ! centroid of a grid
           ierr = nf90_get_var(ncid, varid, xc)
           ierr = nf90_inq_varid(ncid, 'LATIXY', varid)  ! centroid of a grid
           ierr = nf90_get_var(ncid, varid, yc)
           xc1d = xc(:,1)
           yc1d = yc(1,:)
-      end if
+        end if
 
+      endif
 
     end if
 
@@ -590,10 +640,19 @@ do v=myid+1,7,np
                                xindx = -9999  ! when joint tiles, the x/y index need to be re-done
                                yindx = -9999
                            endif
-                           write(9,'(f12.6,1x,f12.6,1x, 2(f12.6, 1x),3(I5,1x),I9)') longxy(starti(1)+i-1,j), &
+                           if (index(trim(met_type),'daymet') .gt. 0) then
+                             if (UNSTRUCTURED) then
+                               write(9,'(f12.6,1x,f12.6,1x, 2(f20.6, 1x),3(I5,1x), I9)') longxy(starti(1)+i-1,j), &
+                                latixy(starti(1)+i-1,j),                  &
+                                xc1d(starti(1)+i-1), yc1d(starti(1)+i-1), &
+                                z+zoffset, xindx, yindx, ng+zoffset_n
+                             else
+                               write(9,'(f12.6,1x,f12.6,1x, 2(f20.6, 1x),3(I5,1x), I9)') longxy(starti(1)+i-1,j), &
                                 latixy(starti(1)+i-1,j),              &
                                 xc1d(starti(1)+i-1), yc1d(j),         &
                                 z+zoffset, xindx, yindx, ng+zoffset_n
+                             endif
+                           endif
                      end if
                      longxy_out(z, count_zone(z)) = longxy(starti(1)+i-1,j)
                      latixy_out(z, count_zone(z)) = latixy(starti(1)+i-1,j)
