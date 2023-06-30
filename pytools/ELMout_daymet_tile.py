@@ -388,6 +388,10 @@ if (options.elmheader != ""):
         for name, variable in src.variables.items():
             vname = name
             if name=='DTIME': vname='time' # rename 'DTIME' to 'time' so that VISIT can regcon. it
+            if name=='lat': vname='LATIXY' # 'lon/lat' or 'geox/y' is a dimension name of 2D mesh
+            if name=='lon': vname='LONGXY'
+            if name=='geoy': vname='geox2d'
+            if name=='geox': vname='geoy2d'
 
             if ('ALL' not in elm_varname) and (name not in elm_varname.split(',')): 
                 # Must include 'unlimited_dim' variable, otherwise output NC is empty
@@ -427,8 +431,8 @@ if (options.elmheader != ""):
                         idim = i
                         if (options.proj_name==''):
                             if dim in ('gridcell','lndgrid', 'n'):
-                                new_dims.append('lon')
                                 new_dims.append('lat')
+                                new_dims.append('lon')
                         else:
                             new_dims.append('geoy')
                             new_dims.append('geox')
@@ -505,8 +509,12 @@ if (options.elmheader != ""):
                             print('variable', name,'excluded in 2-D merging')
                             SKIPPED=True
                         
-                        new_dims.append('geoy')
-                        new_dims.append('geox')
+                        if (options.proj_name==''):
+                            new_dims.append('lat')
+                            new_dims.append('lon')
+                        else:
+                            new_dims.append('geoy')
+                            new_dims.append('geox')
 
                     else:
                         new_dims.append(dim)
@@ -541,23 +549,23 @@ if (options.elmheader != ""):
                 src2_data = deepcopy(src_data)
                     
                 if idim == 0:
-                        dst_data[j,i,] = src2_data[g,]
-                        dst[name][:,] = dst_data
+                    dst_data[j,i,] = src2_data[g,]
+                    dst[vname][:,] = dst_data
                 elif idim == 1:
-                        dst_data[:,j,i,] = src2_data[:,g,]
-                        dst[name][:,:,] = dst_data
+                    dst_data[:,j,i,] = src2_data[:,g,]
+                    dst[vname][:,:,] = dst_data
                 elif idim == 2:
-                        dst_data[:,:,j,i,] = src2_data[:,:,g,]
-                        dst[name][:,:,:,] = dst_data
+                    dst_data[:,:,j,i,] = src2_data[:,:,g,]
+                    dst[vname][:,:,:,] = dst_data
                 elif idim == 3:
-                        dst_data[:,:,:,j,i,] = src2_data[:,:,:,g,]
-                        dst[name][:,:,:,:,] = dst_data
+                    dst_data[:,:,:,j,i,] = src2_data[:,:,:,g,]
+                    dst[vname][:,:,:,:,] = dst_data
                 elif idim == 4:
-                        dst_data[:,:,:,:,j,i,] = src2_data[:,:,:,:,g,]
-                        dst[name][:,:,:,:,:,] = dst_data
+                    dst_data[:,:,:,:,j,i,] = src2_data[:,:,:,:,g,]
+                    dst[vname][:,:,:,:,:,] = dst_data
                 else:
-                        print('Error - more than at least 4 dimension variable, not supported yet')
-                        sys.exit(-1)
+                    print('Error - more than at least 4 dimension variable, not supported yet')
+                    sys.exit(-1)
                 
                 
             else:
