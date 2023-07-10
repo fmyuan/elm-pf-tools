@@ -28,7 +28,8 @@ integer nzg                                 ! max. zone i-axis intervals
 integer zoffset, zoffset_n                  ! when processing multiple Daymet Tiles, it's setting an offset so that zone numbering/counting is continuous
 integer xindx, yindx                        ! 2-D daymet x/y index
 
-real, pointer :: data_in(:,:,:)      !248
+real, pointer :: data2d_in(:,:)      !248
+real, pointer :: data3d_in(:,:,:)    !248
 integer, pointer :: data_zone(:,:)   !2920
 integer, pointer :: temp_zone(:,:)   !248
 logical :: NEW_NC
@@ -349,21 +350,17 @@ elseif(trim(fstmetfile) /= '') then
     counti(1)    = ni
     counti(2)    = nj
     counti(3)    = 1 ! only needs 1 count of time
-    allocate(data_in(ni,nj,1))
-    ierr = nf90_get_var(ncid, varid, data_in, starti, counti)
-    !data_in = merge(1,0,data_in<=1e9)
-    !mask = reshape(data_in, shape(mask))
-    ! the above seems ok with gnu 9, but not with gnu 6 on CADES,
-    ! so the following is good for all compilers
+    allocate(data2d_in(ni,nj))
+    ierr = nf90_get_var(ncid, varid, data2d_in, starti(1:2), counti(1:2))
     if (xmin/=-9999.0 .and. xmin<0.0) xmin=xmin+360.0
     if (xmax/=-9999.0 .and. xmax<0.0) xmax=xmax+360.0
     do i=1,ni
       do j=1,nj
         if (xc(i,j)/=-9999.0 .and. xc(i,j)<0.0) xc(i,j)=xc(i,j)+360.0
 
-        if ( (data_in(i,j,1) .le. 1e9) .or. &
-             (data_in(i,j,1) .gt. huge(data_in(i,j,1))) .or. &
-             (.not.(data_in(i,j,1) /= data_in(i,j,1)) ) ) then
+        if ( (data2d_in(i,j) .le. 1e9) .or. &
+             (data2d_in(i,j) .gt. huge(data2d_in(i,j))) .or. &
+             (.not.(data2d_in(i,j) /= data2d_in(i,j)) ) ) then
           mask(i,j) = 1
 
           ! cutoff mask, if boxed x/y ranges given
@@ -393,7 +390,7 @@ elseif(trim(fstmetfile) /= '') then
         endif
       enddo
     enddo
-    deallocate(data_in)
+    deallocate(data2d_in)
 
 
     ierr = nf90_close(ncid)
@@ -401,19 +398,16 @@ elseif(trim(fstmetfile) /= '') then
 endif
 
 if (myid .eq. 0) open(unit=8, file=trim(odir) // '/cpl_bypass_full' // trim(site) // '/' // 'zone_mappings.txt')
-if (myid .eq. 0 .and. index(trim(met_type),'daymet') .gt. 0) then
-  open(unit=9, file=trim(odir) // '/cpl_bypass_full' // trim(site) // '/' // 'daymet_elm_mappings.txt')
-  write(9,*) '     lon          lat           geox            geoy        z     i     j     g '
-else
-  open(unit=9, file=trim(odir) // '/cpl_bypass_full' // trim(site) // '/' // 'cplbypass_mappings.txt')
-  write(9,*) '     lon          lat        grid-x       grid-y       z     i     j     g '
-
+if (myid .eq. 0) then
+  if (index(trim(met_type),'daymet') .gt. 0) then
+    open(unit=9, file=trim(odir) // '/cpl_bypass_full' // trim(site) // '/' // 'daymet_elm_mappings.txt')
+    write(9,*) '     lon          lat           geox            geoy        i     j     g     z '
+  else
+    open(unit=9, file=trim(odir) // '/cpl_bypass_full' // trim(site) // '/' // 'cplbypass_mappings.txt')
+    write(9,*) '     lon          lat        grid-x       grid-y       i     j     g     z '
+  endif
 endif
 ! possible zone number and its grids
-! the following is for regular zones - may have remarkable variations of masked grids among zones
-!nzx  = min(1, (ni-1)/ngzx+1)
-!nzg = min(ngzx, (ni-1)/nzx+1)
-!nzr = ni-nzx*nzg  ! should be non-positive integer
 allocate(ngi(ni))
 ngi = sum(mask,DIM=2)
 ng  = sum(ngi)
@@ -462,7 +456,13 @@ ntd = 23/res+1                      ! ntime in a day
 ntm = ntd*31                        ! ntime in a month(max. days)
 allocate(longxy(ni,nj))
 allocate(latixy(ni,nj))
-allocate(data_in(nzg, nj, ntm))     ! monthly data read-in for a N-S zone
+if (UNSTRUCTURED) then
+  allocate(data2d_in(nzg, ntm))     ! monthly data read-in for a N-S zone
+  data2d_in(:,:)=1e36
+else
+  allocate(data3d_in(nzg, nj, ntm)) ! monthly data read-in for a N-S zone
+  data3d_in(:,:,:)=1e36
+endif
 allocate(data_zone(nty,nzg*nj))     ! yearly data for a N-S zone (1D grid)
 allocate(temp_zone(ntm,nzg*nj))     ! monthly data array for a zone (1D grid)
 allocate(longxy_out(nz,ngzx))      ! ? 15000
@@ -534,7 +534,6 @@ do v=myid+1,7,np
    
    endif
 
-   data_in(:,:,:)=1e36
    write(startyrst,'(I4)') startyear
    write(endyrst,'(I4)') endyear
    starti_out = 1
@@ -596,7 +595,14 @@ do v=myid+1,7,np
          counti(2)   = nj
          counti(3)   = ndaysm(m)*(ntd)
    
-         ierr = nf90_get_var(ncid, varid, data_in(1:counti(1),1:counti(2),1:counti(3)), starti, counti)
+         if (UNSTRUCTURED) then
+           starti(2) = 1
+           counti(2) = ndaysm(m)*(ntd)
+           ierr = nf90_get_var(ncid, varid, data2d_in(1:counti(1),1:counti(2)), starti(1:2), counti(1:2))
+         else
+           ierr = nf90_get_var(ncid, varid, data3d_in(1:counti(1),1:counti(2),1:counti(3)), starti, counti)
+         endif
+
          if(ierr /= 0) then
            print*, 'error: ', ierr,  ' - ', trim(nf90_strerror(ierr)), &
                    ' In reading file: ',fname, 'on rank:', myid
@@ -645,12 +651,12 @@ do v=myid+1,7,np
                                write(9,'(f12.6,1x,f12.6,1x, 2(f20.6, 1x),3(I5,1x), I9)') longxy(starti(1)+i-1,j), &
                                 latixy(starti(1)+i-1,j),                  &
                                 xc1d(starti(1)+i-1), yc1d(starti(1)+i-1), &
-                                z+zoffset, xindx, yindx, ng+zoffset_n
+                                xindx, yindx, ng+zoffset_n, z+zoffset
                              else
                                write(9,'(f12.6,1x,f12.6,1x, 2(f20.6, 1x),3(I5,1x), I9)') longxy(starti(1)+i-1,j), &
                                 latixy(starti(1)+i-1,j),              &
                                 xc1d(starti(1)+i-1), yc1d(j),         &
-                                z+zoffset, xindx, yindx, ng+zoffset_n
+                                xindx, yindx, ng+zoffset_n, z+zoffset
                              endif
                            endif
                      end if
@@ -658,8 +664,13 @@ do v=myid+1,7,np
                      latixy_out(z, count_zone(z)) = latixy(starti(1)+i-1,j)
                   end if
 
+                  if (UNSTRUCTURED) then
                   temp_zone(1:ndaysm(m)*ntd,count_zone(z)) = &
-                       nint((data_in(i,j,1:ndaysm(m)*ntd)-add_offsets(v))/scale_factors(v))
+                       nint((data2d_in(i,1:ndaysm(m)*ntd)-add_offsets(v))/scale_factors(v))
+                  else
+                  temp_zone(1:ndaysm(m)*ntd,count_zone(z)) = &
+                       nint((data3d_in(i,j,1:ndaysm(m)*ntd)-add_offsets(v))/scale_factors(v))
+                  endif
 
                end if
             end do
@@ -723,15 +734,16 @@ do v=myid+1,7,np
 
             data_zone(starti_out_year:(starti_out_year+counti(1)-1),starti(2):(starti(2) &
                  +counti(2)-1)) = temp_zone(1:counti(1),1:counti(2))
+
          !end do  !Zone loop
          starti_out_year = starti_out_year+ndaysm(m)*(24/res)
          starti_out = starti_out+ndaysm(m)*(24/res)
          !
       end do    !month loop
 
-      starti(1) = (y-startyear)*(8760/res)+1
+      starti(1) = (y-startyear)*(NHRSY/res)+1
       starti(2) = 1
-      counti(1) = 8760/res
+      counti(1) = NHRSY/res
       counti(2) = count_zone(z)
       ierr = nf90_put_var(ncid_out(z), varids_out(z,4), &
                    data_zone(1:counti(1), 1:counti(2)), starti(1:2), counti(1:2))
@@ -751,19 +763,25 @@ do v=myid+1,7,np
  if (myid .eq. 0) close(9)
 end do   !Variable loop
 
-call mpi_barrier(ierr)
+!call mpi_barrier(ierr)
 
 deallocate(xc)
 deallocate(xc1d)
 deallocate(yc)
 deallocate(yc1d)
-!if(associated(xv)) deallocate(xv)
-!if(associated(yv)) deallocate(yv)
-!if(associated(mask)) deallocate(mask)
+if (trim(mydomain) /= '') then
+  deallocate(xv)
+  deallocate(yv)
+endif
+deallocate(mask)
 
 deallocate(longxy)
 deallocate(latixy)
-deallocate(data_in)
+if (UNSTRUCTURED) then
+  deallocate(data2d_in)
+else
+  deallocate(data3d_in)
+endif
 deallocate(data_zone)
 deallocate(temp_zone)
 deallocate(longxy_out)
