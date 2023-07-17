@@ -55,9 +55,11 @@ def Daymet_ELM_mapinfo(mapfile, redoxy=False, resx=1000.0, resy=1000.0):
         xmin = np.min(geox)
         xmax = np.max(geox)
         xx = np.arange(xmin, xmax+resx, resx)
+        if(resx<0): xx = np.arange(xmax, xmin+resx, resx)
         ymin = np.min(geoy)
         ymax = np.max(geoy)
         yy = np.arange(ymin, ymax+resy, resy)
+        if(resy<0): yy = np.arange(ymax, ymin+resy, resy)
         
         for idx in range(len(gidx)):
             ii=np.argmin(abs(geox[idx]-xx))

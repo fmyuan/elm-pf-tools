@@ -731,7 +731,7 @@ def clm_metdata_cplbypass_read(filedir,met_type, vars, lons=[-999], lats=[-999])
         print('paired "lons=,lats=" must be in same length', len(lons), len(lats) )
         sys.exit(-1)
     #
-    if('GSWP3' in met_type):
+    if('GSWP3' in met_type or 'ESM' in met_type):
         # zone_mapping.txt
         f_zoning = filedir+'/zone_mappings.txt'
         all_lons=[]
@@ -815,7 +815,7 @@ def clm_metdata_cplbypass_read(filedir,met_type, vars, lons=[-999], lats=[-999])
     mdoy=[0,31,59,90,120,151,181,212,243,273,304,334]#monthly starting DOY
     for iv in range(len(vars)):
         v = vars[iv]
-        if('GSWP3' in met_type or 'Site' in met_type):
+        if('GSWP3' in met_type or 'Site' in met_type or 'ESM' in met_type):
             varlist=['FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
             if 'Site' in met_type:
                 varlist=['FLDS','FSDS','PRECTmms','PSRF','RH','TBOT','WIND']
@@ -833,6 +833,11 @@ def clm_metdata_cplbypass_read(filedir,met_type, vars, lons=[-999], lats=[-999])
                         file=filedir+'/GSWP3_daymet4_'+v+'_1980-2014_z'+str(int(iz)).zfill(2)+'.nc'
                     else:
                         file=filedir+'/GSWP3_'+v+'_1901-2014_z'+str(int(iz)).zfill(2)+'.nc'
+                elif ('ESM' in met_type):
+                    if('daymet' in met_type):
+                        file=filedir+'/ESM_daymet4_'+v+'_1980-1980_z'+str(int(iz)).zfill(2)+'.nc'
+                    else:
+                        file=filedir+'/ESM_'+v+'_2021-2099_z'+str(int(iz)).zfill(2)+'.nc'
                 
                 elif('Site' in met_type):
                     file=filedir+'/all_hourly.nc'
@@ -863,7 +868,10 @@ def clm_metdata_cplbypass_read(filedir,met_type, vars, lons=[-999], lats=[-999])
                             y0=t0.year
                             m0=t0.month
                             d0=t0.day-1.0
-                            days0 = (y0-1901)*365+mdoy[m0-1]+d0+t0.second/86400.0 # force days since 1901-01-01 00:00:00
+                            if ('daymet' in met_type):
+                                days0 = (y0-1980)*365+mdoy[m0-1]+d0+t0.second/86400.0 # force days since 1901-01-01 00:00:00
+                            else:
+                                days0 = (y0-1901)*365+mdoy[m0-1]+d0+t0.second/86400.0 # force days since 1901-01-01 00:00:00
                             t = t + days0
                             met['DTIME']=t
                             met['tunit']='days since 1901-01-01 00:00:00'
@@ -966,10 +974,10 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
     met ={}
     vdims={}
     mdoy=[0,31,59,90,120,151,181,212,243,273,304,334]#monthly starting DOY
-    if('GSWP3' in met_type or \
+    if('GSWP3' in met_type or 'ESM' in met_type or \
        'Site' in met_type):
         
-        if 'GSWP3' in met_type:
+        if 'GSWP3' in met_type or 'ESM' in met_type:
             varlist=['FSDS','PRECTmms','FLDS','PSRF','QBOT','TBOT','WIND']
         if 'Site' in met_type:
             varlist=['FSDS','PRECTmms','FLDS','PSRF','RH','TBOT','WIND']
@@ -990,7 +998,14 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
                     fdir = metdir+'/Precip3Hrly/'
                 else:
                     fdir = metdir+'/TPHWL3Hrly/'
-            if 'Site' in met_type:
+            elif 'ESM' in met_type:
+                if (v == 'FSDS'):
+                    fdir = metdir+'/Solar1Hrly/'
+                elif (v == 'PRECTmms'):
+                    fdir = metdir+'/Precip1Hrly/'
+                else:
+                    fdir = metdir+'/TPHWL1Hrly/'
+            elif 'Site' in met_type:
                 fdir = metdir+'/'
                  # So 'metdir' must be full path, e.g. ../atm/datm7/CLM1PT_data/1x1pt_US-Brw
 
@@ -1009,9 +1024,15 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
 
                     # only need to read once for all files
                     if ('LATIXY' not in met.keys()):
-                        met['LATIXY']=np.asarray(fnc.variables['LATIXY'])[iy,ix]
+                        if 'LATIXY' in fnc.variables.keys():
+                            met['LATIXY']=np.asarray(fnc.variables['LATIXY'])[iy,ix]
+                        elif 'lat' in fnc.variables.keys():
+                            met['LATIXY']=np.asarray(fnc.variables['lat'])[iy,ix]
                     if ('LONGXY' not in met.keys()):
-                        met['LONGXY']=np.asarray(fnc.variables['LONGXY'])[iy,ix]
+                        if 'LONGXY' in fnc.variables.keys():
+                            met['LONGXY']=np.asarray(fnc.variables['LONGXY'])[iy,ix]
+                        elif 'lon' in fnc.variables.keys():
+                            met['LONGXY']=np.asarray(fnc.variables['lon'])[iy,ix]
         
                     # non-time variables from multiple files
                     if(v in fnc.variables.keys()): 

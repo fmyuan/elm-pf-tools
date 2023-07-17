@@ -21,7 +21,7 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
 
     ax=plt.subplot(nrow, ncol, isubplot)
 
-    plt.subplots_adjust(left=0.065, bottom=None, right=0.99, top=0.98,
+    plt.subplots_adjust(left=0.10, bottom=0.10, right=0.99, top=0.99,
                 wspace=0.33, hspace=None)
 
     if(varname in ['SNOW','RAIN']):         
@@ -66,8 +66,8 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, plot
 
     lx = 0.10
     ly = 0.90
-    #plot_title = ''
-    plot_title = 'BEO, AK' #plotlabel
+    plot_title = ''
+    #plot_title = 'BEO, AK' #plotlabel
     #plot_title = 'VanKarem, RUSSIA' #plotlabel
     plt.text(lx, ly, plot_title, transform=ax.transAxes,fontsize=14, fontweight='bold')
 
@@ -130,10 +130,10 @@ if(options.met_type == 'ELM'):
 
 
 startdays = -9999
-if(options.yr0 != 1 and options.startyr != 1):
-    startdays = (int(options.startyr)-int(options.yr0)+1)*365.0+1.0
+if(int(options.yr0) != 1 and int(options.startyr) != 1):
+    startdays = (int(options.startyr)-int(options.yr0))*365.0+1.0
 else:
-    startdays = int(options.startyr)*365.0+1.0
+    startdays = (int(options.startyr)-1)*365.0+1.0
     
 enddays = -9999
 if(options.endyr !=""): enddays = (int(options.endyr)+1)*365.0
@@ -180,13 +180,22 @@ if (options.clmncheader != '' and options.met_type == 'ELM'):
     if2dgrid = False
     if('topo' in varsdata.keys()):
         if(len(varsdata['topo'].shape)==2): if2dgrid = True
-
     nxy = nx*ny
 
-
-    ix=float(options.lon)
-    iy=float(options.lat)
-
+    # if given pts
+    if options.lon==-999:
+        ix=0
+    elif options.lon==-1:
+        ix = -1 # for all points
+    else:
+        ix=float(options.lon)
+    if options.lat==-999:
+        iy=0
+    elif options.lat==-1:
+        iy = -1 # for all points
+    else:
+        iy=float(options.lat)
+    if ix>=0 and iy >= 0: nx=1; ny=1; nxy=1   # if ix/iy = -1, comment out
 
 #--------------------------------------------------------------------------------------
 
@@ -195,12 +204,19 @@ if (options.clmncheader != '' and options.met_type == 'ELM'):
 if ('cplbypass' in options.met_type):
     cplbypass_dir=options.met_idir
 
-    cplbypass_mettype='GSWP3'
-    #cplbypass_mettype='GSWP3_daymet'
-    if ('v1' in options.met_type): cplbypass_mettype='GSWP3v1'
-    if ('daymet' in options.met_type): cplbypass_mettype='GSWP3_daymet'
-    if ('v1' in options.met_type and 'daymet' in options.met_type): cplbypass_mettype='GSWP3v1_daymet'
-    if ('Site' in options.met_type): cplbypass_mettype = 'Site'
+    if ('GSWP3' in options.met_type):
+        cplbypass_mettype='GSWP3'
+        if ('v1' in options.met_type and 'daymet' in options.met_type): 
+            cplbypass_mettype='GSWP3v1_daymet'
+        elif ('v1' in options.met_type): 
+            cplbypass_mettype='GSWP3v1'
+        elif ('daymet' in options.met_type): 
+            cplbypass_mettype='GSWP3_daymet'
+    elif ('Site' in options.met_type): 
+        cplbypass_mettype = 'Site'
+    elif ('ESM' in options.met_type): 
+        cplbypass_mettype='ESM'
+        if ('daymet' in options.met_type): cplbypass_mettype='ESM_daymet'
     lon = float(options.lon)
     lat = float(options.lat)
 
@@ -219,23 +235,28 @@ if ('cplbypass' in options.met_type):
     if2dgrid = False
     nxy=nx*ny
 
-    ix = -1
-    iy = -1
+    ix = 0   # -1 for all points
+    iy = 0
+    if ix>=0 and iy >= 0: nx=1; ny=1; nxy=1   # if ix/iy = -1, comment out
 
     tvarname = 'DTIME'    # variable name for time/timing
     #cplvars =  ['DTIME','tunit','t0_datetime','LONGXY','LATIXY',
     #            'FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
     vars_list = list(varsdata.keys())
-    tunit0 = 1901*365*day_scaling # to convert from 'days-since-1901-01-01-00:00' to days since 0001-01-01 00:00
+    t0 = 1901
+    if 'daymet' in options.met_type: t0 = 1980
+    tunit0 = t0*365*day_scaling # to convert from 'days-since-1901-01-01-00:00' to days since 0001-01-01 00:00
     if options.seasonally: tunit0 = 0.0 # this is better for plotting
     
     if startdays!=-9999:
-        idx=np.where(varsdata[tvarname]>=startdays-1901*365.0-1.0)  # both in 'days', but one from 1901, one from 1
+        idx=np.where(varsdata[tvarname]>=startdays-t0*365.0-1.0)  # both in 'days', but one from 1901, one from 1
         varsdata[tvarname] = varsdata[tvarname][idx]
         for iv in varnames:
+            if (len(varsdata[iv])>1):
+                varsdata[iv] =np.moveaxis(varsdata[iv],-1,0)  # move time-axis from last to the first
             varsdata[iv] = varsdata[iv][idx]
     if enddays!=-9999:
-        idx=np.where(varsdata[tvarname]<=enddays-1901*365.0)
+        idx=np.where(varsdata[tvarname]<=enddays-t0*365.0)
         varsdata[tvarname] = varsdata[tvarname][idx]
         for iv in varnames:
             varsdata[iv] = varsdata[iv][idx]
@@ -402,14 +423,14 @@ for var in varnames:
 
     #plotting
     vname = varnames[varnames.index(var)]
-    t = np.asarray(t)*day_scaling + tunit0
+    t = np.asarray(t)*day_scaling # + tunit0
     GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, \
                         vname, '(a) All Grids')
 
 # printing plot in PDF
 ofname = 'Figure_Met.pdf'
 fig = plt.gcf()
-fig.set_size_inches(11.5, 8.5)
+fig.set_size_inches(10.0, 6.5)
 plt.savefig(ofname)
 plt.show()
 
