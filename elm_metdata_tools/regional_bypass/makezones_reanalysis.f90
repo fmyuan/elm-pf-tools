@@ -54,6 +54,8 @@ logical :: UNSTRUCTURED
 integer nty, ntm, ntd
 integer startyear, endyear
 double precision, pointer :: dtime(:)    ! timing in a year (1460 for 6-hourly)
+double precision :: utc_dt
+integer utc_ts, it
 
 real add_offsets(7), scale_factors(7), data_ranges(7,2)
 integer ndaysm(12)
@@ -152,6 +154,8 @@ ymax = -9999.0
 !startyear = 1980   ! defaut 1980
 !endyear   = 2014   ! defaut 2014
 !res       = 3      ! Timestep in hours
+!utc_dt    = 0      ! if locally-timed data, need to change to UTC
+!utc_ts    = 0      ! if locally-timed data, timesteps needed to UTC 0
 
 !startyear = 1901
 !endyear   = 2017
@@ -159,6 +163,8 @@ ymax = -9999.0
 startyear = 1980   ! defaut 1980
 endyear   = 2099   ! defaut 2014
 res       = 1      ! Timestep in hours
+utc_dt    = 6.0    ! if locally data, need to change to UTC
+utc_ts    = int(utc_dt/res) ! if locally-timed data, timesteps needed to UTC 0
 
 !!-----------------------------------------------------------------
 
@@ -741,10 +747,30 @@ do v=myid+1,7,np
          !
       end do    !month loop
 
-      starti(1) = (y-startyear)*(NHRSY/res)+1
+      ! UTC shifting (please don't, but if have to)
+      if (y==startyear .and. utc_ts>0) then
+        ! write out first timestep data repeatly for filling backward until UTC 0
+        starti(1) = 1
+        starti(2) = 1
+        counti(1) = 1
+        counti(2) = count_zone(z)
+        do it = 1, utc_ts
+            ierr = nf90_put_var(ncid_out(z), varids_out(z,4), &
+                   data_zone(1:counti(1), 1:counti(2)), starti(1:2), counti(1:2))
+            starti(1) = it + 1
+        end do
+      end if
+
+      starti(1) = (y-startyear)*(NHRSY/res)+1+utc_ts   ! note: starti(1) either 1 or utc_ts (if>0)
       starti(2) = 1
       counti(1) = NHRSY/res
       counti(2) = count_zone(z)
+
+      if (y==endyear .and. utc_ts>0) then
+        ! for last year data, need to truncate the last few timesteps of dataset
+        counti(1) = NHRSY/res - utc_ts
+      endif
+
       ierr = nf90_put_var(ncid_out(z), varids_out(z,4), &
                    data_zone(1:counti(1), 1:counti(2)), starti(1:2), counti(1:2))
       if (ierr/=0) then
