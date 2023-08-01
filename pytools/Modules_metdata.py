@@ -10,6 +10,7 @@ from numpy import intersect1d
 from matplotlib.pyplot import axis
 import glob
 import dask.dataframe as dd
+import netcdf_modules as ncmod
 
 #ncopath = '/usr/local/nco/bin/'
 #####################################################################################################
@@ -84,7 +85,7 @@ def calcFLDS(tk, pres_pa, q_kgkg=[], rh_100=[]):
 #
 #------- ------- extract a set of met variables from CPL_BYPASS directory 
 #
-def clm_metdata_cplbypass_extranction(filedir,met_type, lon, lat, ncopath=''):
+def clm_metdata_cplbypass_extranction(filedir,met_type, lon, lat, ncopath='', z=0, l=0):
     #
     if('GSWP3' in met_type):
         # zone_mapping.txt
@@ -109,47 +110,62 @@ def clm_metdata_cplbypass_extranction(filedir,met_type, lon, lat, ncopath=''):
         all_zones= np.asarray(all_zones)
         all_lines= np.asarray(all_lines)
         
-        
         if(lon<0.0): lon=360.0+lon # convert longitude in format of 0 - 360
-        dist2 = (all_lats-lat)*(all_lats-lat) + \
-                (all_lons-lon)*(all_lons-lon)
-        ni=np.argmin(dist2)
-        print('Nearest grid: ', ni, 
-              'dist:', math.sqrt(np.min(dist2)),
-              'xdist:', all_lons[ni]-lon, 
-              'xdist max:', max(np.fabs(np.diff(np.sort(all_lons)))),
-              'ydist:', all_lats[ni]-lat,
-              'ydist max:', max(np.fabs(np.diff(np.sort(all_lats)))))
         
-        #out of bounds
-        d=all_lons[ni]-lon
-        dmax=np.fabs(np.diff(np.sort(all_lons)))
-        if lon>np.max(all_lons) or lon<np.min(all_lons):
-            if math.fabs(d)>max(dmax): return
-        d=all_lats[ni]-lat
-        dmax=np.fabs(np.diff(np.sort(all_lats)))
-        if lat>np.max(all_lats) or lat<np.min(all_lats):
-            if math.fabs(d)>max(dmax): return
-
-        zone = np.array(all_zones)[ni]
-        line = np.array(all_lines)[ni]
+        if len(all_lons)>1:
+            dist2 = (all_lats-lat)*(all_lats-lat) + \
+                    (all_lons-lon)*(all_lons-lon)
+            ni=np.argmin(dist2)
+            print('Nearest grid: ', ni, 
+                  'dist:', math.sqrt(np.min(dist2)),
+                  'xdist:', all_lons[ni]-lon, 
+                  'xdist max:', max(np.fabs(np.diff(np.sort(all_lons)))),
+                  'ydist:', all_lats[ni]-lat,
+                  'ydist max:', max(np.fabs(np.diff(np.sort(all_lats)))))
+            
+            #out of bounds
+            d=all_lons[ni]-lon
+            dmax=np.fabs(np.diff(np.sort(all_lons)))
+            if lon>np.max(all_lons) or lon<np.min(all_lons):
+                if math.fabs(d)>max(dmax): return
+            d=all_lats[ni]-lat
+            dmax=np.fabs(np.diff(np.sort(all_lats)))
+            if lat>np.max(all_lats) or lat<np.min(all_lats):
+                if math.fabs(d)>max(dmax): return
+                
+            zone = np.array(all_zones)[ni]
+            line = np.array(all_lines)[ni]
+            
+        else:
+            # only 1 data
+            ni = 0
+            zone=np.array(all_zones)[ni]
+            line=np.array(all_lines)[ni]
     
     elif ('Site' in met_type):
-        zone=[1]
-        line=[1]
+        zone=1
+        line=1
+        ni = 0
 
+    
     #files
-    filedir_new = filedir+'/subset'
+    filedir_new = './subset'
     if (os.path.isdir(filedir_new)):
         os.system('rm -rf '+filedir_new)
     os.system('mkdir '+filedir_new)
+    
     # new zone_mappings
+    zone_new = all_zones[ni]
     line_new = 1
+    # using input zone/line
+    if z>0: zone_new=z
+    if l>0: line_new=l
+
     f_zoning = filedir_new+'/zone_mappings.txt'
     f = open(f_zoning, 'w')
     f.write("%12.5f " % all_lons[ni])
     f.write("%12.6f " % all_lats[ni])
-    f.write("%5i " % all_zones[ni])
+    f.write("%5i " % zone_new)
     f.write("%5i\n" % line_new)
     #f.write("%5i\n" % line)
     f.close()
@@ -173,15 +189,19 @@ def clm_metdata_cplbypass_extranction(filedir,met_type, lon, lat, ncopath=''):
             if ('GSWP3' in met_type):
                 if('v1' in met_type):
                     file='./GSWP3_'+v+'_1901-2010_z'+str(int(zone)).zfill(2)+'.nc'
+                    file_new='./GSWP3_'+v+'_1901-2010_z'+str(int(zone_new)).zfill(2)+'.nc'
                 elif('daymet' in met_type):
                     file='./GSWP3_daymet4_'+v+'_1980-2014_z'+str(int(zone)).zfill(2)+'.nc'
+                    file_new='./GSWP3_daymet4_'+v+'_1980-2014_z'+str(int(zone_new)).zfill(2)+'.nc'
                 else:
                     file='./GSWP3_'+v+'_1901-2014_z'+str(int(zone)).zfill(2)+'.nc'
+                    file_new='./GSWP3_'+v+'_1901-2014_z'+str(int(zone_new)).zfill(2)+'.nc'
             
             elif('Site' in met_type):
                 file='./all_hourly.nc'
+                file_new='./all_hourly.nc'
             
-            file_new = filedir_new+'/'+file
+            file_new = filedir_new+'/'+file_new
             file=filedir+'/'+file
             #
             #
@@ -192,7 +212,7 @@ def clm_metdata_cplbypass_extranction(filedir,met_type, lon, lat, ncopath=''):
                 os.system(ncopath+'ncks --no_abc -O -d n,'+str(ni)+','+str(ni)+ \
                                   ' '+file+' '+file_new)
             else:
-                os.system(ncopath+'ncks --no_abc -O -d n,'+str(line)+','+str(line)+ \
+                os.system(ncopath+'ncks --no_abc -O -d n,'+str(line-1)+','+str(line-1)+ \
                                   ' '+file+' '+file_new)
                 
                 
@@ -1495,12 +1515,53 @@ def clm_metdata_CRUJRA(crujra_dirfilehead, template_clm_metfile=''):
     print('DONE!')
     #
 #
-##################################################################################
-# test modules
+#------- extract multiple point cpl_bypass dataset, using a list of points: point name, point lon, point lat
+#
+def multiple_cplbypass_extraction(fsites):
+    #fsites = 'README'
+    lats=[]; lons=[]
+    with open(fsites) as f:
+        dtxt=f.readlines()
+        
+        dtxt=filter(lambda x: x.strip(), dtxt)
+        for d in dtxt:
+            all=np.array(d.split()[1:3],dtype=float)
+            if(all[1]<0.0): all[1]=360.0+all[1] # convert longitude in format of 0 - 360
+            lons.append(all[1])
+            lats.append(all[0])
+    f.close()
+    lons = np.asarray(lons)
+    lats = np.asarray(lats)
+    for i in range(len(lats)):
+        #clm_metdata_cplbypass_extranction('/Users/f9y/mygithub/pt-e3sm-inputdata/atm/datm7/atm_forcing.datm7.GSWP3.0.5d.v2.c180716/cpl_bypass_full/', \
+        clm_metdata_cplbypass_extranction('/lustre/or-scratch/cades-ccsi/proj-shared/project_acme/e3sm_inputdata/atm/datm7/atm_forcing.datm7.GSWP3.0.5d.v2.c180716/cpl_bypass_full/', \
+                                          'GSWP3', lons[i], lats[i], \
+                                          ncopath='/usr/local/gcc-clang-darwin/nco/bin/', z=1, l=i+1)
+        subfnc = glob.glob("%s*.%s" % ('./subset/', 'nc'))
+        for ifile in subfnc:
+            ncoutfile = ifile.split('/')[-1]
+            tmpnc = 'tmp_'+ncoutfile
+            if i==0:
+                os.system('mv '+ifile+' ./'+ncoutfile) 
+            else:
+                ncmod.mergefilesby1dim(tmpnc, ifile, ncoutfile, 'n')
+            os.system('cp '+ncoutfile+' '+tmpnc)
+        if i==0:
+            os.system('mv ./subset/zone_mappings.txt ./')
+        else:
+            with open("zone_mappings.txt", "a") as myfile:
+                with open("./subset/zone_mappings.txt") as f: apptxt=f.readlines()[0]
+                myfile.write(apptxt)
+    os.system('rm -r ./subset')
+    os.system('rm ./tmp_*.nc')
 
-#clm_metdata_cplbypass_extranction('./', 'GSWP3_daymet4', 203.1241, 70.5725,ncopath='/usr/local/nco/bin/') #BEO
-#clm_metdata_cplbypass_extranction('./', 'GSWP3_daymet4', -157.4089, 70.4696,ncopath='/usr/local/nco/bin/')  #ATQ
-#clm_metdata_cplbypass_extranction('./', 'GSWP3_daymet4', 210.39903, 68.639023, ncopath='/usr/local/nco/bin/')  #test
+
+####################################################################################################
+#
+#
+# test modules
+#
+##################################################################################
 
 #odata = \
 #    subsetDaymetReadNCfile('daymet_v3_prcp_1980_na.nc', lon_range=[-170.0,-141.0], lat_range=[60.0, 90.0], SUBSETNC=True)
@@ -1527,9 +1588,11 @@ def clm_metdata_CRUJRA(crujra_dirfilehead, template_clm_metfile=''):
 
 #clm_metdata_CRUJRA('./rawdata/crujra.v2.3.5d')
 
-####################################################################################################
-#
-    
+
+#clm_metdata_cplbypass_extranction('./', 'GSWP3_daymet4', 203.1241, 70.5725,ncopath='/usr/local/nco/bin/') #BEO
+#clm_metdata_cplbypass_extranction('./', 'GSWP3_daymet4', -157.4089, 70.4696,ncopath='/usr/local/nco/bin/')  #ATQ
+#clm_metdata_cplbypass_extranction('./', 'GSWP3_daymet4', 210.39903, 68.639023, ncopath='/usr/local/nco/bin/')  #test
+#multiple_cplbypass_extraction('README')
 
 
 
