@@ -4,7 +4,7 @@ INSTRUCTIONS
 
 makezones.sbatch
 mv_years_daymetfiles.sh
-untar_daymetfiles.sbatch
+untar_daymetfiles.sbatch (OR, untar_daymet_onetile.sbatch)
 
 NOTE: Scripts can be run as pure bash script, if NO batch scheduler available (necessary editing may be needed).
 
@@ -83,7 +83,9 @@ $>bash mv_years_daymetfiles.sh 13867
 
 4. CONVERT data format into ELM offline forcing format, required by CPL_BYPASS option
 (1) 
-prior to compile, make sure you have needed metdata and its domain file under $FORCDIR.
+prior to compile, make sure you have needed metdata and its domain file under $FORCDIR. OR, 
+Known that daymet4-GSWP3v2 tiled data folders.
+
 AND ALSO modify those in source code 'makezones_reanalysis.f90'. 
 
 (2)
