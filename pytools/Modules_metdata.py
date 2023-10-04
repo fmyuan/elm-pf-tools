@@ -9,7 +9,7 @@ from calendar import isleap
 from numpy import intersect1d
 from matplotlib.pyplot import axis
 import glob
-import dask.dataframe as dd
+#import dask.dataframe as dd
 import netcdf_modules as ncmod
 
 #ncopath = '/usr/local/nco/bin/'
@@ -85,9 +85,14 @@ def calcFLDS(tk, pres_pa, q_kgkg=[], rh_100=[]):
 #
 #------- ------- extract a set of met variables from CPL_BYPASS directory 
 #
-def clm_metdata_cplbypass_extranction(filedir,met_type, lon, lat, ncopath='', z=0, l=0):
+def clm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0, l=0):
     #
-    if('GSWP3' in met_type):
+    if ('Site' in met_type):
+        zone=1
+        line=1
+        ni = 0
+
+    else:
         # zone_mapping.txt
         f_zoning = filedir+'/zone_mappings.txt'
         all_lons=[]
@@ -135,18 +140,14 @@ def clm_metdata_cplbypass_extranction(filedir,met_type, lon, lat, ncopath='', z=
                 
             zone = np.array(all_zones)[ni]
             line = np.array(all_lines)[ni]
+            print(' In Zone: ',zone, ' @line: ',line)
             
         else:
             # only 1 data
             ni = 0
             zone=np.array(all_zones)[ni]
             line=np.array(all_lines)[ni]
-    
-    elif ('Site' in met_type):
-        zone=1
-        line=1
-        ni = 0
-
+    ## 
     
     #files
     filedir_new = './subset'
@@ -180,7 +181,7 @@ def clm_metdata_cplbypass_extranction(filedir,met_type, lon, lat, ncopath='', z=
                         ' '+filedir+'/surfdata.pftdyn.nc '+filedir_new+'/surfdata.pftdyn.nc')
 
       
-    if('GSWP3' in met_type or 'Site' in met_type):
+    if('GSWP3' in met_type or 'Site' in met_type or 'CRUJRA' in met_type):
         varlist=['FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
         if 'Site' in met_type:
             varlist=['FLDS','FSDS','PRECTmms','PSRF','RH','TBOT','WIND']
@@ -196,6 +197,14 @@ def clm_metdata_cplbypass_extranction(filedir,met_type, lon, lat, ncopath='', z=
                 else:
                     file='./GSWP3_'+v+'_1901-2014_z'+str(int(zone)).zfill(2)+'.nc'
                     file_new='./GSWP3_'+v+'_1901-2014_z'+str(int(zone_new)).zfill(2)+'.nc'
+            
+            elif('CRUJRA' in met_type):
+                if('V2.3' in met_type):
+                    file=met_type.strip()+'_'+v+'_1901-2021_z'+str(int(zone)).zfill(2)+'.nc'
+                    file_new=met_type.strip()+'_'+v+'_1901-2021_z'+str(int(zone_new)).zfill(2)+'.nc'
+                elif('V2.4' in met_type):
+                    file=met_type.strip()+'_'+v+'_1901-2022_z'+str(int(zone)).zfill(2)+'.nc'
+                    file_new=met_type.strip()+'_'+v+'_1901-2022_z'+str(int(zone_new)).zfill(2)+'.nc'
             
             elif('Site' in met_type):
                 file='./all_hourly.nc'
@@ -1152,7 +1161,7 @@ def singleReadCsvfile(filename):
     missing ='nan'
     #
     try:
-        f0 = dd.read_csv(filename, dtype={'hour': 'float'})
+        #f0 = dd.read_csv(filename, dtype={'hour': 'float'})
         
         indx_data =[]
         key_data=[]
@@ -1533,10 +1542,10 @@ def multiple_cplbypass_extraction(fsites):
     lons = np.asarray(lons)
     lats = np.asarray(lats)
     for i in range(len(lats)):
-        #clm_metdata_cplbypass_extranction('/Users/f9y/mygithub/pt-e3sm-inputdata/atm/datm7/atm_forcing.datm7.GSWP3.0.5d.v2.c180716/cpl_bypass_full/', \
-        clm_metdata_cplbypass_extranction('/lustre/or-scratch/cades-ccsi/proj-shared/project_acme/e3sm_inputdata/atm/datm7/atm_forcing.datm7.GSWP3.0.5d.v2.c180716/cpl_bypass_full/', \
+        #clm_metdata_cplbypass_extraction('/Users/f9y/mygithub/pt-e3sm-inputdata/atm/datm7/atm_forcing.datm7.GSWP3.0.5d.v2.c180716/cpl_bypass_full/', \
+        clm_metdata_cplbypass_extraction('/lustre/or-scratch/cades-ccsi/proj-shared/project_acme/e3sm_inputdata/atm/datm7/atm_forcing.datm7.GSWP3.0.5d.v2.c180716/cpl_bypass_full/', \
                                           'GSWP3', lons[i], lats[i], \
-                                          ncopath='/usr/local/gcc-clang-darwin/nco/bin/', z=1, l=i+1)
+                                          ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/', z=1, l=i+1)
         subfnc = glob.glob("%s*.%s" % ('./subset/', 'nc'))
         for ifile in subfnc:
             ncoutfile = ifile.split('/')[-1]
@@ -1589,9 +1598,9 @@ def multiple_cplbypass_extraction(fsites):
 #clm_metdata_CRUJRA('./rawdata/crujra.v2.3.5d')
 
 
-#clm_metdata_cplbypass_extranction('./', 'GSWP3_daymet4', 203.1241, 70.5725,ncopath='/usr/local/nco/bin/') #BEO
-#clm_metdata_cplbypass_extranction('./', 'GSWP3_daymet4', -157.4089, 70.4696,ncopath='/usr/local/nco/bin/')  #ATQ
-#clm_metdata_cplbypass_extranction('./', 'GSWP3_daymet4', 210.39903, 68.639023, ncopath='/usr/local/nco/bin/')  #test
+#clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', 203.1241, 70.5725,ncopath='/usr/local/nco/bin/') #BEO
+#clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', -157.4089, 70.4696,ncopath='/usr/local/nco/bin/')  #ATQ
+clm_metdata_cplbypass_extraction('./', 'CRUJRAV2.3.c2023.0.5x0.5', -97.0287, 27.9798, ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/')  #test
 #multiple_cplbypass_extraction('README')
 
 
