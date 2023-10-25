@@ -13,7 +13,12 @@ from scipy.ndimage import interpolation
 from numpy import double, float32
 from rasterio import band
 from _operator import index
-
+from netCDF4._netCDF4 import default_fillvals
+try:
+    from mpi4py import MPI
+    HAS_MPI4PY=True
+except ImportError:
+    HAS_MPI4PY=False
 
 #---
 #---Trucating or unstructured domain_surface data for ELM
@@ -602,13 +607,15 @@ def mksrfdata_topo(fsurfnc_all, fmksrfnc_lndgeo, bands=['aspect','esl','slope'],
         src1.close()
        
        # averaging over a box of 20x20, i.e. 5x5m --> 100x100m in this example
-        xlen = esl.shape[1]; xlen_new = 20
-        ylen = esl.shape[0]; ylen_new = 20
-        new_shp = (int(ylen/ylen_new), ylen_new, int(xlen/xlen_new), xlen_new)
-        esl_new = esl.reshape(new_shp).mean(axis=(1,3))  # note: both xlen/ylen are multiple of xlen_new
-        esl_std = esl.reshape(new_shp).std(axis=(1,3))   # note: both xlen/ylen are multiple of xlen_new
-        slope_new = slope.reshape(new_shp).mean(axis=(1,3))  # note: both xlen/ylen are multiple of xlen_new
-        area_new = area.reshape(new_shp).mean(axis=(1,3))  # note: both xlen/ylen are multiple of xlen_new
+        xlen = esl.shape[1]; xlen_new = 200
+        ylen = esl.shape[0]; ylen_new = 200
+        xlen1 = int(xlen/xlen_new)*xlen_new   #needed to truncate 
+        ylen1 = int(ylen/ylen_new)*ylen_new
+        new_shp = (int(ylen1/ylen_new), ylen_new, int(xlen1/xlen_new), xlen_new)
+        esl_new = esl[:ylen1,:xlen1].reshape(new_shp).mean(axis=(1,3))  # note: both xlen/ylen are multiple of xlen_new
+        esl_std = esl[:ylen1,:xlen1].reshape(new_shp).std(axis=(1,3))   # note: both xlen/ylen are multiple of xlen_new
+        slope_new = slope[:ylen1,:xlen1].reshape(new_shp).mean(axis=(1,3))  # note: both xlen/ylen are multiple of xlen_new
+        area_new = area[:ylen1,:xlen1].reshape(new_shp).mean(axis=(1,3))  # note: both xlen/ylen are multiple of xlen_new
         
         # x/y projection to lat/lon 
         # NAD83/Alaska Albers, for AK Seward Peninsula, ifsar 5-m DEM data
@@ -620,8 +627,8 @@ def mksrfdata_topo(fsurfnc_all, fmksrfnc_lndgeo, bands=['aspect','esl','slope'],
         lonlatProj = CRS.from_epsg(4326) # in lon/lat coordinates
         Txy2lonlat = Transformer.from_proj(geoxyProj, lonlatProj, always_xy=True)
 
-        x_new = x.reshape((int(xlen/xlen_new),xlen_new)).mean(axis=1)
-        y_new = y.reshape((int(ylen/ylen_new),ylen_new)).mean(axis=1)
+        x_new = x[:xlen1].reshape((int(xlen1/xlen_new),xlen_new)).mean(axis=1)
+        y_new = y[:ylen1].reshape((int(ylen1/ylen_new),ylen_new)).mean(axis=1)
         xx_new, yy_new = np.meshgrid(x_new, y_new)
         lon_new,lat_new = Txy2lonlat.transform(xx_new,yy_new)
         ij=np.where(lon_new<0.0)
@@ -837,21 +844,22 @@ def mksrfdata_arcticpft(fsurfnc_all, fmksrfnc_arcticpft, redo=False, OriginType=
     #--------------------------------------
     # 
     dnames_elm=['gridcell']
-    dnames_lndtopo=['geox','geoy'] #should be projected [x,y]
+    dnames_lndtopo=['x','y'] #should be projected [x,y]
     if (redo or os.path.isfile(fsurf_arcticpft)==False):
         src1=Dataset(fmksrfnc_arcticpft,'r')
 
         
         pct_pft_orig = {}
-        for v in src1.variables.keys():
+        for v in src1.variables['pftname'][0:]:
             try:
-                iv = bandinfos['bands'].index(v)
-                pct_pft_orig[iv] = np.asarray(src1.variables[v]).astype(double)
+                ib = bandinfos['bands'].index(v)
+                iv = np.where(src1.variables['pftname'][0:]==v)
+                pct_pft_orig[ib] = src1.variables['pftfrac'][iv][0]
             except ValueError:
                 iv = -9999
             
             if v=='water':
-                pct_water = np.asarray(src1.variables[v]).astype(double)
+                pct_water = src1.variables['pftfrac'][iv][0]
 
         x = np.asarray(src1.variables[dnames_lndtopo[0]])
         y = np.asarray(src1.variables[dnames_lndtopo[1]])
@@ -1098,14 +1106,14 @@ latiy_orig = np.asarray(Dataset(surffile_orig).variables['LATIXY'])[:,0]
 #---
 #---get new domain (xc,yc,xv,yv, mask, area), surfdata, landuse.timeseries
 # truncate or unstructed (if not yet)
-if True:
+if False:
     fmksrfnc_domain = '/Users/f9y/Documents/Works/BenRECCAP/RECCAP2_permafrost_regions_isimip3.nc'
     mksrfdata_domain(domainfile_orig, surffile_orig, surfdynfile_orig, fmksrfnc_domain, unstructured=False)
 
 #---
 #---get new TOPO (topo, std-elev, slope, aspect)
 # convert geotiff to nc (if not yet)
-fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_topo_100mx100m_simyr2020.c220721.nc'
+fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_topo_1000mx1000m_simyr2020.c231010.nc'
 if False:
     fmksrfnc_topo = './ext100x100m_topo_seward.tif.nc'
     mksrfdata_topo(surffile_orig, fmksrfnc_topo, bands=['aspect','esl','slope'], redo_grid=True)
@@ -1113,10 +1121,10 @@ if False:
 
 #---
 #---get arctic pft data
-#fsrfnc_arcticpft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2010.c230113.nc'
-fsrfnc_arcticpft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_originpft_seward_100mx100m_simyr2010.c230113.nc'
+#fsrfnc_arcticpft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_1000mx1000m_simyr2010.c231010.nc'
+fsrfnc_arcticpft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_originpft_seward_1000mx1000m_simyr2010.c231010.nc'
 if False:
-    fmksrfnc_pft = './ext100x100m_arcticpft_seward.tif.nc'
+    fmksrfnc_pft = '5modelAvg_2010_l2_pftfraction_1000m_all.nc'
     #mksrfdata_arcticpft(surffile_orig, fmksrfnc_pft, redo=True)
     mksrfdata_arcticpft(surffile_orig, fmksrfnc_pft, redo=True, OriginType=True)
     os.system('mv surfdata_arcticpft.nc '+fsrfnc_arcticpft)
@@ -1187,30 +1195,29 @@ UNSTRUCTURED_DOMAIN = False
 
 #----- high-res data files (various scales and extents)
 #fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Council/surfdata_topo_100mx100m_simyr2020.c220721.nc'
-fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Kougarok/surfdata_topo_100mx100m_simyr2020.c220721.nc'
-#fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Teller/surfdata_topo_100mx100m_simyr2020.c220721.nc'
+#fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/data_NGEE-Kougarok/surfdata_topo_100mx100m_simyr2020.c220721.nc'
+fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_topo_spak_ext1000m.nc'
 if (os.path.exists(fsrfnc_topo)):
     # if all other high-res surfdata merged already, like following; otherwise comment the following out
-    fsrfnc_urban = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE'#surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_urban = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE' #surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
  
-    fsrfnc_glacier = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE'#surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
-    fsrfnc_lake  = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE'#surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_glacier = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE' #surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_lake  = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE' #surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
     
     #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/Tesfa_pnnl_PFT_0.05_MODIS_nwh201201.nc'
     #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
     
-    fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_originpft_seward_100mx100m_simyr2010.c230113.nc'  # arctic-pft re-classified into original ELM PFTs
-    #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2010.c230113.nc'  # totally new classes of arctic pft
+    fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_originpft_seward_1000mx1000m_simyr2010.c231010.nc'  # arctic-pft re-classified into original ELM PFTs
+    #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_1000mx1000m_simyr2010.c231010.nc'  # totally new classes of arctic pft
     # data of arctic pfts, as in file below, include 'water' which is for lake in ELM land units 
-    #fsrfnc_lake = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_100mx100m_simyr2010.c230113.nc'
 
     fsrfnc_soildtb = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_soildtb_30x30sec_nwh.c220613.nc'
 
     fsrfnc_soilorg = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_ORGANIC_spak.nc' 
     fsrfnc_soiltexture = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_SAND_CLAY_spak.nc'
     
-    fsurf_new = 'surfdata_newpft_100mx100m.nc'   # new pft fraction but in original ELM classes
-    #fsurf_new = 'surfdata_arcticpft_100mx100m.nc' # new pft fractions AND arctic classes
+    fsurf_new = 'surfdata_newpft_1000mx1000m.nc'   # new pft fraction but in original ELM classes
+    #fsurf_new = 'surfdata_arcticpft_1000mx1000m.nc' # new pft fractions AND arctic classes
     interp_urb=True; interp_pft=False               # for sync spatial resolutions - original are 0.05deg or 3arcmin
     interp_soiltdb=True; interp_lakeglacier=True   # for sync spatial resolutions - original are 30arcsec
     interp_soilorg=False; interp_soiltexture=False
@@ -1274,9 +1281,32 @@ surffile_orig = './default/surfdata.nc'
 landuse_timeseries_orig = './default/surfdata.pftdyn.nc'
 
 #----
-if False:
+
+if HAS_MPI4PY:
+    mycomm = MPI.COMM_WORLD
+    myrank = mycomm.Get_rank()
+    mysize = mycomm.Get_size()
+    
+    fsurf_mynew = str(myrank)+fsurf_new
+
+    len_myrank = math.floor(len(lon_new)/mysize)
+    len_mod = math.fmod(len(lon_new),mysize)
+    n_myrank = np.full([mysize], np.int(1));n_myrank = np.cumsum(n_rank)*len_myrank
+    x_myrank = np.full([mysize], np.int(0));x_myrank[:len_mod] = 1
+    n_myrank = n_myrank + np.cumsum(x_myrank) - 1        # ending index, starting 0, for each rank
+    n0_myrank = np.hstack((0, n_myrank[0:mysize-1]+1))   # starting index, starting 0, for each rank
+
+    lon_new = lon_new[n0_myrank:n_myrank]
+
+else:
+    mycomm = 0
+    myrank = 0
+    mysize = 1
+    fsurf_mynew = fsurf_new
+
+if True:
 #--------- write into nc file
-    with Dataset(surffile_orig,'r') as src2, Dataset(fsurf_new, "w") as dst:
+    with Dataset(surffile_orig,'r') as src2, Dataset(fsurf_mynew, "w") as dst:
         
 #------- new surfdata dimensions
         for dname2, dimension2 in src2.dimensions.items():
@@ -1619,8 +1649,12 @@ if False:
                 vtype = src2.variables[vname].datatype
             else:
                 vtype = fdata_src1.variables[vname].datatype
-            dst.createVariable(vname, vtype, vdim)
-            dst[vname].setncatts(fdata_src1[vname].__dict__)
+            try:
+                fillvalue = fdata_src1.variables[vname]._FillValue
+            except:
+                fillvalue = nan
+            dst.createVariable(vname, vtype, vdim, fill_value=fillvalue)
+            dst[vname].setncatts(src2[vname].__dict__)
             vnames.append(vname)
             
             print ('variable: ', vname)
@@ -1850,6 +1884,7 @@ if False:
                     
                     vdata_new = np.asarray(dst.variables[vname][...])
                     for i in range(vdata.shape[0]): #dim 'pft' in axis 0, lat/lon in the last 2
+                        #print('point: ',i, datain2D, vdata.shape)
                         if datain2D:
                             if interp_pft:
                                 finterp_src1 =interpolate.interp2d(vlon, vlat, vdata[i,...], kind='cubic')
@@ -1868,12 +1903,16 @@ if False:
                             allpoints={}
                             allpoints['Latitude']=np.append(lat_new, vlat)
                             allpoints['Longitude']=np.append(lon_new, vlon)
+                            if any(allpoints['Longitude']<0.0):
+                                idx2=np.where(allpoints['Longitude']<0.0)
+                                allpoints['Longitude'][idx2] = allpoints['Longitude'][idx2]+360.0
                             
                             # because mixed points, must make sure nearest points are NONE of lat_new/lon_new
                             AllNearest=False
                             Kpts = 2
                             idx_void = None
                             while not AllNearest:
+                                #print('kpts: ', Kpts, i)
                                 dist,idx=nearest_using_kdtree(allpoints, latname='Latitude', lonname='Longitude',kpt=Kpts)
                                 if idx_void is None:
                                     idx_new = idx[0:len_new]-len_new # for vlat/vlon real index, must adjust 'idx' in mixed points 
@@ -1973,6 +2012,18 @@ if False:
             #
         #
     #with both 'src2' (original) and 'dst' ncfiles open
+    
+    if HAS_MPI4PY and myrank==0:
+        # merge 'dst' ncfiles
+        ncfileall = sorted(glob.glob("*%s" % fsurf_new))
+        for i in range(len(ncfileall)):
+            if i==0: 
+                os.system('cp '+ncfileall[i]+' temp0.nc')
+            else:
+                ncmod.mergefilesby1dim('temp0.nc', ncfileall[i], fsurf_new, 'gridcell')
+                os.system('cp '+fsurf_new+' temp0.nc')
+                
+
 # end if true for doing merging all new high-res surfdata 
 
 

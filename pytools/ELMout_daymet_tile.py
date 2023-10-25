@@ -38,14 +38,14 @@ def Daymet_ELM_mapinfo(mapfile, redoxy=False, resx=1000.0, resy=1000.0):
             print(e)
             print('Error in reading - '+mapfile)
             sys.exit(-1)
-    data = np.asarray(data,np.float)
+    data = np.asarray(data,float)
     lon=data[:,0]
     lat=data[:,1]
     geox=data[:,2]
     geoy=data[:,3]
-    xidx=np.asanyarray(data[:,4],np.int)-1  # in mappings.txt, those index are 1-based
-    yidx=np.asanyarray(data[:,5],np.int)-1
-    gidx=np.asanyarray(data[:,6],np.int)-1
+    xidx=np.asanyarray(data[:,4],int)-1  # in mappings.txt, those index are 1-based
+    yidx=np.asanyarray(data[:,5],int)-1
+    gidx=np.asanyarray(data[:,6],int)-1
     
     #xidx/yidx may be missing (<0)
     resx = float(resx) #daymet cell resolution in meters: 1000 m by default
@@ -61,11 +61,27 @@ def Daymet_ELM_mapinfo(mapfile, redoxy=False, resx=1000.0, resy=1000.0):
         yy = np.arange(ymin, ymax+resy, resy)
         if(resy<0): yy = np.arange(ymax, ymin+resy, resy)
         
+        f = open('redo_'+mapfile.split('./')[-1], 'w')
+        fheader='   lon          lat            geox            geoy        i     j     g '
+        f.write(fheader+'\n')
         for idx in range(len(gidx)):
             ii=np.argmin(abs(geox[idx]-xx))
             jj=np.argmin(abs(geoy[idx]-yy))
             xidx[idx] = ii
             yidx[idx] = jj
+            gidx[idx] = idx
+            
+            # re-write daymet_elm_mapping.txt    
+            #'(f12.5,1x,f12.6,1x, 2(f15.1, 1x),3(I5,1x))'
+            f.write('%12.5f ' % lon[idx] )
+            f.write('%12.6f ' % lat[idx] )
+            f.write('%15.1f ' % geox[idx] )
+            f.write('%15.1f ' % geoy[idx] )
+            f.write('%5d ' % (xidx[idx]+1) )  #x/yidx were 0-based, but need to 1-based for the mapping file
+            f.write('%5d ' % (yidx[idx]+1) )
+            f.write('%5d ' % (gidx[idx]+1) )
+            f.write('\n')
+        f.close()
         
     else:
         # xidx/yidx is really actual indices
