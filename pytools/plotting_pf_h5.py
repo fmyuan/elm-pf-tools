@@ -23,7 +23,7 @@ def SinglePlot(tt, time_unit, varnames, varunits, vardatas, figno=None):
         ncol = 2
 
 
-    fig = plt.figure(figsize=(7.5,9.5))
+    fig = plt.figure(figsize=(7.5,5))
      
     # plot 1, or subplot 1 if more than 1 subplot
     if (nvars >= 2):
@@ -177,10 +177,10 @@ for i in np.arange(len(str_pts)):
                 elif(',' in str_pt):
                     pts[i] = np.fromstring(v_pt,sep=',')
                 else:
-                    pts[i] = np.int(v_pt)                                                  
+                    pts[i] = int(v_pt)                                                  
                    
             else: # exactly point(s)
-                pts[i] = np.int(str_pt)
+                pts[i] = int(str_pt)
 
 xpts = pts[0]
 ypts = pts[1]

@@ -1199,16 +1199,16 @@ UNSTRUCTURED_DOMAIN = False
 fsrfnc_topo = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_topo_spak_ext1000m.nc'
 if (os.path.exists(fsrfnc_topo)):
     # if all other high-res surfdata merged already, like following; otherwise comment the following out
-    fsrfnc_urban = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE' #surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_urban = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
  
-    fsrfnc_glacier = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE' #surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
-    fsrfnc_lake  = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE' #surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_glacier = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+    fsrfnc_lake  = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
     
-    #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/Tesfa_pnnl_PFT_0.05_MODIS_nwh201201.nc'
-    #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
+     #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_urb_lake_glacier_avedtb_natpft_0.05x0.05_nwh.c20220725.nc'
     
-    fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_originpft_seward_1000mx1000m_simyr2010.c231010.nc'  # arctic-pft re-classified into original ELM PFTs
-    #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_1000mx1000m_simyr2010.c231010.nc'  # totally new classes of arctic pft
+    #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/NONE' #
+    #fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_originpft_seward_1000mx1000m_simyr2010.c231010.nc'  # arctic-pft re-classified into original ELM PFTs
+    fsrfnc_natveg_pft = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_arcticpft_seward_1000mx1000m_simyr2010.c231010.nc'  # totally new classes of arctic pft
     # data of arctic pfts, as in file below, include 'water' which is for lake in ELM land units 
 
     fsrfnc_soildtb = ccsm_input+'/lnd/clm2/surfdata_map/high_res/surfdata_soildtb_30x30sec_nwh.c220613.nc'
@@ -1216,8 +1216,10 @@ if (os.path.exists(fsrfnc_topo)):
     fsrfnc_soilorg = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_ORGANIC_spak.nc' 
     fsrfnc_soiltexture = ccsm_input+'/lnd/clm2/surfdata_map/high_res/ngee_SPAK/surfdata_SAND_CLAY_spak.nc'
     
-    fsurf_new = 'surfdata_newpft_1000mx1000m.nc'   # new pft fraction but in original ELM classes
-    #fsurf_new = 'surfdata_arcticpft_1000mx1000m.nc' # new pft fractions AND arctic classes
+    #fsurf_new = 'surfdata_defaultpft_1000mx1000m.nc'   # default pft fraction
+    #fsurf_new = 'surfdata_newpft_1000mx1000m.nc'   # new pft fraction but in original ELM classes
+    fsurf_new = 'surfdata_arcticpft_1000mx1000m.nc' # new pft fractions AND arctic classes
+    
     interp_urb=True; interp_pft=False               # for sync spatial resolutions - original are 0.05deg or 3arcmin
     interp_soiltdb=True; interp_lakeglacier=True   # for sync spatial resolutions - original are 30arcsec
     interp_soilorg=False; interp_soiltexture=False
@@ -1536,7 +1538,7 @@ if True:
             fdata_src1 = Dataset(fsrfnc_lake)
             for vname in fdata_src1.variables.keys():
                 if vname in src2.variables.keys() and vname not in vnames and \
-                  ('PCT_LAKE' in vname in vname):
+                  ('PCT_LAKE' in vname):
                     print ('variable: ', vname)
                     vdim = fdata_src1.variables[vname].dimensions
                     if 'gridcell' not in vdim and UNSTRUCTURED_DOMAIN:
@@ -1815,12 +1817,12 @@ if True:
             fdata_src1.close()
             
 #---
-#--- natveg pft data
+#---natveg pft data
         if os.path.isfile(fsrfnc_natveg_pft):
             fdata_src1 = Dataset(fsrfnc_natveg_pft)
             for vname in fdata_src1.variables.keys():
                 if vname in src2.variables.keys() and vname not in vnames and \
-                  ('PCT_PFT' in vname or 'PCT_NAT_PFT' in vname or 'PCT_NATVEG' in vname):
+                  ('PCT_PFT' in vname or 'PCT_NAT_PFT' in vname):
                     
                     if 'natpft' not in vnames:
                         print('variable: ','natpft')
@@ -1928,65 +1930,101 @@ if True:
                             # by now, idx_new should be all non-negative
                             temp = vdata[i,idx_new.flatten()]
                             temp[temp<0.0001]=0.0
-                            
+                        
                         vdata_new[i,] = np.copy(temp)
                         del temp
-                    #
-                    vdata_new[np.where(vdata_new<vdata_min)] = vdata_min
-                    vdata_new[np.where(vdata_new>vdata_max)] = vdata_max
-                    
-                    #need to make sure all natural pfts summed to 100%
-                    vdata_sum = np.sum(vdata_new, axis=0)
 
-                    idx_nonzero = np.where(vdata_sum>0.0)
-                    for i in range(vdata.shape[0]):
-                        vdata_new[i,idx_nonzero] = vdata_new[i,idx_nonzero]/vdata_sum[idx_nonzero]*100.0
-                    idx_zero = np.where(vdata_sum<=0.0) # ELM will check even for non-natveg land unit
-                    vdata_new[0,idx_zero] = 100.0       # So, put 100.0 as non_vegetated
-                    
-                    vdata_new[np.where(vdata_new<0.0)]=0.0; vdata_new[np.where(vdata_new>100.0)]=100.0
-                    dst[vname][...] = np.copy(vdata_new)
-                    
                     # if 'sum' is less than 100, the residue is actually 'water' in original data
-                    # then need to adjust PCT_NATVEG in a gridcell
-                    vdata_sumpft = np.ones_like(vdata_sum)*100.0
+                    vdata_sum = np.sum(vdata_new, axis=0)
                     idx=np.where(vdata_sum<100.0) # excluding 100 and above
                     if len(idx[0])>0:
+                        vdata_sumpft = np.ones_like(vdata_sum)*100.0
                         vdata_sumpft[idx]=vdata_sum[idx]
-                        vname = 'PCT_NATVEG'
-                        if vname not in vnames: 
-                            vnames.append(vname)
-                            print ('variable: ', vname)
-                            if 'gridcell' in vdim:  # PCT_NAT_PFT's dim
-                                vdim_new = ('gridcell')
-                            elif ('lsmlat' in vdim and 'lsmlon' in vdim):
-                                vdim_new = ('lsmlat','lsmlon')
-                            elif ('lat' in vdim and 'lon' in vdim):
-                                vdim_new = ('lat','lon')
-                                    
-                            vtype = src2.variables[vname].datatype
-                            dst.createVariable(vname, vtype, vdim_new)
-                            dst[vname].setncatts(src2[vname].__dict__)
-                            dst[vname][...] = vdata_sumpft
-                        
                         # 'water' in original data shall be called 'lake' in ELM land units
                         vname = 'PCT_LAKE'
                         if vname not in vnames: 
                             vnames.append(vname)
                             print ('variable: ', vname)
                             vtype = src2.variables[vname].datatype
-                            dst.createVariable(vname, vtype, vdim_new)
+                            vdim = src2.variables[vname].dimensions
+                            if 'gridcell' not in vdim and UNSTRUCTURED_DOMAIN:
+                                vdim_new=[]
+                                for i in range(len(vdim)):
+                                    if vdim[i]=='lsmlon':
+                                        vdim_new.append('gridcell')
+                                    elif vdim[i]!='lsmlat':
+                                        vdim_new.append(vdim[i])
+                                vdim = vdim_new
+                            dst.createVariable(vname, vtype, vdim)
                             dst[vname].setncatts(src2[vname].__dict__)
-                            temp=100.0-vdata_sumpft
-                            temp[np.where(temp<0.0001)]=0.0
-                            dst[vname][...] = temp
+                        temp=100.0-vdata_sumpft
+                        temp[np.where(temp<0.0001)]=0.0
+                        dst[vname][...] = temp
+
+                    #
+                    # in original arctic pft data, if non-vegetated includes glacier, urban, wetland 
+                    vdata_sumpft = np.ones_like(vdata_sum)*100.0
+                    if 'PCT_URBAN' in dst.variables.keys():
+                        temp = dst['PCT_URBAN'][...]
+                        vdata_new[0,:] = np.maximum(0.0, (vdata_new[0,:] - np.round(np.sum(temp, axis=0),3)))
+                        vdata_sumpft = np.maximum(0.0, (vdata_sumpft - np.round(np.sum(temp, axis=0),3)))
+                    if 'PCT_LAKE' in dst.variables.keys():
+                        temp = dst['PCT_LAKE'][...]
+                        vdata_new[0,:] =  np.maximum(0.0, (vdata_new[0,:]-np.round(temp,3)))
+                        vdata_sumpft =  np.maximum(0.0, (vdata_sumpft-np.round(temp,3)))
+                    if 'PCT_WETLAND' in dst.variables.keys():
+                        temp = dst['PCT_WETLAND'][...]
+                        vdata_new[0,:] = np.maximum(0.0, (vdata_new[0,:]-np.round(temp,3)))
+                        vdata_sumpft = np.maximum(0.0, (vdata_sumpft-np.round(temp,3)))
+                    if 'PCT_GLACIER' in dst.variables.keys():
+                        temp = dst['PCT_GLACIER'][...]
+                        vdata_new[0,:] = np.maximum(0.0, (vdata_new[0,:]-np.round(temp,3)) )
+                        vdata_sumpft = np.maximum(0.0, (vdata_sumpft-np.round(temp,3)) )
+                    # 'pct_natveg' as residue of any of above
+                    vname = 'PCT_NATVEG'
+                    if vname not in vnames: 
+                        vnames.append(vname)
+                        print ('variable: ', vname)
+                        vdim = src2.variables[vname].dimensions
+                        if 'gridcell' not in vdim and UNSTRUCTURED_DOMAIN:
+                            vdim_new=[]
+                            for i in range(len(vdim)):
+                                if vdim[i]=='lsmlon':
+                                    vdim_new.append('gridcell')
+                                elif vdim[i]!='lsmlat':
+                                    vdim_new.append(vdim[i])
+                            vdim = vdim_new
+                        vtype = src2.variables[vname].datatype
+                        dst.createVariable(vname, vtype, vdim)
+                        dst[vname].setncatts(src2[vname].__dict__)
+                    dst[vname][...] = vdata_sumpft
+                    
+ 
+                    # now, 'vdata_new' is the nat_pft_veg absolute values 
+                    # need to make sure all natural pfts with relative values and summed to 100%
+                    vname = 'PCT_NAT_PFT'
+                    vdata_new[np.where(vdata_new<vdata_min)] = vdata_min
+                    vdata_new[np.where(vdata_new>vdata_max)] = vdata_max
+                    
+                    vdata_sum = np.sum(vdata_new, axis=0)
+                    idx_zero = np.where(vdata_sum<=0.0) # ELM will check even for non-natveg land unit
+                    vdata_new[0,idx_zero] = 100.0       # So, put 100.0 as non_vegetated
+                    idx_nonzero = np.where(vdata_sum>0.0)
+                    for i in range(vdata_new.shape[0]):
+                        vdata_new[i,idx_nonzero] = vdata_new[i,idx_nonzero]/vdata_sum[idx_nonzero]*100.0
+                    # round up to 3 digits to avoid roundup issue upon machine
+                    vdata_new = np.round(vdata_new, 3)
+                    vdata_new[np.where(vdata_new<0.0)]=0.0; vdata_new[np.where(vdata_new>100.0)]=100.0  #just in case
+                    idx_pftmax = np.argmax(vdata_new,0) # put roundup error into max. pft fraction
+                    vdata_new[idx_pftmax,np.arange(vdata_new.shape[1])] = \
+                         vdata_new[idx_pftmax,np.arange(vdata_new.shape[1])] + (100.0 - np.sum(vdata_new,axis=0))
+                    
+                    dst[vname][...] = np.copy(vdata_new)
                     
                     #
                     del vdata, vdata_new, vlat, vlon, vdata_sum, vdata_sumpft,temp
             fdata_src1.close()
         #
-        
-        
         
 #-----------------------------------------------
 #------ rest of surface data for ELM
@@ -2010,6 +2048,40 @@ if True:
                     
                 vnames.append(vname)
             #
+#-----------------------------------------------
+#------ final checking of PCT of land units
+        sum_wtlunit = dst['PCT_NATVEG'][...] + \
+                      np.sum(dst['PCT_URBAN'][...],axis=0) + \
+                      dst['PCT_LAKE'][...] + \
+                      dst['PCT_GLACIER'][...] + \
+                      dst['PCT_WETLAND'][...]
+        idx_adj = np.where(sum_wtlunit<=0)
+        if len(idx_adj[0])>0: # just in case
+            dst['PCT_NATVEG'][...]  = 100.0  # 100% as non-vegetated natural land
+            dst['PCT_NAT_VEG'][...] = 0.0
+            dst['PCT_NAT_VEG'][0,...] = 100.0
+            dst['PCT_URBAN'][...]   = 0.0
+            dst['PCT_LAKE'][...]    = 0.0
+            dst['PCT_GLACIER'][...] = 0.0
+            dst['PCT_WETLAND'][...] = 0.0
+            
+        idx_adj = np.where(sum_wtlunit!=100.0)
+        if len(idx_adj[0])>0:
+            dst['PCT_NATVEG'][...]  = dst['PCT_NATVEG'][...]/sum_wtlunit*100.0
+            dst['PCT_URBAN'][...]   = dst['PCT_URBAN'][...]/sum_wtlunit*100.0
+            dst['PCT_LAKE'][...]    = dst['PCT_LAKE'][...]/sum_wtlunit*100.0
+            dst['PCT_GLACIER'][...] = dst['PCT_GLACIER'][...]/sum_wtlunit*100.0
+            dst['PCT_WETLAND'][...] = dst['PCT_WETLAND'][...]/sum_wtlunit*100.0
+
+        sum_wtlunit = dst['PCT_NATVEG'][...] + \
+                      np.sum(dst['PCT_URBAN'][...],axis=0) + \
+                      dst['PCT_LAKE'][...] + \
+                      dst['PCT_GLACIER'][...] + \
+                      dst['PCT_WETLAND'][...]
+        idx_adj = np.where(np.abs(sum_wtlunit-100.0)>1.0E-8)
+        if len(idx_adj[0])>0: print('LUNITs wt summed not equal to 100% in ',len(idx_adj[0]), 'grids!')
+
+
         #
     #with both 'src2' (original) and 'dst' ncfiles open
     
@@ -2023,6 +2095,7 @@ if True:
                 ncmod.mergefilesby1dim('temp0.nc', ncfileall[i], fsurf_new, 'gridcell')
                 os.system('cp '+fsurf_new+' temp0.nc')
                 
+    #
 
 # end if true for doing merging all new high-res surfdata 
 
