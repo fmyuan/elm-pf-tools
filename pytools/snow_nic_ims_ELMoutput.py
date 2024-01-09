@@ -10,12 +10,12 @@ from matplotlib.dates import date2num, num2date
 from optparse import OptionParser
 
 import Modules_nic_ims as nicims
-from numpy import long, int16
 from netCDF4 import Dataset
 from copy import deepcopy
 
 from Modules_CLMoutput_nc4 import CLM_NcRead_1simulation
 from Modules_CLMoutput_nc4 import CLMvar_1Dtseries
+from builtins import int
 
 #------------------------------------------------------------------------------------------------------------------
 # after sorting data, looking-up for DOYs with 'daily snow coverage' < 25% for a year
@@ -131,7 +131,7 @@ def seeking_YRLYsnowfreeseason(daynums, snowcov, no_leap=False, snow_yearly={}):
                     snowcov_yrx[2,] = temp
                 
                 
-                temp_crit = np.int(-30.0*np.float(totdays_yr)/366.0)
+                temp_crit = np.int_(-30.0*np.float_(totdays_yr)/366.0)
                 
                 # never-snow cells
                 temp = snow_free - totdays_yr # non-snowfree days in a year
@@ -362,7 +362,7 @@ if (options.elmheader != ""):
     tt = varsdata[var_t]   # time unit: days (default)
     
     # processing original data
-    t, gdata, sdata, zdim_indx, pdim_indx = \
+    t, gdata, sdata, zdim_indx, pdim_indx, npft, ncolumn = \
         CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, -999, -999, if2dgrid, \
                     False, False)
     t = np.asarray(t)

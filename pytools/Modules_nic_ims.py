@@ -6,7 +6,7 @@ import numpy as np
 
 from datetime import datetime, date
 
-from mpl_toolkits.basemap import Basemap
+#from mpl_toolkits.basemap import Basemap
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
@@ -551,7 +551,7 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True, FillValue=None,
 # plotting 1 graph with 1 map
 
 def SingleMap(varname, vardatas, figno=None):
-    
+    '''
     fig = plt.figure(figsize=(11.5, 8.5))
 
     # grid box
@@ -582,14 +582,14 @@ def SingleMap(varname, vardatas, figno=None):
     # mid of day
     mid_day = vardatas['RANGEBEGINNINGDATE']+ (vardatas['RANGEENDINGDATE']-vardatas['RANGEENDINGDATE'])/2.0
 
-
+    
     m = Basemap(projection='npstere', resolution='l',
                 boundinglat=30,
                 lon_0=-90)
     m.drawcoastlines(linewidth=0.5)
     m.drawparallels(np.arange(30., 90., 10.), labels=[False,False,False,False])
     m.drawmeridians(np.arange(-180, 180., 20.), labels=[True,True,True,True])
-
+    
     # Bin the data as follows:
     # 0% snow
     # 1-99% snow
@@ -648,7 +648,8 @@ def SingleMap(varname, vardatas, figno=None):
     
     plt.show()
     plt.close('all')
-
+    
+    '''
 
 
 #####################################################################

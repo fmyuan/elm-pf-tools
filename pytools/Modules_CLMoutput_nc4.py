@@ -108,7 +108,7 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
             key_val    = np.asarray(f.variables[key])
             if(hasattr(f.variables[key], '_FillValue')):
                 v_missing  = f.variables[key]._FillValue
-                if isinstance(v_missing, (np.float, np.float16, np.float32)):
+                if isinstance(v_missing, (np.float_, np.float16, np.float32)):
                     key_val[key_val==v_missing] = np.nan
             odata[key] = key_val
 

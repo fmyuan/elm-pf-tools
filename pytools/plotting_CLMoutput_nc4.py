@@ -45,8 +45,8 @@ def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, layer_index, sd
         #if (varname!='TSOI') and il>=9: break  # non-soil temperature only need upper 10 real soil layers 
         
     # limits of axis
-    if 'TSOI' in varname: plt.ylim([253,293])
-    if 'SOILICE' in varname: plt.ylim([0,450])
+    #if 'TSOI' in varname: plt.ylim([253,293])
+    #if 'SOILICE' in varname: plt.ylim([0,450])
 
     if 'TSOI' in varname: plt.legend((layertext), loc=0, ncol=2, fontsize=10)
     
@@ -195,13 +195,13 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
             plt.plot(t, sdata)
         
     # user-defined x/y limits
-    if ('YEAR' in t_unit): plt.xlim(1980,2019)
+    #if ('YEAR' in t_unit): plt.xlim(1980,2019)
     
-    if ('LAI' in varname): plt.ylim([0.1,0.9])
-    if ('Active Layer Depth' in varname): plt.ylim([-0.1,1.5])
+    #if ('LAI' in varname): plt.ylim([0.1,0.9])
+    #if ('Active Layer Depth' in varname): plt.ylim([-0.1,1.5])
     #if ('SNOW' in varname): plt.ylim([0.0,20.0])
-    if ('Snow Depth' in varname): plt.ylim([0.0,1.0])
-    if ('FSNO' in varname): plt.ylim([0.3,0.8])
+    #if ('Snow Depth' in varname): plt.ylim([0.0,1.0])
+    #if ('FSNO' in varname): plt.ylim([0.3,0.8])
 
      # mannually edit x/y axis labels
     if varname=='TBOT': varname='Air Temperature (K)'

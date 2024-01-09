@@ -165,13 +165,10 @@ for i in np.arange(len(str_pts)):
             pts[i]=1
         else:                
             if ('str' in str(type(str_pt))):#values with operators
-                nondecimal = re.compile(r'[^\d.,:]+')
+                nondecimal = re.compile(r'[^\d.,:]+-')
                 v_pt = nondecimal.sub("",str_pt)
                 if(':' in str_pt):
-                    if sys.version_info[0] < 3:
-                        v_pt = v_pt.split(':')
-                    else:
-                        v_pt = np.split(v_pt,':')
+                    v_pt = v_pt.split(':')
                     pts[i] = np.arange(int(v_pt[0]),int(v_pt[1])+1, dtype=int)
             
                 elif(',' in str_pt):
@@ -253,9 +250,13 @@ if(options.vars == 'ALL'): # all variables, with 1 variable in 1 plot
         vardata = vardatas[varnames[ivar]]
         varname = varnames[ivar]
         varunit = varunits[ivar]
+        if ("Material_ID" in varname): continue
         for i in range(len(tt)):
             sdata[i,:] = np.squeeze(vardata[it[i]])
-        SinglePlot(t, time_unit, [varname], [varunit], sdata, figno=str(ivar)+' - '+varname)
+        
+        # plot only significant valued variables
+        if(np.nanmax(abs(sdata))>1.0e-20 or "Calcite" in varname):
+            SinglePlot(t, time_unit, [varname], [varunit], sdata, figno=str(ivar)+' - '+varname)
         
                 
 else: # user-picked variable(s) at most 4 for (sub-)plotting in 1 single plot               

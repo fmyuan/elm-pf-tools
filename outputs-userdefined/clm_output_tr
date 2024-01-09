@@ -8,7 +8,7 @@
                'LIVECROOTC','LIVECROOTN','LIVESTEMC','LIVESTEMN',
                'DEADCROOTC','DEADCROOTN','DEADSTEMC','DEADSTEMN',
                'CWDC','CWDN','TOTVEGC','TOTVEGN'
- hist_fincl3 = 'GPP','NPP','NEE','AR','HR','CH4PROD','DENIT',
+ hist_fincl3 = 'GPP','NPP','NEE','AR','HR','FCH4','CH4PROD','DENIT',
                'FCEV','FCTR','FGEV','FGR','FSH','H2OCAN','H2OSNO','H2OSOI','SOILPSI','TSOI','TSA'
  hist_dov2xy = .true.,.false.,.false.
  hist_nhtfrq = -24 -24 1
