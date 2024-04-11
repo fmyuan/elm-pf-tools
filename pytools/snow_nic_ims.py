@@ -10,7 +10,6 @@ from matplotlib.dates import date2num
 from optparse import OptionParser
 
 import Modules_nic_ims as nicims
-from numpy import long, int16
 import netCDF4
 from copy import deepcopy
 
@@ -52,7 +51,7 @@ if (options.fileheader == ''):
 # 
 if options.ptxy is not None:
     ptxy = re.split(',|:|;| ',options.ptxy)
-    ptxy = np.asarray(ptxy,dtype=np.float)
+    ptxy = np.asarray(ptxy,dtype=np.float64)
 else:
     ptxy = []
 ##
@@ -155,11 +154,11 @@ if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='
     
     # grids
     if minlat==None:
-        imsx,imsy = \
+        imsx,imsy,imslons,imslats = \
             nicims.Prep_ims_grid(res, minlat, lonlat2xy=lonlat2xy)
 
     else:
-        xind, yind, imsx, imsy = \
+        xind,yind,imsx,imsy,imslons,imslats = \
             nicims.Prep_ims_grid(res, minlat, lonlat2xy=lonlat2xy)
     
     # daily files
@@ -183,7 +182,7 @@ if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='
         #------------------------------------------------------------------------------------------------
         # if have to do moving-window smoothing, prapare a few days' data
         if ifile==alldirfiles[0]:
-            snowcov_days = np.full((crit_days,)+snowcov.shape,np.float(-99))
+            snowcov_days = np.full((crit_days,)+snowcov.shape,np.float64(-99))
             snowcov_days[0:crit_days,] = snowcov[:,:]
         snowcov_days = np.delete(snowcov_days,0,0)  # remove [0,], i.e. oldest
         snowcov_days = np.vstack((snowcov_days, np.reshape(snowcov,(1,)+snowcov.shape))) # append the newest
@@ -199,7 +198,7 @@ if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='
                 snowcov_days[ij]=np.nan # excluding non-snow-extent data
                 
                 # in general, taking max. snow coverage in moving-window
-                n_prv = np.int(crit_days/2)
+                n_prv = np.int32(crit_days/2)
                 temp_snowcov = np.nanmax(snowcov_days,0)
                 
                 # previously non-snowed cells, re-assign mean value in them so that smoothing occasional outliers
@@ -242,10 +241,10 @@ if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='
         #------------------------------------------------------------------------------------------------
          
         if ifile==alldirfiles[0]:
-            snow_start = np.full(snowcov.shape,np.int16(-99))
-            snow_end   = np.full(snowcov.shape,np.int16(-99))
+            snow_start = np.full(snowcov.shape,np.int32(-99))
+            snow_end   = np.full(snowcov.shape,np.int32(-99))
             year_prv   = year
-            snow_free  = np.full(snowcov.shape,np.int16(0))
+            snow_free  = np.full(snowcov.shape,np.int32(0))
             totdays_yr = 0
         
         #------------------------------------------------------------------------------------------------
@@ -261,7 +260,7 @@ if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='
 
             # have to flag never-snow/snowfree cells (snow_free within 'totdays_yr-30d' for a full year)
             if totdays_yr>0:
-                temp_crit = np.int(-30.0*np.float(totdays_yr)/366.0)
+                temp_crit = np.int32(-30.0*np.float64(totdays_yr)/366.0)
                 
                 # never-snow cells
                 temp = snow_free - totdays_yr
@@ -372,7 +371,7 @@ if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='
 
             # have to flag never-snow/snowfree cells (snow_free within 'totdays_yr-30d' for a full year)
             if totdays_yr>0:
-                temp_crit = np.int(-30.0*np.float(totdays_yr)/366.0)
+                temp_crit = np.int32(-30.0*np.float64(totdays_yr)/366.0)
                     
                 # never-snow cells
                 temp = snow_free - totdays_yr
@@ -496,15 +495,15 @@ if len(snow_yearly)>0:
     vlat[:] = lat
     vlon[:] = lon
 
-    vtime = ncfile.createVariable('time', np.int16, ('time',))
+    vtime = ncfile.createVariable('time', np.int32, ('time',))
     vtime.units = 'year'
     vtime.long_name = 'year'
     vtime[:] = snow_yearly['Year']
 
     if 'lat' in snow_yearly.keys():
-        vdoy_end = ncfile.createVariable('Doy_snowmelted', np.int16, ('time','lat','lon'))
+        vdoy_end = ncfile.createVariable('Doy_snowmelted', np.int32, ('time','lat','lon'))
     if 'geox' in snow_yearly.keys():
-        vdoy_end = ncfile.createVariable('Doy_snowmelted', np.int16, ('time','geoy','geox'))
+        vdoy_end = ncfile.createVariable('Doy_snowmelted', np.int32, ('time','geoy','geox'))
     vdoy_end.units = 'doy'
     vdoy_end.long_name = 'day of year when snow fully melted on ground'
     vdoy_end.Key = "0-365 = land with/without snow, -10 = sea with ice, -20 = sea, -99 = beyond map coverage" ;
@@ -513,9 +512,9 @@ if len(snow_yearly)>0:
     vdoy_end[:,:,:] = vdata
 
     if 'lat' in snow_yearly.keys():
-        vdoy_start = ncfile.createVariable('Doy_snowcovered', np.int16, ('time','lat','lon'))
+        vdoy_start = ncfile.createVariable('Doy_snowcovered', np.int32, ('time','lat','lon'))
     if 'geox' in snow_yearly.keys():
-        vdoy_start = ncfile.createVariable('Doy_snowcovered', np.int16, ('time','geoy','geox'))
+        vdoy_start = ncfile.createVariable('Doy_snowcovered', np.int32, ('time','geoy','geox'))
     vdoy_start.units = 'doy'
     vdoy_start.long_name = 'day of year when snow starts covered on ground'
     vdoy_start.Key = "0-365 = land with/without snow, -10 = sea with ice, -20 = sea, -99 = beyond map coverage" ;
@@ -524,9 +523,9 @@ if len(snow_yearly)>0:
     vdoy_start[:,:,:] = vdata
 
     if 'lat' in snow_yearly.keys():
-        vdays_free = ncfile.createVariable('Days_snowfree', np.int16, ('time','lat','lon'))
+        vdays_free = ncfile.createVariable('Days_snowfree', np.int32, ('time','lat','lon'))
     if 'geox' in snow_yearly.keys():
-        vdays_free = ncfile.createVariable('Days_snowfree', np.int16, ('time','geoy','geox'))
+        vdays_free = ncfile.createVariable('Days_snowfree', np.int32, ('time','geoy','geox'))
     vdays_free.units = 'days'
     vdays_free.long_name = 'days in year from snow ends  to starts covered on ground'
     vdays_free.Key = "0-365 = land with/without snow, -10 = sea with ice, -20 = sea, -99 = beyond map coverage" ;

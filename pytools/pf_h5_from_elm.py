@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from optparse import OptionParser
 from Modules_CLMoutput_nc4 import CLM_NcRead_1simulation
 from numpy import float64
+from cmath import nan
 
 
 parser = OptionParser()
@@ -35,7 +36,7 @@ parser.add_option("--endyr", dest="endyr", default="", \
                   help="clm output ending year to plot (default = none, i.e. end of simulation)")
 parser.add_option("--tunit", dest="t_unit", default="Days", \
                   help="output time unit (default = Days, i.e. Days since start-time of simulation)")
-parser.add_option("--pfh5file", dest="pfh5file", default="pfinputs", \
+parser.add_option("--pfh5file", dest="pfh5file", default="pfinputs_fromelm", \
                   help = "pflotran h5 file name without .h5 ")
 
 (options, args) = parser.parse_args()
@@ -135,22 +136,26 @@ for var in varnames:
 #-------------------------------------------------------------------------
 f0 = h5.File(options.pfh5file+'.h5', mode='w')
 
-pf_dataset_name = ['Internal Velocity X', 'Internal Velocity Y', 'Internal Velocity Z','tsoil degC','H2Osoil kg.m-3','vwc m3.m-3']
+pf_dataset_name = ['Internal_Velocity_X(m/s)', 'Internal_Velocity_Y(m/s)', 'Internal_Velocity_Z(m/s)','tsoil(degC)','H2Osoil(kg/m3)','vwc(m3/m3)']
 elm_name = ['NONE', 'NONE', 'QFLX_LIQ_vr','TSOI','SOILLIQ','H2OSOI']
 unit_scalor=[1.e-3,1.e-3,1.e-3,1,1,1]
 unit_offset=[0,0,0,-273.15,0,0]
 
-for i in it:
-    group = 'Time: '+ str("{:E}".format(tt[i])) +' d'
-    # PFLOTRAN h5 data grouped by 'Time' steps
-    f0.create_group(group, track_order=None)
-    for iv in range(len(pf_dataset_name)):
-        rarray = np.zeros(varsdata_sorted[var][i].shape, dtype=float64)
-        if elm_name[iv] != 'NONE':
+for iv in range(len(pf_dataset_name)):
+    if elm_name[iv] != 'NONE':
+        var = elm_name[iv]
+        rarray = np.zeros(tt.shape+varsdata_sorted[var][0].shape, dtype=float64)
+        for i in it:
             # from ELM column vertical flow (note: no lateral flow from ELM)
-            rarray[...] = varsdata_sorted[elm_name[iv]][i]
-            rarray[np.where(np.isnan(rarray))] = 0.0
-        f0.create_dataset(group+'/'+pf_dataset_name[iv], rarray.shape, float64, 
+            rarray[i,...] = varsdata_sorted[var][i]
+        rarray[np.where(np.isnan(rarray))] = np.nan
+
+        # PFLOTRAN h5 data grouped by dataset var name
+        group = pf_dataset_name[iv]
+        #'Time: '+ str("{:E}".format(tt[i])) +' d'
+        f0.create_dataset(group+'/Times', tt.shape, float64, tt[it]*86400.0) # Times in unit of seconds
+        
+        f0.create_dataset(group+'/Data', rarray.shape, float64, 
                           rarray*unit_scalor[iv]+unit_offset[iv])
 
         

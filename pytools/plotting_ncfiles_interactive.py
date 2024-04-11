@@ -38,7 +38,7 @@ def One2OnePlotting(plt, nrow, ncol, isubplot, data1, data2, datalabel, plotlabe
 
     plt.legend([datalabel,'1:1'], loc=2, fontsize=12)
     plt.xlabel('ELM Simulation', fontsize=12, fontweight='bold')
-    plt.ylabel('NIC-IMS Observation', fontsize=12, fontweight='bold')
+    plt.ylabel('NIC-IMS Derived', fontsize=12, fontweight='bold')
 
     ax_user=plt.gca()
     ax_user.tick_params(axis = 'both', which = 'major', labelsize = 16)
@@ -150,12 +150,14 @@ def TimeGridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, 
         gridtext.append(("GRID "+str(0)))
         plt.plot(t, sdata, 'o-')
         
-    gridtext = ["ELM Simulation","NIC-IMS Observation"]
+    gridtext = ["ELM Simulation","NIC-IMS Snow-coverage Derived"]
     plt.legend((gridtext), loc=2, fontsize=12)
     
 
     plt.xlabel(t_unit, fontsize=12, fontweight='bold')    
     plt.ylabel(varname, fontsize=12, fontweight='bold')
+    plt.xlim(2003,2022)
+    plt.ylim(100,165)
     
     ax_user=plt.gca()
     ax_user.tick_params(axis = 'both', which = 'major', labelsize = 16)
@@ -255,9 +257,9 @@ gdata2[tij,] = np.nan
 
 # remove 'outlier'
 if('snowfree' in vname):
-    ij=np.where((gdata<=0) | (gdata>=365))
+    ij=np.where((gdata<=0) | (gdata>=300))
     gdata[ij] = np.nan
-    ij=np.where((gdata2<=0) | (gdata2>=365))
+    ij=np.where((gdata2<=0) | (gdata2>=300))
     gdata2[ij]= np.nan
 if('snowmelted' in vname):
     ij=np.where((gdata<=0) | (gdata>=365))

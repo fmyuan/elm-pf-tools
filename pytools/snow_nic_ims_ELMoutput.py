@@ -552,8 +552,8 @@ if (options.imsheader != ""):
             # done with if (ncfile is the first of alldirfiles)
             
             daynums_from_elm = np.empty((0),np.float32)
-            elm_it_all = np.empty((0),np.int)
-            ims_it_all = np.empty((0),np.int)
+            elm_it_all = np.empty((0),np.int32)
+            ims_it_all = np.empty((0),np.int32)
             
             # (1) ELM and IMS grid-matching for each time-interval of IMS data
             for it in range(tt[0:].size):

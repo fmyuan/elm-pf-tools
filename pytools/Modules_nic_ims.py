@@ -44,7 +44,7 @@ def Prep_ims_grid(res, minlat=None, lonlat2xy=False):
         imslons = np.fromfile(file_imslons,dtype=np.float32) # flat binary 4-byte floating-point
         imslats = np.fromfile(file_imslats,dtype=np.float32)
         # the grids are actually in square, with centroid in North-Polar point nearby (-80/90)
-        n = np.int(np.sqrt(imslats.size))
+        n = np.int32(np.sqrt(imslats.size))
         if n!=np.sqrt(imslats.size):
             print('NOT a squared grid-domain: x, y - ', n, np.sqrt(imslats.size))
             sys.exit()
@@ -88,9 +88,9 @@ def Prep_ims_grid(res, minlat=None, lonlat2xy=False):
         imsxm,imsym = lonlat2xyOP.transform(imslons,imslats)
         
         # since in X/Y meters, it shall be equally intervalled as 'res', e.g. 4km
-        imsxm = imsxm[0,:].astype(np.int) # grid-x nodes
+        imsxm = imsxm[0,:].astype(np.int32) # grid-x nodes
         imsxm = (np.round(imsxm/10))*10 # there is ~5m error from original data
-        imsym = imsym[:,0].astype(np.int) # grid-y nodes
+        imsym = imsym[:,0].astype(np.int32) # grid-y nodes
         imsym = (np.round(imsym/10))*10 # there is ~5m error from original data
         
         
@@ -117,8 +117,8 @@ def Prep_ims_snowcov(ifile, fileheader, varname, alldata={}):
         yrdoy = fname.split('_')[0]
         yrdoy = yrdoy.replace('ims','')
 
-        year  = np.int(yrdoy[:4])
-        doy   = np.int(yrdoy[4:])
+        year  = np.int32(yrdoy[:4])
+        doy   = np.int32(yrdoy[4:])
         doy0  = date(year,1,1)
         daynums = date2num(doy0)+doy-1
         mid_day = num2date(daynums).date()
@@ -140,7 +140,7 @@ def Prep_ims_snowcov(ifile, fileheader, varname, alldata={}):
                 if len(data)>0:
                     data = re.split('\W+|\bt',data.strip())
                     data = np.asarray(data,dtype=np.float32)
-                    n = np.int(np.sqrt(len(data)))
+                    n = np.int32(np.sqrt(len(data)))
                     if n==np.sqrt(len(data)):
                         data = np.reshape(data,(n,n))
                     else:
@@ -409,16 +409,16 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True, FillValue=None,
                 vdate.units = ''
                 vdate.long_name = 'date in format of yyyymmdd'
 
-                vdoy = ncfile.createVariable('doy', np.int16, ('time',))
+                vdoy = ncfile.createVariable('doy', np.int32, ('time',))
                 vdoy.units = 'doy'
                 vdoy.long_name = 'day of year'
 
-                vyear = ncfile.createVariable('year', np.int16, ('time',))
+                vyear = ncfile.createVariable('year', np.int32, ('time',))
                 vyear.units = 'year'
                 vyear.long_name = 'year in format yyyy'
 
                 # when using VISIT, it shows 'time' as cycle of multiple time-series
-                vtime = ncfile.createVariable('time', np.int16, ('time',))
+                vtime = ncfile.createVariable('time', np.int32, ('time',))
                 if YEARLY:
                     vtime.units = 'year'
                     vtime.long_name = 'year in format yyyy'
