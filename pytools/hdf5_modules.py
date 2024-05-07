@@ -7,7 +7,6 @@ import numpy as np
 import h5py as h5
 from datetime import datetime, date
 
-from mpl_toolkits.basemap import Basemap
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 

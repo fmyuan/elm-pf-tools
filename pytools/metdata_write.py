@@ -19,8 +19,8 @@ import Modules_metdata
 #from Modules_metdata import singleNCDCReadCsvfile         # NCDC 
 #from Modules_metdata import subsetDaymetRead1NCfile       # DAYMET in nc4 format
 #from Modules_metdata import singleDaymetReadCsvfile       # DAYMET in csv format
-from hdf5_modules import Read1hdf                         # for ATS metdata in h5 format
-from Modules_plots import SubPlotting, SinglePlotting, One2OnePlotting,TimeGridedVarPlotting
+#from hdf5_modules import Read1hdf                         # for ATS metdata in h5 format
+#from Modules_plots import SubPlotting, SinglePlotting, One2OnePlotting,TimeGridedVarPlotting
 import netcdf_modules as nfmod
 
 
@@ -37,6 +37,8 @@ parser.add_option("--user_metdir", dest="user_metdir", default="./", \
                   help="user-defined met directory (default = ./, i.e., under current directory)")
 parser.add_option("--user_metfile", dest="user_metfile", default="", \
                   help="user-defined met file(s) under user_metdir (default = '', i.e., None)")
+parser.add_option("--user_metvars", dest="user_metvars", default="", \
+                  help="user-defined met file(s) var names by exact order of 'LONGXY,LATIXY,time,TBOT,PRECTmms,QBOT,FSDS,FLDS,PSRF,WIND' ")
 parser.add_option("--estFLDS", dest="estFLDS", default=False, \
                   help = "Estimating FLDS", action="store_true")
 parser.add_option("--nc_create", dest="nc_create", default=False, \
@@ -51,38 +53,67 @@ parser.add_option("--ncout_mettype", dest="nc_write_mettype", default="", \
 #--------------------------------------------------------------------------------------
 
 if('Site' in options.nc_write_mettype or 'cplbypass_Site' in options.nc_write_mettype): 
-    vnames=['TBOT', 'PRECTmms', 'RH', 'FSDS', 'FLDS', 'PSRF', 'WIND']
+    vnames=['LONGXY','LATIXY','time', \
+            'TBOT', 'PRECTmms', 'RH', 'FSDS', 'FLDS', 'PSRF', 'WIND']
 else:
-    vnames=['TBOT', 'PRECTmms', 'QBOT', 'FSDS', 'FLDS', 'PSRF', 'WIND']
+    vnames=['LONGXY','LATIXY','time', \
+            'TBOT', 'PRECTmms', 'QBOT', 'FSDS', 'FLDS', 'PSRF', 'WIND']
 
 
 #--------------------------------------------------------------------------------------
 # read-in metdata from totally user-defined data
 
 if (options.user_metfile!=''):
-    metfile = options.user_metdir+'/'+options.user_metfile
-    odata_header,odata = \
-        Modules_metdata.singleReadCsvfile(metfile)
-    
-    #LONGXY = [210.4033]
-    #LATIXY = [68.6333]
-    LONGXY = [196.4215]
-    LATIXY = [65.44037]
-    # need to recalculate time
-    tvarname = 'time'    # variable name for time/timing
-    
-    vardatas = {}
-    vardatas['time']=(odata['YEAR']-1.0)*365.0+(odata['DOY']-1.0) + \
-                     (odata['HOUR']/24.0)  # days since 0001-01-01 00:00:00
-    lpyrindex=[i for i, x in enumerate(odata['DOY']) if x == 366.0 ]  # NCDC data is in leap-year calender. Here simply remove last day of the year
-    vardatas['time']=np.delete(vardatas['time'],lpyrindex)
-    tunit = 'days since 0001-01-01 00:00'
 
+    metfile = options.user_metdir+'/'+options.user_metfile
+    if (options.user_metvars ==''):
+        user_metvars = vnames
+    else:
+        user_metvars = options.user_metvars.split(',')
+
+    vardatas = {}
+    if ('csv' in metfile):
+        odata_header,odata = \
+            Modules_metdata.singleReadCsvfile(metfile)
+        vardatas['time']=(odata['YEAR']-1.0)*365.0+(odata['DOY']-1.0) + \
+                     (odata['HOUR']/24.0)  # days since 0001-01-01 00:00:00
+        tunit = 'days since 0001-01-01 00:00'
+        
+        prect_unit = 'mm/day'
+        
+        # may need to manually set lat/lon
+        LONGXY = [210.4033]
+        LATIXY = [68.6333]
+        #LONGXY = [196.4215]
+        #LATIXY = [65.44037]
+    elif ('nc' in metfile):
+        odata_header,odata = \
+            Modules_metdata.singleReadNcfile(metfile, \
+                                             uservars=user_metvars)
+        vardatas['time']= odata['time'] # odata is in days since 1901-01-01 00:00:00
+                        
+        tunit = 'days since 1901-01-01 00:00'
+        prect_unit = 'mm/s'
+
+        LONGXY= odata['LONGXY']
+        LATIXY= odata['LATIXY']
+
+        for iv in vnames:
+            if iv not in odata_header :
+                sys.exit(iv + ' or its equivalent NOT in: '+metfile)
+            if iv!='time': vardatas[iv] = odata[iv]
+    
+    # 
     varsdims = {}
-    for ivar in odata_header:
-        varsdims[ivar]  = tvarname
-        vardatas[ivar]=np.delete(odata[ivar],lpyrindex)
-    del odata_header, odata
+    
+    if ('DOY' in odata.keys()):
+        lpyrindex=[i for i, x in enumerate(odata['DOY']) if x == 366.0 ]  
+        # some datasets, eg. NCDC data,  is in leap-year calender. Here simply remove last day of the year
+        vardatas['time']=np.delete(vardatas['time'],lpyrindex)
+        for ivar in odata_header:
+            varsdims[ivar]  = 'time'
+            vardatas[ivar]=np.delete(odata[ivar],lpyrindex)
+        del odata_header, odata
 
     # usually  either 'RH' or 'QBOT' is available, but if the other is required
     if 'QBOT' in vardatas.keys() and 'RH' not in vardatas.keys():
@@ -148,36 +179,62 @@ if (options.nc_create or options.nc_write):
         print('Write to existed ELM forcing data ? ', options.nc_write)
     
     # get a template ELM forcing data nc file 
-    ncfilein = ''
-    ncfilein_cplbypass = ''
-    metdir = options.met_idir
-    if metdir=='': metdir='./'
+    ncfilein = ''; ncfilein_prv = ''
+    ncfilein_cplbypass = ''; ncfilein_cplbypass_prv = ''
+    metidir = options.met_idir
+    if metidir=='': metidir='./'
     mdoy=[0,31,59,90,120,151,181,212,243,273,304,334,365]#monthly starting DOY
     
     for varname in vnames:
+        if varname in ['LONGXY','LATIXY','time']: continue  #skip and always write if new output nc file
         
         if 'GSWP3' in met_type:
             if (varname == 'FSDS'):
-                fdir = metdir+'/Solar3Hrly/'
+                fdir = metidir+'/Solar3Hrly/'
             elif (varname == 'PRECTmms'):
-                fdir = metdir+'/Precip3Hrly/'
+                fdir = metidir+'/Precip3Hrly/'
             else:
-                fdir = metdir+'/TPHWL3Hrly/'
+                fdir = metidir+'/TPHWL3Hrly/'
             ncfilein = sorted(glob.glob("%s*.nc" % fdir))
             ncfilein = ncfilein[0]
             
-            fdirheader = metdir+'/GSWP3_'+varname+'_'
+            fdirheader = metidir+'/GSWP3_'+varname+'_'
             ncfilein_cplbypass = sorted(glob.glob("%s*.nc" % fdirheader))
             ncfilein_cplbypass = ncfilein_cplbypass[0]
             
         elif 'site' in met_type.lower():
-            fdir = metdir+'/'
+            fdir = metidir+'/'
             # So 'metdir' must be full path, e.g. ../atm/datm7/CLM1PT_data/1x1pt_US-Brw
             ncfilein_cplbypass=fdir+'all_hourly.nc'
             
             ncfilein = sorted(glob.glob("%s/????-??.nc" % fdir))
             ncfilein = ncfilein[0]
+        elif 'crujra' in met_type or 'CRUJRA' in met_type:
+            if (varname == 'FSDS'):
+                fdir = metidir+'/Solar6Hrly/'
+            elif (varname == 'PRECTmms'):
+                fdir = metidir+'/Precip6Hrly/'
+            else:
+                fdir = metidir+'/TPHWL6Hrly/'
+            ncfilein = sorted(glob.glob("%s*.nc" % fdir))
+            if len(ncfilein)>0: ncfilein = ncfilein[0]
+            
+            fdirheader = metidir+'/cpl_bypass_full/CRUJRAV2.3.c2023.0.5x0.5_'+varname+'_'
+            ncfilein_cplbypass = sorted(glob.glob("%s*.nc" % fdirheader))
+            if len(ncfilein)<=0 and len(ncfilein_cplbypass)<=0:
+                sys.exit('there is NO file as -'+fdirheader)
+            ncfilein_cplbypass = ncfilein_cplbypass[0]
         
+        # new template nc file, and has a prv file 
+        if options.nc_write and ncfilein_prv != ncfilein and \
+                                ncfilein_prv != '':
+            options.nc_create = True
+            options.nc_write = False
+        if options.nc_write and ncfilein_cplbypass_prv != ncfilein_cplbypass and \
+                                ncfilein_cplbypass_prv != '':
+            options.nc_create = True
+            options.nc_write = False
+                    
         # new met nc files to create or write
         
         #(1) in non-cplbypass format
@@ -190,13 +247,22 @@ if (options.nc_create or options.nc_write):
                         
                         tidx = np.argwhere((vardatas['YEAR']==iyr) & 
                                            (vardatas['DOY']>mdoy[imon-1]) & (vardatas['DOY']<=mdoy[imon])) #DOY starting from 1
-                        t_jointed=vardatas[tvarname][tidx]
+                        t_jointed=vardatas['time'][tidx]
                         sdata = vardatas[varname][tidx]
                         sdata = sdata[..., np.newaxis] # in 'Site' forcing-data format, dimension in (time, lat, lon), while 'sdata' is in (time, gridcell) 
                         
                         # create nc file
                         if options.nc_create:
-                            nfmod.dupexpand(ncfilein, ncfileout, dim_name=tname, dim_len=len(t_jointed))
+                            with Dataset(ncfilein,'r') as src, Dataset(ncfileout, "w") as dst:
+                                
+                                #------- new nc dimensions
+                                for dname, dimension in src.dimensions.items():
+                                    len_dimension = len(dimension)
+                                    if dname == 'LATIXY': len_dimension = len(LATIXY)
+                                    if dname == 'LONGXY': len_dimension = len(LONGXY)                                    
+                                    if dname == tname: len_dimension = len(t_jointed)
+                                    
+                                    dst.createDimension(dname, len_dimension if not dimension.isunlimited() else None)
 
                             # time and locations
                             try:
@@ -225,40 +291,61 @@ if (options.nc_create or options.nc_write):
                         if error!=0: sys.exit('nfmod.putvar WRONG-'+varname+'-'+ncfileout)
                     #end of month loop
                 #end of year loop
-                if (not NCOUT_CPLBYPASS and options.nc_create): # If not write cpl_bypass format file
+                if (not NCOUT_CPLBYPASS and options.nc_create): # If not create cpl_bypass format file
                     options.nc_write = True
                     options.nc_create= False
         
         #(2) in cplbypass format (NOTE: can output both original and cplbypass)
         if (NCOUT_CPLBYPASS): print('cpl_bypass template file: '+ ncfilein_cplbypass)
         if (NCOUT_CPLBYPASS and ncfilein_cplbypass!=''):
-            if 'site' in met_type.lower()  or 'GSWP3' in met_type: 
+            if 'site' in met_type.lower()  or 'GSWP3' in met_type or 'crujra' in met_type.lower(): 
                 if 'site' in met_type.lower():
                     ncfileout_cplbypass='all_hourly.nc'
-                elif 'GSWP3' in met_type:
+                elif 'gswp3' in met_type.lower() or 'crujra' in met_type.lower():
                     ncfileout_cplbypass=ncfilein_cplbypass.split('/')[-1]
                 else:
-                    print('currently only support 2 types of cpl_bypass: Site or GSWP3*')
+                    print('currently only support 3 types of cpl_bypass: Site or GSWP3* or CRUJRA')
                     sys.exit(-1)
                     
                 tname = 'DTIME'
-                t_jointed=vardatas[tvarname]
+                t_jointed=vardatas['time']
                 sdata = vardatas[varname]
                 
                 if (options.nc_create):
-                    nfmod.dupexpand(ncfilein_cplbypass, ncfileout_cplbypass, dim_name=tname, dim_len=len(t_jointed))
-                    # ONLY create new nc ONCE
+                    with Dataset(ncfilein_cplbypass,'r') as src, Dataset(ncfileout_cplbypass, "w") as dst:
+                        
+                        #------- new nc dimensions
+                        for dname, dimension in src.dimensions.items():
+                            len_dimension = len(dimension)
+                            if dname == 'n': len_dimension = len(LONGXY)
+                            if dname == tname: len_dimension = len(t_jointed)
+                            
+                            dst.createDimension(dname, len_dimension if not dimension.isunlimited() else None)
+
+                        # variables
+                        for vname in src.variables.keys():
+                            vtype = src.variables[vname].datatype
+                            vdim = src.variables[vname].dimensions
+                            dst.createVariable(vname, vtype, vdim)
+                            dst[vname].setncatts(src[vname].__dict__)
+
+
+                    # ONLY create new nc ONCE, and save file I/O name
                     options.nc_create = False
                     options.nc_write = True
+                    ncfilein_cplbypass_prv = ncfilein_cplbypass
+                    ncfileout_cplbypass_prv= ncfileout_cplbypass
                     
                     # time
                     try:
                         tunit = Dataset(ncfilein_cplbypass).variables[tname].getncattr('units')
                         t0=str(tunit.lower()).strip('days since')
-                        if (t0.endswith(' 00')):
-                            t0=t0+':00:00'
-                        elif(t0.endswith(' 00:00')):
+                        if(t0.endswith(' 00:00')):
                             t0=t0+':00'
+                        elif (t0.endswith(' 00')):
+                            t0=t0+':00:00'
+                        else:
+                            t0=t0+' 00:00:00'
                         t0=datetime.strptime(t0,'%Y-%m-%d %X') # time must be in format '00:00:00'
                         yr0=np.floor(t_jointed[0]/365.0)+1
                         t=t_jointed - (yr0-1)*365.0
@@ -281,7 +368,8 @@ if (options.nc_create or options.nc_write):
                     
                 
                 #elif(options.nc_write):
-                if (varname=='PRECTmms'): sdata=sdata/86400.0 # mm/day -> mm/s
+                if (varname=='PRECTmms' and prect_unit=='mm/day'): 
+                    sdata=sdata/86400.0 # mm/day -> mm/s
                 # scaling data as initeger
                 if (varname=='PRECTmms'):
                     data_ranges = [-0.04, 0.04]
@@ -306,7 +394,9 @@ if (options.nc_create or options.nc_write):
                 # TIP: when data written, the input valule is in unpacked and the python nc4 program will do packing
                 # the following line IS WRONG
                 # varvals = (sdata_jointed-add_offset)/scale_factor # this IS WRONG when written, i.e. NOT NEEDED absolutely
-                varvals = np.reshape(sdata, (1,-1)) # in CPL_BYPASS forcing-data format, dimension in (gridcell, DTIME) 
+                
+                # varvals = np.reshape(sdata, (1,-1)) # depending on source data, in CPL_BYPASS forcing-data format, dimension in (gridcell, DTIME) 
+                varvals = sdata
                 
                 # varatts must in format: 'varname::att=att_val; varname::att=att_val; ...'
                 varatts = varname+'::add_offset='+str(add_offset)+ \

@@ -100,9 +100,9 @@ parser.add_option("--endyr", dest="endyr", default="", \
 parser.add_option("--plot_tunit", dest="t_unit", default="Days", \
                   help="X-axis time unit (default = Days, i.e. Days since start-time of simulation)")
 parser.add_option("--lon", dest="lon", default=-999, \
-                  help = " longitude to be reading/plotting, default -999 for first one")
+                  help = " longitude to be reading/plotting, default -999 for all pts or 0 for first pt")
 parser.add_option("--lat", dest="lat", default=-999, \
-                  help = " latitude to be reading/plotting, default -999 for first one")
+                  help = " latitude to be reading/plotting, default -999 for all pts or 0 for first pt")
 parser.add_option("--seasonally", dest="seasonally", default=False, \
                   help = "averaged over years to get seasonal", action="store_true")
 parser.add_option("--annually", dest="annually", default=False, \
@@ -183,19 +183,18 @@ if (options.clmncheader != '' and options.met_type == 'ELM'):
     nxy = nx*ny
 
     # if given pts
-    if options.lon==-999:
-        ix=0
-    elif options.lon==-1:
+    if options.lon==0:
+        ix = 0 # for the first points
+    elif options.lon<0:
         ix = -1 # for all points
     else:
         ix=float(options.lon)
-    if options.lat==-999:
-        iy=0
-    elif options.lat==-1:
+    if options.lat==0:
+        iy=0  # for the first points
+    elif options.lat<0:
         iy = -1 # for all points
     else:
         iy=float(options.lat)
-    if ix>=0 and iy >= 0: nx=1; ny=1; nxy=1   # if ix/iy = -1, comment out
 
 #--------------------------------------------------------------------------------------
 
@@ -217,6 +216,8 @@ if ('cplbypass' in options.met_type):
     elif ('ESM' in options.met_type): 
         cplbypass_mettype='ESM'
         if ('daymet' in options.met_type): cplbypass_mettype='ESM_daymet'
+    elif (options.met_header != ''):
+        cplbypass_mettype = options.met_header
     lon = float(options.lon)
     lat = float(options.lat)
 
@@ -235,9 +236,12 @@ if ('cplbypass' in options.met_type):
     if2dgrid = False
     nxy=nx*ny
 
-    ix = 0   # -1 for all points
-    iy = 0
-    if ix>=0 and iy >= 0: nx=1; ny=1; nxy=1   # if ix/iy = -1, comment out
+    ix = 0 # for 1 point
+    iy = 0    
+    if options.lon<0:
+        ix = -1 # for all points
+    if options.lat<0:
+        iy = -1 # for all points
 
     tvarname = 'DTIME'    # variable name for time/timing
     #cplvars =  ['DTIME','tunit','t0_datetime','LONGXY','LATIXY',
@@ -423,7 +427,7 @@ for var in varnames:
 
     #plotting
     vname = varnames[varnames.index(var)]
-    t = np.asarray(t)*day_scaling # + tunit0
+    t = np.asarray(t)*day_scaling + tunit0
     GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, \
                         vname, '(a) All Grids')
 

@@ -5,6 +5,7 @@ from netCDF4 import Dataset
 from netCDF4 import Variable
 from array import array
 from numpy import newaxis
+from numpy._typing._char_codes import _Float64Codes
 
 #----------------------------------------------------------------------------             
 def getvar(ncfile, varname):
@@ -77,7 +78,7 @@ def putvar(ncfile, varname, varvals, varatts=''):
             if isinstance(varvals, dict): #multiple dataset for corresponding same numbers of varname
                 for v in varname:
                     if v in f.variables.keys():
-                        if f.variables[v].dtype!=np.float:
+                        if f.variables[v].dtype!=float:
                             val=np.ma.masked_where(np.isnan(varvals[v]), varvals[v])
                         else:
                             val=np.copy(varvals[v])
@@ -85,7 +86,8 @@ def putvar(ncfile, varname, varvals, varatts=''):
             else:                        #exactly 1 dataset in np.array for 1 varname
                 v=varname[0]
                 if v in f.variables.keys():
-                    if f.variables[v].dtype!=np.float:
+                    if f.variables[v].dtype!=float or \
+                      (f.variables[v].dtype!=np.float64 or f.variables[v].dtype!=np.float32):
                         # nan is not dtype of integers
                         val=np.ma.masked_where(np.isnan(varvals), varvals)
                     else:
@@ -105,7 +107,7 @@ def putvar(ncfile, varname, varvals, varatts=''):
 def dupexpand(ncfilein, ncfileout,dim_name='',dim_len=-999, dim_multipler=1):
     # dim_len -999, no-change; dim_len 0, unlimited; dime_len positive, re-size
     # but dim_multipler must be 1 (obviously)
-    if type(dim_name)==str and (dim_len>=0 and len(dim_multipler)>1):
+    if type(dim_name)==str and (dim_len>=0 and dim_multipler>1):
         print('Error: cannot have new-dim_len and multiplied len -', dim_len, dim_multipler)
         os.sys.exit(-1)
     
@@ -149,14 +151,14 @@ def dupexpand(ncfilein, ncfileout,dim_name='',dim_len=-999, dim_multipler=1):
             varvals = np.copy(src[name][...])
             for dim in dim_name:
                 if dim in variable.dimensions:
-                     if dim_len[dim_name.index(dim)]>0:
+                    if dim_len[dim_name.index(dim)]>0:
                         dim_indx = variable.dimensions.index(dim)
                         resizer = dim_len[dim_name.index(dim)]
                         if(resizer>np.size(varvals, axis=dim_indx)):
                             tmp=np.zeros(dst.variables[name].shape)
                             # the following is slow, if length too big
                             tmp = varvals
-                            esizer = resizer - np.size(varvals, axis=dim_indx)
+                            resizer = resizer - np.size(varvals, axis=dim_indx)
                             while resizer>1:
                                 varval = np.take(varvals, [0], axis=dim_indx)
                                 tmp=np.concatenate((tmp,varval), axis=dim_indx)
@@ -164,15 +166,15 @@ def dupexpand(ncfilein, ncfileout,dim_name='',dim_len=-999, dim_multipler=1):
                         else:
                             tmp = np.take(varvals, range(resizer), axis=dim_indx)
                     
-                     elif dim_multipler[dim_name.index(dim)]>1:
+                    elif dim_multipler[dim_name.index(dim)]>1:
                         dim_indx = variable.dimensions.index(dim)
                         multipler = dim_multipler[dim_name.index(dim)]
                         tmp=varvals
                         while multipler>1:
                             tmp=np.concatenate((tmp,varvals), axis=dim_indx)
                             multipler-=1
-                     #
-                     varvals=tmp
+                    #
+                    varvals=tmp
             #           
                 
             dst[name][...] = np.copy(varvals)
@@ -532,7 +534,7 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
                     varvals[:,:,:,:,...]=tmp[:,:,:,newaxis]
                 else:
                     print('Error:  dimension over 4 not supported')
-                    sys.exit()
+                    exit(-1)
             #
                 
             dst[name][...] = np.copy(varvals)

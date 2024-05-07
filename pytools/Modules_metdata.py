@@ -11,6 +11,7 @@ from matplotlib.pyplot import axis
 import glob
 #import dask.dataframe as dd
 import netcdf_modules as ncmod
+#from src.pytools.metdata_checking import tunit
 
 #ncopath = '/usr/local/nco/bin/'
 #####################################################################################################
@@ -760,7 +761,7 @@ def clm_metdata_cplbypass_read(filedir,met_type, vars, lons=[-999], lats=[-999])
         print('paired "lons=,lats=" must be in same length', len(lons), len(lats) )
         sys.exit(-1)
     #
-    if('GSWP3' in met_type or 'ESM' in met_type):
+    if('GSWP3' in met_type or 'ESM' in met_type or 'CRUJRA' in met_type):
         # zone_mapping.txt
         f_zoning = filedir+'/zone_mappings.txt'
         all_lons=[]
@@ -786,8 +787,10 @@ def clm_metdata_cplbypass_read(filedir,met_type, vars, lons=[-999], lats=[-999])
         # look-up zone/line to extract
         zone = []; zline = {}
         i={}; j={}
-        if(lons[0]==-999):
+        if(lons[0]<0):
             i[0] = np.asarray(range(len(all_lons)))
+        elif(lons[0]==0):
+            i[0] = [0]
         else:
             idx=np.where(lons<0.0)
             if len(idx[0])>0: lons[idx]=360.0+lons[idx] # convert longitude in format of 0 - 360
@@ -795,8 +798,10 @@ def clm_metdata_cplbypass_read(filedir,met_type, vars, lons=[-999], lats=[-999])
                 lon_i=all_lons[np.argmin(abs(all_lons-lons[ix]))]
                 i[ix]=np.where(all_lons == lon_i)[0]# in general, there are many numbers of 'lon' in 'all_lons' 
         
-        if(lats[0]==-999):
+        if(lats[0]<0):
             j[0] = np.asarray(range(len(all_lats)))
+        elif(lats[0]==0):
+            j[0] = [0]
         else:
             for iy in range(len(lats)):
                 lat_j=all_lats[np.argmin(abs(all_lats-lats[iy]))]
@@ -820,6 +825,10 @@ def clm_metdata_cplbypass_read(filedir,met_type, vars, lons=[-999], lats=[-999])
     elif ('Site' in met_type):
         zone=[1]
         zline={}; zline[1]=1
+    else:
+        print('NOT supported CPLBYPASS format - ', met_type)
+        sys.exit()
+        
 
     #file
     met ={}
@@ -843,8 +852,8 @@ def clm_metdata_cplbypass_read(filedir,met_type, vars, lons=[-999], lats=[-999])
     
     mdoy=[0,31,59,90,120,151,181,212,243,273,304,334]#monthly starting DOY
     for iv in range(len(vars)):
-        v = vars[iv]
-        if('GSWP3' in met_type or 'Site' in met_type or 'ESM' in met_type):
+        #if('GSWP3' in met_type or 'Site' in met_type or 'ESM' in met_type):
+            v = vars[iv]
             varlist=['FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
             if 'Site' in met_type:
                 varlist=['FLDS','FSDS','PRECTmms','PSRF','RH','TBOT','WIND']
@@ -868,6 +877,9 @@ def clm_metdata_cplbypass_read(filedir,met_type, vars, lons=[-999], lats=[-999])
                     else:
                         file=filedir+'/ESM_'+v+'_2021-2099_z'+str(int(iz)).zfill(2)+'.nc'
                 
+                elif('CRUJRA' in met_type):
+                    file=filedir+'/CRUJRAV2.3.c2023.0.5x0.5_'+v+'_1901-2021_z'+str(int(iz)).zfill(2)+'.nc'
+
                 elif('Site' in met_type):
                     file=filedir+'/all_hourly.nc'
                 
@@ -922,7 +934,7 @@ def clm_metdata_cplbypass_read(filedir,met_type, vars, lons=[-999], lats=[-999])
     
                 if(v in fnc.variables.keys()): 
                     d = fnc.variables[v][zline[iz]-1,:]
-                    if (d.dtype==np.float or d.dtype==np.float32): 
+                    if (d.dtype==float or d.dtype==np.float32  or d.dtype==np.float64): 
                         d[np.where(d.mask)] = np.nan
                     else:
                         d[np.where(d.mask)] = -9999
@@ -1123,6 +1135,107 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, vars):
     return ix,iy, vdims,met
     
 ####################################################################################################
+
+#------ ------ Read a single ELM met NC file user-defined 
+
+def singleReadNcfile(metdirfile, uservars=None, \
+                    lons=[-999], lats=[-999]):
+    #
+    if (len(lons)!=len(lats)):
+        print('paired "lons=,lats=" must be in same length', len(lons), len(lats) )
+        sys.exit(-1)
+    
+    # standard ELM met vars
+    elmvars=['LONGXY','LATIXY','time', \
+            'TBOT', 'PRECTmms', 'QBOT', 'FSDS', 'FLDS', 'PSRF', 'WIND']
+    
+    #
+    metdata = {}
+    
+    #file        
+    fnc = Dataset(metdirfile,'r')
+
+    # user-input met vars
+    if uservars is None:
+        # in this case, var names are exactly as 'elmvars'
+        uservars = list(fnc.variables.keys())
+        for v in elmvars:
+            if v not in uservars:
+                print('Error: '+v+' not in: '+metdirfile )
+                exit(-1)
+    else:
+        print('user-defined var name: ', uservars)
+        print('make sure they are in order of: ', elmvars)       
+    
+    # grid x/y variable name in nc file
+    var_x = ['LONGXY','lon','longitude','x','geox']
+    var_y = ['LATIXY','lat','latitude','y','geoy']
+    gridxname = uservars[1]
+    gridyname = uservars[0]
+    if (gridyname in fnc.variables.keys()):        
+        metdata['LATIXY']=np.asarray(fnc.variables[gridyname])
+    else:
+        print('Warning: grid lat/y varname is NOT one of ',var_y)
+    if (gridxname in fnc.variables.keys()):        
+        metdata['LONGXY']=np.asarray(fnc.variables[gridxname])
+    else:
+        print('Warning: grid lon/x varname in NOT one of ', var_x)
+    
+    # time variable
+    vtime = uservars[2] #'time'
+    mdoy=[0,31,59,90,120,151,181,212,243,273,304,334]#monthly starting DOY
+
+    if (vtime in fnc.variables.keys()):
+        t=np.asarray(fnc.variables[vtime])
+        
+        if('units' in fnc.variables[vtime].ncattrs()):
+            tunit= fnc.variables[vtime].getncattr('units')
+            tunit=tunit.lower()
+            if ('days since' in tunit or 'hours since' in tunit):
+                if 'days since' in tunit: t0=str(tunit).strip('days since')
+                if 'hours since' in tunit: t0=str(tunit).strip('hours since')
+                
+                # t starting point
+                if (t0.endswith(' 00:00')): 
+                    t0=t0+':00' # in case time written NOT exactly in 00:00:00
+                elif (t0.endswith(' 00')): 
+                    t0=t0+':00:00'
+                else:
+                    t0=t0+' 00:00:00'
+                t0=datetime.strptime(t0,'%Y-%m-%d %X')
+                y0=t0.year
+                m0=t0.month
+                d0=t0.day-1.0
+                days0 = (y0-1901)*365+mdoy[m0-1]+d0+t0.second/86400.0 # force days since 1901-01-01 00:00:00
+                
+                if 'days since' in tunit: t = t + days0
+                if 'hours since' in tunit: t = t/24.0 + days0
+                
+                metdata['time']=t
+                metdata['tunit']='days since 1901-01-01 00:00:00'
+
+    # met variables
+    for iv in range(len(uservars)):
+        v = uservars[iv].strip()   # user-provided var name
+        elmv = elmvars[iv] # standard var name
+        if v in [vtime, gridxname, gridyname]: continue  # skip 
+                
+        #
+        if(v in fnc.variables.keys()): 
+            d = fnc.variables[v][...]
+            if(v not in metdata.keys()):
+                metdata[elmv] = d 
+            else:
+                metdata[elmv] = np.vstack((metdata[elmv],d))
+    
+    # when done ncfile, close it.
+    fnc.close()
+    #
+    #  
+    metdata_header = metdata.keys()
+   
+    return metdata_header, metdata
+    
 #
 # -------Read 1 site met data, *.csv, TOTALLY user-defined ----------------
 #
@@ -1600,7 +1713,7 @@ def multiple_cplbypass_extraction(fsites):
 
 #clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', 203.1241, 70.5725,ncopath='/usr/local/nco/bin/') #BEO
 #clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', -157.4089, 70.4696,ncopath='/usr/local/nco/bin/')  #ATQ
-clm_metdata_cplbypass_extraction('./', 'CRUJRAV2.3.c2023.0.5x0.5', -97.0287, 27.9798, ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/')  #test
+#clm_metdata_cplbypass_extraction('./', 'CRUJRAV2.3.c2023.0.5x0.5', -97.0287, 27.9798, ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/')  #test
 #multiple_cplbypass_extraction('README')
 
 
