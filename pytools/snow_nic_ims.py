@@ -10,6 +10,7 @@ from matplotlib.dates import date2num
 from optparse import OptionParser
 
 import Modules_nic_ims as nicims
+from numpy import long, int16
 import netCDF4
 from copy import deepcopy
 
@@ -253,10 +254,10 @@ if options.lookup_snowfreeseason and (options.ftype=='ascii' or options.ftype=='
             
             # replace '-xx' with those same cells from snowcov (i.e. non-land)
             ij = np.where((snow_end<0) & (temp_snowcov<0))
-            if len(snow_end[ij])>0: snow_end[ij] = temp_snowcov.astype(int16)[ij]
+            if len(snow_end[ij])>0: snow_end[ij] = temp_snowcov.astype(int32)[ij]
             
             ij = np.where((snow_start<0) & (temp_snowcov<0))
-            if len(snow_start[ij])>1: snow_start[ij] = temp_snowcov.astype(int16)[ij]
+            if len(snow_start[ij])>1: snow_start[ij] = temp_snowcov.astype(int32)[ij]
 
             # have to flag never-snow/snowfree cells (snow_free within 'totdays_yr-30d' for a full year)
             if totdays_yr>0:
@@ -508,7 +509,7 @@ if len(snow_yearly)>0:
     vdoy_end.long_name = 'day of year when snow fully melted on ground'
     vdoy_end.Key = "0-365 = land with/without snow, -10 = sea with ice, -20 = sea, -99 = beyond map coverage" ;
     vdata = snow_yearly['Snow_ending']
-    if len(vdata.shape)<3: vdata = np.reshape(vdata,(1,)+vdata.shape) # in case that data only 1 time-step
+    if len(vdata.shape)<3: vdata = np.reshape(vdata,(1,)+vdata.shae) # in case that data only 1 time-step
     vdoy_end[:,:,:] = vdata
 
     if 'lat' in snow_yearly.keys():
