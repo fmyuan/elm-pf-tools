@@ -1,11 +1,8 @@
 #Python utilities for operating a netcdf file using available tools, python netcdf4, nco
-import os
+import os, sys
 import numpy as np
 from netCDF4 import Dataset
-from netCDF4 import Variable
-from array import array
 from numpy import newaxis
-from numpy._typing._char_codes import _Float64Codes
 
 #----------------------------------------------------------------------------             
 def getvar(ncfile, varname):
@@ -218,7 +215,7 @@ def mergefilesby1dim(ncfilein1, ncfilein2, ncfileout, dim_name):
                 len_dimension = len(dimension)
             
             dst.createDimension(name, len_dimension if not dimension.isunlimited() else None)
-         #   
+        #   
     
         # copy all file data except for matched-up variables, which instead multiply copied
         for name, variable in src1.variables.items():
@@ -630,9 +627,9 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 #              #var_excl='LONGXY,LATIXY,AREA,TOPO,SLOPE,STD_ELEV')
 #              #var_excl='LONGXY,LATIXY,AREA,TOPO,SLOPE,STD_ELEV')
 #              #var_excl='LONGXY,LATIXY,AREA,PCT_CLAY,PCT_SAND,ORGANIC,SOIL_COLOR,SOIL_ORDER')
-              #
-              #var_name='ALL', # all variables averaged, but excluding in 'var_excl'
-              #var_excl='PCT_CROP,PCT_GLACIER,PCT_LAKE,PCT_NATVEG,PCT_NAT_PFT,PCT_URBAN,PCT_WETLAND,PFTDATA_MASK') # only those averaged
+            #
+            #var_name='ALL', # all variables averaged, but excluding in 'var_excl'
+            #var_excl='PCT_CROP,PCT_GLACIER,PCT_LAKE,PCT_NATVEG,PCT_NAT_PFT,PCT_URBAN,PCT_WETLAND,PFTDATA_MASK') # only those averaged
 
 # overlayfiles - examples for joint 2 daymet nc files
 #ncfilein1 = 'ELM_sim_for_NSIDC_yearly_dayssnowfree_1997-2019_1WestAlaskaArctic.nc'
