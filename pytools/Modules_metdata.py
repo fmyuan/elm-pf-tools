@@ -10,7 +10,7 @@ from numpy import intersect1d
 from matplotlib.pyplot import axis
 import glob
 #import dask.dataframe as dd
-import netcdf_modules as ncmod
+from src.pytools.commons_utils import Modules_netcdf as ncmod
 #from src.pytools.metdata_checking import tunit
 
 #ncopath = '/usr/local/nco/bin/'
@@ -253,12 +253,12 @@ def clm_metdata_extraction(metdomainfile, metfiles, sites, ncopath=''):
     domain = metdomainfile.rsplit('/')
     filelength=domain.len
     if(filelength>1):
-        domain_dir=domainfile[0]
+        domain_dir=metdomainfile[0]
     else:
         domain_dir='./'   
     domain_file = domain[filelength-1]
     if(domain_file.endwith('.nc')):
-       domain_file=domain[filelength-1].replace('.nc','') # removal of suffix of .nc
+        domain_file=domain[filelength-1].replace('.nc','') # removal of suffix of .nc
     
     #
     ncfile = metdomainfile
@@ -1730,7 +1730,8 @@ def multiple_cplbypass_extraction(fsites):
 #clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', 203.1241, 70.5725,ncopath='/usr/local/nco/bin/') #BEO
 #clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', -157.4089, 70.4696,ncopath='/usr/local/nco/bin/')  #ATQ
 ##clm_metdata_cplbypass_extraction('./', 'CRUJRAV2.3.c2023.0.5x0.5', -97.0287, 27.9798, ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/')  #test
-multiple_cplbypass_extraction('info_14sites.txt')
+#multiple_cplbypass_extraction('info_14sites.txt')
 
+#clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', -80.25611, 34.97139, ncopath='/usr/local/gcc-x/nco_pacakge/nco-5.2.x/bin/')
 
 

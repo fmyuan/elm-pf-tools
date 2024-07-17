@@ -26,6 +26,121 @@ except ImportError:
     HAS_MPI4PY=False
 
 #------------------------------------------------------------------------------------------------------------------
+def Daymet_ELM_ncmap(ncmapfile, redoxy=False, resx=1000.0, resy=1000.0):
+    # read-in ncmapping file
+    
+    data = Dataset(ncmapfile,'r')
+
+    if('lon' in data.variables.keys()):
+        lon=np.squeeze(data['lon'][...])
+    elif('LONGXY' in data.variables.keys()):
+        lon=data['LONGXY'][...]
+    elif('xc' in data.variables.keys()):
+        lon=data['xc'][...]
+    else:
+        print('NOT recognized lon or LONGXY or xc')
+    if('lat' in data.variables.keys()):
+        lat=data['lat'][...]
+    elif('LATIXY' in data.variables.keys()):
+        lat=data['LATIXY'][...]
+    elif('yc' in data.variables.keys()):
+        lat=data['yc'][...]
+    else:
+        print('NOT recognized lat or LATIXY or yc')
+
+    if('geox' in data.variables.keys()):
+        geox=data['geox'][...]
+    elif('x' in data.variables.keys()):
+        geox=data['x'][...]
+    else:
+        print('NOT recognized geox')
+    if('geoy' in data.variables.keys()):
+        geoy=data['geoy'][...]
+    elif('y' in data.variables.keys()):
+        geoy=data['y'][...]
+    else:
+        print('NOT recognized geoy')
+
+    lon = np.squeeze(lon)
+    lat = np.squeeze(lat)
+
+    xidx=np.squeeze(data['gridXID'][...])-1  # in domain.nc, those index are 1-based
+    yidx=np.squeeze(data['gridYID'][...])-1  # in domain.nc, those index are 1-based
+    gidx=np.squeeze(data['gridID'][...])-1  # in domain.nc, those index are 1-based
+
+
+    # xidx/yidx/gidx are really actual indices included in dataset
+    # but geox/geoy are for whole NA. So needed to truncat
+    #
+    geox = geox[xidx]
+    geoy = geoy[yidx]
+    # reset offset to min. corners and re-arrange gidx from 0 
+    xidx = xidx - min(xidx)
+    yidx = yidx - min(yidx)
+    gidx = np.asarray(range(len(gidx)))
+    
+
+    
+    # may need to generate a txt mapping file
+    resx = float(resx) #daymet cell resolution in meters: 1000 m by default
+    resy = float(resy)
+    if redoxy:
+        #
+        xmin = np.min(geox)
+        xmax = np.max(geox)
+        xx = np.arange(xmin, xmax+resx, resx)
+        if(resx<0): xx = np.arange(xmax, xmin+resx, resx)
+        ymin = np.min(geoy)
+        ymax = np.max(geoy)
+        #yy = np.arange(ymin, ymax+resy, resy)
+        #if(resy<0): yy = np.arange(ymax, ymin+resy, resy)
+        yy = np.arange(ymax, ymin-resy, -resy)    # for NA daymet data format, it's upside down in latitudal direction
+        if(resy<0): yy = np.arange(ymin, ymax-resy, -resy)
+        
+        f = open('redo_daymet_elm_mappings.txt', 'w')
+        fheader='   lon          lat            geox            geoy        i     j     g '
+        f.write(fheader+'\n')
+        for idx in range(len(gidx)):
+            if abs(geox[idx]-xx[xidx[idx]])>abs(resx/2.0):
+                print('mis-matched gridcell X-coord. : ', gidx[idx]+1, geox[idx], xx[xidx[idx]])
+                sys.exit(-1)
+            if abs(geoy[idx]-yy[yidx[idx]])>abs(resy/2.0):
+                print('mis-matched gridcell Y-coord. : ', gidx[idx]+1, geoy[idx], yy[yidx[idx]])
+                sys.exit(-1)
+            
+            # re-write daymet_elm_mapping.txt    
+            #'(f12.5,1x,f12.6,1x, 2(f15.1, 1x),3(I5,1x))'
+            f.write('%12.5f ' % lon[idx] )
+            f.write('%12.6f ' % lat[idx] )
+            f.write('%15.1f ' % geox[idx] )
+            f.write('%15.1f ' % geoy[idx] )
+            f.write('%5d ' % (xidx[idx]+1) )  #x/yidx were 0-based, but need to 1-based for the mapping file
+            f.write('%5d ' % (yidx[idx]+1) )
+            f.write('%5d ' % (gidx[idx]+1) )
+            f.write('\n')
+        f.close()
+
+    else:
+        # xidx/yidx is really actual indices
+        # geox/geoy need to sort by xidx/yidx and removal of duplicate
+        # the following approach can g(uaranttee xidx/yidx match with original geox/geoy order 
+
+        [idx, i] = np.unique(yidx, return_index=True)
+        ii = np.argsort(idx)
+        idx = i[ii]
+        yy = geoy[idx]
+
+        [idx, i] = np.unique(xidx, return_index=True)
+        ii = np.argsort(idx)
+        idx = i[ii]
+        xx = geox[idx]
+        
+    
+    # output 2-D grid net geox/geoy, mapping index of  1D gidx <==> (xidx,yidx)
+    return xx, yy, xidx, yidx, gidx
+
+
+#------------------------------------------------------------------------------------------------------------------
 def Daymet_ELM_mapinfo(mapfile, redoxy=False, resx=1000.0, resy=1000.0):
     # read-in mapping file
     #mapfile = options.gridmap.strip()
@@ -217,7 +332,7 @@ parser.add_option("--workdir", dest="workdir", default="./", \
                   help = "data work directory (default = ./, i.e., under current dir)")
 parser.add_option("--elmheader", dest="elmheader", default="", \
                   help = "ELM output Netcdf file header with path but no .nc ")
-parser.add_option("--daymet_elm_mapfile", dest="gridmap", default="daymet_elm_mapping.txt", \
+parser.add_option("--daymet_elm_mapfile", dest="gridmap", default="daymet_elm_mappings.txt", \
                   help = "DAYMET tile 2D to 1D landmasked grid mapping file ")
 parser.add_option("--proj_name", dest="proj_name", default="lcc-daymet", \
                   help = "project name used in mapping file ")
@@ -271,6 +386,11 @@ else:
 if not cwdir.endswith('/'): cwdir = cwdir+'/'
 
 elm_varname = options.elm_varname # 'ALL' by default
+if not 'ALL' in options.elm_varname:
+    if 'LATIXY' not in options.elm_varname:
+        elm_varname = options.elm_varname+',LATIXY'
+    if 'LONGXY' not in options.elm_varname:
+        elm_varname = options.elm_varname+',LONGXY'
 
 #------------------------------------------------------------------------------
 
@@ -291,9 +411,18 @@ if (options.elmheader != ""):
     elm_odir   = elmpathfileheader.replace(ncfileheader,'')
     if(elm_odir.strip()==''):elm_odir='./'
     
+    if ('nc' in options.gridmap.strip()):
+    # no mapping file, then will obtain info from nc file itself
+        mapfile = options.gridmap.strip()
+        [xx, yy, xidx, yidx, gidx] = Daymet_ELM_ncmap(mapfile, \
+                                    redoxy=options.redoxy, \
+                                    resx=float(options.resx), resy=float(options.resy))
+    
+        
+    else:
     # mapping file reading for the first (primary) workdir
-    mapfile = options.gridmap.strip()
-    [xx, yy, xidx, yidx, gidx] = Daymet_ELM_mapinfo(options.workdir+mapfile, \
+        mapfile = options.gridmap.strip()
+        [xx, yy, xidx, yidx, gidx] = Daymet_ELM_mapinfo(options.workdir+mapfile, \
                                     redoxy=options.redoxy, \
                                     resx=float(options.resx), resy=float(options.resy))
     if (options.offsetxy):
@@ -411,7 +540,8 @@ if (options.elmheader != ""):
             if name=='geoy': vname='geox2d'
             if name=='geox': vname='geoy2d'
 
-            if ('ALL' not in elm_varname) and (name not in elm_varname.split(',')): 
+            if ('ALL' not in elm_varname) and \
+               (name not in elm_varname.split(',') and vname not in elm_varname.split(',')): 
                 # Must include 'unlimited_dim' variable, otherwise output NC is empty
                 if (name!=unlimited_dim): continue
 
@@ -425,6 +555,7 @@ if (options.elmheader != ""):
             if 'domain' in ncfile:
                 dim_domain = 'ni'
                 if (src.dimensions['nj'].size>1 and src.dimensions['ni'].size==1): dim_domain='nj'
+                            
             #
             if ('gridcell' in src_dims or 'lndgrid' in src_dims \
                 or 'n' in src_dims or dim_domain in src_dims \

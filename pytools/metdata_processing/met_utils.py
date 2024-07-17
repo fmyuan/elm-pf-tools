@@ -228,27 +228,25 @@ def clm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0
 #
 def clm_metdata_extraction(metdomainfile, metfiles, sites, ncopath=''):
     # ---- sites
-    if (sites.len<2):
+    if (len(sites)<2):
         print('sites must have paired location points: x/y or longitude/latidue')
         return
     else:
-        sitex = sites[0] # x or longitudes
-        sitey = sites[1] # y or latitudes
-        if(sites.len>2): 
-            site = sites[2]
+        sitex = np.asarray(sites[0]) # x or longitudes
+        sitey = np.asarray(sites[1]) # y or latitudes
+        if(len(sites)>2): 
+            site = sites[2]   # site name if any
         else:
-            site=[]
+            site='NEW'
     
     # ---- meteorological data domain
     domain = metdomainfile.rsplit('/')
-    filelength=domain.len
+    filelength=len(domain)
     if(filelength>1):
-        domain_dir=domain[0]
+        domain_dir=domain[0]+'/'
     else:
         domain_dir='./'   
-    domain_file = domain[filelength-1]
-    if(domain_file.endwith('.nc')):
-        domain_file=domain[filelength-1].replace('.nc','') # removal of suffix of .nc
+    domain_file = domain[-1]
     
     #
     ncfile = metdomainfile
@@ -315,12 +313,15 @@ def clm_metdata_extraction(metdomainfile, metfiles, sites, ncopath=''):
         numypts = len(nj)
     
     
+    pt_name = str(numxpts)+'x'+str(numypts)+'pt_'+site
+    domaindir_new = './'+ pt_name+'/'
+    os.system('mkdir -p ' + domaindir_new)
+
     #---------------------------------------------------------------------------------------------------------
     print('Extracting domain data for: Site - ', sitex, sitey)
     print('Extracted grid: ni,nj - ', ni, nj, 'lon,lat -', allx[ni], ally[nj])
 
-    domainfile_new = domain_dir+ \
-             +domain_file+'_ptindxy_'+str(ni)+'_'+str(nj)+'.nc'
+    domainfile_new = domaindir_new+domain_file
     
     
     if (os.path.isfile(domainfile_new)):
@@ -336,47 +337,59 @@ def clm_metdata_extraction(metdomainfile, metfiles, sites, ncopath=''):
     #
     print('Extracting met-forcing data for: Site - ', site, sitex, sitey)
     
+    met = metfiles.rsplit('/')
+    filelength=len(met)
+    if(filelength>1):
+        met_dir=met[0]+'/'
+    else:
+        met_dir='./'   
+    metfilehead = met[-1]
+    if(metfilehead.endswith('.nc')):
+        metfilehead=metfilehead.replace('.nc','') # removal of suffix of .nc
+ 
     pt_name = str(numxpts)+'x'+str(numypts)+'pt_'+site
-    met_input_new = casedatadir+'/atm/datm7/CLM1PT_data/'+ pt_name
-    os.system('mkdir -p ' + met_input_new)
-    
+    metdir_new = './'+ pt_name
+    os.system('mkdir -p ' + metdir_new)
+     
     #checking where is the original data
-    dirfiles = os.listdir(met_input)
+    dirfiles = os.listdir(met_dir)
     for dirfile in dirfiles:        
         filehead = metfilehead
         # in metdata directory
-        if(os.path.isfile(met_input+'/'+dirfile)): 
+        if(os.path.isfile(met_dir+'/'+dirfile)): 
             if(filehead in dirfile):
             
                 print('\n file: '+dirfile)
     
-                metfile_old = met_input+'/'+dirfile
-                dirfile_new = dirfile.replace(filehead,pt_name)
-                metfile_new = met_input_new+'/'+ dirfile_new
+                metfile_old = met_dir+'/'+dirfile
+                dirfile_new = dirfile
+                metfile_new = metdir_new+'/'+ dirfile_new
     
                 #extracting data
-                print('dirfile: '+dirfile + '  =======>  '+dirfile_new)
+                print('dirfile: '+metfile_old + '  =======>  '+metfile_new)
     
-                os.system(ncopath+'ncks -a -O -d lon,'+str(ni)+','+str(ni+numxpts-1)+ \
+                os.system(ncopath+'ncks --no_abc -O -d lon,'+str(ni)+','+str(ni+numxpts-1)+ \
                           ' -d lat,'+str(nj)+','+str(nj+numypts-1)+ \
                           ' '+metfile_old+' '+metfile_new)
         # in subdirectory of metdata directory
-        elif(os.path.isdir(met_input+'/'+dirfile)):
-            subfiles = os.listdir(met_input+'/'+dirfile)
+        elif(os.path.isdir(met_dir+'/'+dirfile)):
+            subfiles = os.listdir(met_dir+'/'+dirfile)
             for subfile in subfiles:
     
-                if(os.path.isfile(met_input+'/'+dirfile+'/'+subfile)):
+                if(os.path.isfile(met_dir+'/'+dirfile+'/'+subfile)):
                     if(filehead in subfile):
      
-                        metfile_old = met_input+'/'+dirfile+'/'+subfile
+                        metfile_old = met_dir+'/'+dirfile+'/'+subfile
                         
-                        subfile_new = subfile.replace(filehead,pt_name)
-                        metfile_new = met_input_new+'/'+subfile_new
+                        subfile_new = subfile
+                        if(not os.path.isdir(metdir_new+'/'+dirfile)):
+                            os.system('mkdir -p ' + metdir_new+'/'+dirfile)
+                        metfile_new = metdir_new+'/'+dirfile+'/'+subfile_new
      
                         #extracting data
-                        print('Subfile: '+subfile + '  =======>  '+subfile_new)
+                        print('Subfile: '+metfile_old + '  =======>  '+metfile_new)
                     
-                        os.system(ncopath+'ncks -a -O -d lon,'+str(ni)+','+str(ni+numxpts-1)+ \
+                        os.system(ncopath+'ncks --no_abc -O -d lon,'+str(ni)+','+str(ni+numxpts-1)+ \
                                   ' -d lat,'+str(nj)+','+str(nj+numypts-1)+ \
                                   ' '+metfile_old+' '+metfile_new)
         
@@ -450,5 +463,6 @@ def multiple_cplbypass_extraction(fsites):
 ##clm_metdata_cplbypass_extraction('./', 'CRUJRAV2.3.c2023.0.5x0.5', -97.0287, 27.9798, ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/')  #test
 ##multiple_cplbypass_extraction('info_14sites.txt')
 
+#clm_metdata_extraction('../domain.T62.050609.nc', './Solar6Hrly/clmforc.Qian.c2006.T62.Solr', [[267.0228], [40.6878]], ncopath='/usr/local/gcc-x/nco_pacakge/nco-5.2.x/bin/')
 
-
+clm_metdata_extraction('./domain_42_FLUXNETSITES_simyr1850_c170912.nc', './42_FLUXNETSITES/20', [[5.9981], [50.3051]], ncopath='/usr/local/gcc-x/nco_pacakge/nco-5.2.x/bin/')

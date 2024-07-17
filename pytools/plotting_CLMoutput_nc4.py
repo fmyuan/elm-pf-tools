@@ -230,7 +230,7 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
     #if plotlabel!='' and isubplot==2: plot_title = 'Site 7'#'Seward Peninsula, AK' #plotlabel, if any
     plt.rcParams["font.weight"] = "bold"
     plt.rcParams["axes.labelweight"] = "bold"
-    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=18, fontweight='bold')
+    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=12, fontweight='bold')
     if isubplot==1: plt.legend(fontsize=14)
     plt.xlabel(t_unit, fontsize=16, fontweight='bold')
     plt.ylabel(varname, fontsize=16, fontweight='bold')
@@ -263,10 +263,10 @@ parser.add_option("--endyr", dest="endyr", default="", \
                   help="clm output ending year to plot (default = none, i.e. end of simulation)")
 parser.add_option("--plot_tunit", dest="t_unit", default="Days", \
                   help="X-axis time unit (default = Days, i.e. Days since start-time of simulation)")
-parser.add_option("--Xindex", dest="xindex", default=0, \
-                  help = " X direction grid index to be reading/plotting, default 0 ")
-parser.add_option("--Yindex", dest="yindex", default=0, \
-                  help = " Y direction grid index to be reading/plotting, default 0 ")
+parser.add_option("--Xindex", dest="xindex", default=-999, \
+                  help = " X direction grid index to be reading/plotting, default -999 for all ")
+parser.add_option("--Yindex", dest="yindex", default=-999, \
+                  help = " Y direction grid index to be reading/plotting, default -999 for all ")
 parser.add_option("--LAYERindex", dest="zindex", default=-999, \
                   help = " SOIL layer index to be reading/plotting, default -999 for all, with indexing from 0 ")
 parser.add_option("--PFTindex", dest="pindex", default=-999, \
@@ -287,6 +287,7 @@ else:
     oppfts = options.pindex.split(':')
     for ip in oppfts:    
         pft_index.append(int(ip))
+ip=pft_index;
 
 if(options.cindex==-999):
     col_index = [options.cindex]
@@ -303,6 +304,12 @@ else:
     oplayers = options.zindex.split(':')
     for il in oplayers:
         layer_index.append(int(il))
+iz=layer_index;
+
+
+ix=int(options.xindex);
+iy=int(options.yindex);
+
 
 #
 if (options.clm_odir == './'):
@@ -356,12 +363,6 @@ elif tunit.startswith("Y"):
 else:
     day_scaling = 1.0
 tunit0 = float(options.yr0)*365.0*day_scaling #the simulation year 0 timing (in day)
-
-
-ix=int(options.xindex);
-iy=int(options.yindex);
-iz=int(options.zindex);
-ip=int(options.pindex);
 
 # read-in datasets from 1 simulation
 nx, ny, nlgrnd, nldcmp, ncolumn, npft, varsdata, varsdims, ttunits = \
