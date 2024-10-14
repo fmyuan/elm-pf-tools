@@ -256,7 +256,7 @@ if ('cplbypass' in options.met_type):
         idx=np.where(varsdata[tvarname]>=startdays-t0*365.0-1.0)  # both in 'days', but one from 1901, one from 1
         varsdata[tvarname] = varsdata[tvarname][idx]
         for iv in varnames:
-            if (len(varsdata[iv])>1):
+            if (len(varsdata[iv].shape)>1):
                 varsdata[iv] =np.moveaxis(varsdata[iv],-1,0)  # move time-axis from last to the first
             varsdata[iv] = varsdata[iv][idx]
     if enddays!=-9999:

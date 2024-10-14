@@ -565,9 +565,22 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 
 # merge 2 files along 1-only named-dimension
 #mergefilesby1dim('f1.nc', 'f2.nc', 'fout.nc', 'n')
-#files=['qbot1.nc','qbot2.nc','qbot3.nc','qbot4.nc','qbot5.nc']
+#fall='GSWP3_WIND_1901-2014'
+#files=['cpl_bypass_01/'+fall+'_z02.nc',
+#       'cpl_bypass_02/'+fall+'_z14.nc',
+#       'cpl_bypass_03/'+fall+'_z01.nc', 
+#       'cpl_bypass_04/'+fall+'_z14.nc',
+#       'cpl_bypass_05/'+fall+'_z17.nc',
+#       'cpl_bypass_06/'+fall+'_z14.nc',
+#       'cpl_bypass_07/'+fall+'_z14.nc',
+#       'cpl_bypass_08/'+fall+'_z15.nc',
+#       'cpl_bypass_09/'+fall+'_z09.nc',
+#       'cpl_bypass_10/'+fall+'_z13.nc',
+#       'cpl_bypass_11/'+fall+'_z13.nc',
+#       'cpl_bypass_12/'+fall+'_z15.nc',
+#       'cpl_bypass_13/'+fall+'_z16.nc']
 #f0='tmp1.nc'
-#fout='GSWP3_daymet4_QBOT_1980-2014_z01.nc'
+#fout=fall+'_z01.nc'
 #dimname='n'
 #os.system('cp -rf '+ files[0]+' '+f0)
 #for f in files[1:]:

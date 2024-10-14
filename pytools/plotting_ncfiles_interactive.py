@@ -172,34 +172,13 @@ def TimeGridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, 
 
 parser = OptionParser()
 
-parser.add_option("--work_dir", dest="workdir", default="./", \
+parser.add_option("--workdir", dest="workdir", default="./", \
                   help="work directory (default = ./, i.e., under current directory)")
-parser.add_option("--ncfile_header", dest="ncfileheader", default="", \
-                  help = "nc file name header, usually the portion before .nc")
-parser.add_option("--ncfile2_header", dest="ncfile2header", default="", \
-                  help = "nc file 2 name header, usually the portion before .nc")
-parser.add_option("--varname", dest="varname", default="", \
-                  help = "variable name in NC files to be plotting")
-parser.add_option("--datalabel", dest="datalabel", default="", \
-                  help = "when plot 'varname', labelling it")
 
 (options, args) = parser.parse_args()
 
 
-#
-if (options.workdir == './'):
-    print('data directory is the current')
-else:
-    print('data directory: '+ options.workdir)
-
-
-if (options.ncfileheader == ''):
-    print('MUST  have file header by " --ncfile_header=??? "'
-     ' , which usually is the portion before "*.nc"! ')
-    sys.exit()
-else:
-    print('nc file header: '+ options.ncfileheader)
-    ncfile = options.workdir+'/'+options.ncfileheader+'.nc'
+ncfile = options.workdir+'./CRUJRAV2.3.c2023_daymet4_FSDS_1980-2021_z03.nc'
 
 
 #--------------------------------------------------------------------------------------
@@ -207,86 +186,27 @@ else:
 try:
     f = Dataset(ncfile,'r')
 except:
-   print('nc file NOT exists: ' + options.ncfile)
-    
+    print('nc file NOT exists: ' + ncfile)
 
-vars = f.variables
-varnames = vars.keys()
+vname = 'FSDS'
+gdata = f.variables[vname][...]  
+gdata2 = []
+datalabel = ''
 
-nvars = 2
-
-vname= options.varname #'Days_snowfree'
-#vname='Doy_snowmelted'
-#vname='Doy_snowcovered'
-if options.datalabel == "":
-    datalabel = vname
-else:
-    datalabel = options.datalabel #'Yearly Snow-free Days'
-    #datalabel = 'DOY Snow-melted'
-    #datalabel = 'DOY Snow-covered'
-
-if ('lat' in varnames or 'lon' in varnames):
-    lat1d = np.asarray(vars['lat'])
-    lon1d = np.asarray(vars['lon'])
-
-elif('geoy' in varnames or 'geox' in varnames):
-    lat1d = np.asarray(vars['geoy'])
-    lon1d = np.asarray(vars['geox'])
-
-if (vname+'_elm' in varnames):
-    gdata = np.asarray(vars[vname+'_elm'])
-    gdata2= np.asarray(vars[vname])
-elif (vname+'_ims' in varnames):
-    gdata = np.asarray(vars[vname])
-    gdata2= np.asarray(vars[vname+'_ims'])
-
-t     = np.asarray(vars['time'])
-tunit = vars['time'].units
+t = f.variables['DTIME'][...]
+tunit = ''
 # 
-# observation or dataset 2 in separated nc file, but with same 'varname'
-if(options.ncfile2header != ''): # from another nc file(s)
-    ncfile2 = options.ncfile2header
-    f2 = Dataset(ncfile2,'r')
-    vars2 = f2.variables
-    varnames2 = vars2.keys()
-    gdata2 = np.asarray(vars2[vname])
-
-# IMS data in 1998/2020 not complete
-tij=np.where((t==1998) | (t==2020))
-gdata2[tij,] = np.nan
-
-# remove 'outlier'
-if('snowfree' in vname):
-    ij=np.where((gdata<=0) | (gdata>=300))
-    gdata[ij] = np.nan
-    ij=np.where((gdata2<=0) | (gdata2>=300))
-    gdata2[ij]= np.nan
-if('snowmelted' in vname):
-    ij=np.where((gdata<=0) | (gdata>=365))
-    gdata[ij] = np.nan
-    ij=np.where((gdata2<=0) | (gdata2>=365))
-    gdata2[ij]= np.nan
-if('snowcovered' in vname):
-    ij=np.where((gdata<=1) | (gdata>=365))
-    gdata[ij] = np.nan
-    ij=np.where((gdata2<=1) | (gdata2>=365))
-    gdata2[ij]= np.nan
 #--------------------------------------------------------------------------------------
 
 # plotting
 nrow = 1   # sub-plot vertically arranged number (row no.)
 ncol = 1   # sub-plot horizontally arranged number (column no.)
-if(nvars==2): ncol = 2
-if(nvars==3): ncol = 3
-if(nvars==4): nrow=2; ncol=2
-
+isub = 1
 #++++++++++++++++++++++++++++++
 
 # 1:1 plotting
-#sub-plot no.
-isub = 1
 
-ONE2ONE_PLOTTING = True
+ONE2ONE_PLOTTING = False
 if(ONE2ONE_PLOTTING):
     plotlabel = ''
     data1 = np.nanmean(gdata,axis=0) # timely-averaged
@@ -300,12 +220,7 @@ if(ONE2ONE_PLOTTING):
 T_PLOTTING = True
 isub = 2
 if (T_PLOTTING):
-    data1 = np.reshape(gdata, (gdata.shape[0],gdata.shape[1]*gdata.shape[2])) # 2-D grid to 1-D
-    data1 = np.nanmean(data1, axis=1) # averaged over grids
-    data2 = np.reshape(gdata2, (gdata2.shape[0],gdata2.shape[1]*gdata2.shape[2])) # 2-D grid to 1-D
-    data2 = np.nanmean(data2, axis=1) # averaged over grids
-    sdata = np.swapaxes(np.vstack((data1,data2)),0,1)
-    TimeGridedVarPlotting(plt, nrow, ncol, isub, t, tunit, sdata, \
+    TimeGridedVarPlotting(plt, nrow, ncol, isub, t, tunit, gdata, \
                     vname, 'Mean of all-grids')
 
 

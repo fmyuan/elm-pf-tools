@@ -727,7 +727,7 @@ def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
     # sorting data time-series by time, tt
     for i in range(len(tt)):
                 
-        if((zdim_indx<0 and pdim_indx<0) or (izp>=0)):# 2-D grid data or 3-D data with one-layer (z) or one-pft
+        if((zdim_indx<0 and pdim_indx<0) or (izp[0]>=0)):# 2-D grid data or 3-D data with one-layer (z) or one-pft
             if (izp[0]>=0 and (zdim_indx>=0 or pdim_indx>=0)) and i==0: 
                 vdata = vdata[:,izp[0],]
             if((ix>=0 or iy>=0) and nxy>1):

@@ -38,17 +38,18 @@ def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, layer_index, sd
     #    layertext.append("0oC ")
 
     for il in layer_index:
-        if il in [0,2,4,6,8,9]:
+        #if il in [0,2,4,6,8,9]:
             layertext.append(("L"+str(il+1)))
             plt.plot(t, sdata[:,il])
-        if il>=9: break
+            if il>=9: break
         #if (varname!='TSOI') and il>=9: break  # non-soil temperature only need upper 10 real soil layers 
         
     # limits of axis
     #if 'TSOI' in varname: plt.ylim([253,293])
     #if 'SOILICE' in varname: plt.ylim([0,450])
 
-    if 'TSOI' in varname: plt.legend((layertext), loc=0, ncol=2, fontsize=10)
+    #if 'TSOI' in varname: plt.legend((layertext), loc=0, ncol=2, fontsize=10)
+    plt.legend((layertext), loc=0, ncol=2, fontsize=5)
     
     # appending unit
     if varname=='TSOI': varname='Soil-layer Temperature (K)'
@@ -452,7 +453,7 @@ for var in varnames:
     t = (t - t0)
     tunit = tunit.upper()
 
-    if((zdim_indx<0 and pdim_indx<0) or max(iz,ip)>=0):
+    if((zdim_indx<0 and pdim_indx<0) or max(iz[0],ip[0])>=0):
         if (options.annually or options.seasonally):
             #GridedVarPlotting(plt, nrow, ncol, ivar, t, tunit, gdata, sdata_std=gdata_std, \
             #            varname=vname, plotlabel='1kmx1km Resolution', plottype='errorbar')
