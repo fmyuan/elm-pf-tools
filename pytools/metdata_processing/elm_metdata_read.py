@@ -4,12 +4,13 @@ from datetime import datetime, timedelta
 #import calendar
 import numpy as np
 from netCDF4 import Dataset
-#from pip._vendor.distlib.util import CSVReader
 from calendar import isleap
 from numpy import intersect1d
 import glob
 from pip._vendor.distlib.util import CSVReader
+from types import SimpleNamespace
 
+from pytools.metdata_processing.elm_metdata_write import elm_metdata_write
 ####################################################################################################
 #
 # -------subset reading DAYMET data in nc format  ----------------
@@ -1255,6 +1256,147 @@ def clm_metdata_CRUJRA(crujra_dirfilehead, template_clm_metfile=''):
     #
 #
 
+def clm_metdata_Daymet_ERA5_read(daymetera5_dir, fileheader='', ptxyind=[], varnames=[]):
+    #
+    # Daymet_ERA5 data formats
+    #  file naming (a full year, hourly) for a 2degx2deg tile: 
+        # year/tile_no/SolarHrly/clmforc.Daymet4.1km.Solr.yyyy-mm.nc
+        # year/tile_no/PrecipHrly/clmforc.Daymet4.1km.Prec.yyyy-mm.nc
+        # year/tile_no/TPHWLHrly/clmforc.Daymet4.1km.TPQWL.yyyy-mm.nc
+        
+        # (1) data in 2D, with x/y coordinates of daymet projection
+        # (2) there is a file 'daymet_tiles.nc' for easy searching tile information,
+        #        which includes: tile_no,tile_gindx,tile_xindx,tile_yindx,tile_geox,tile_geoy,tile_lat,tile_lon
+    #
+
+    #
+    fileheader0 = fileheader  # save the input for multiple varnames
+
+    #
+    if len(ptxyind)>0:
+        ix = ptxyind[:,0]
+        iy = ptxyind[:,1]
+
+    #files data-reading
+    met ={}
+    vdims={}
+    mdoy=[0,31,59,90,120,151,181,212,243,273,304,334]#monthly starting DOY
+    
+    varlist=['FSDS','PRECTmms','FLDS','PSRF','QBOT','TBOT','WIND']
+
+    if (len(varnames)<1): varnames=varlist
+    for v in varnames:
+        if v not in varlist:
+            print('NOT found variable:  '+ v)
+            print('IN: '+ varlist)
+            sys.exit()
+                 
+            
+        # file directories
+        if (v == 'FSDS'):
+            fdir = daymetera5_dir+'/SolarHrly/'
+            if fileheader0=='': fileheader = 'clmforc.Daymet4.1km.Solr'
+        elif (v == 'PRECTmms'):
+            fdir = daymetera5_dir+'/PrecipHrly/'
+            if fileheader0=='': fileheader = 'clmforc.Daymet4.1km.Prec'
+        else:
+            fdir = daymetera5_dir+'/TPHWLHrly/'
+            if fileheader0=='': fileheader = 'clmforc.Daymet4.1km.TPQWL'
+
+        #
+        tvar = np.asarray([])
+        vdata= np.asarray([])
+        if (fileheader==''):
+            dirfiles = sorted(os.listdir(fdir))
+        else:
+            fdirheader=fdir+fileheader.strip()
+            dirfiles = sorted(glob.glob("%s*.*" % fdirheader))  # maybe file pattern in 'fileheader'
+        
+        # find the mask
+        if len(dirfiles)<1: return 
+        
+        fnc = Dataset(dirfiles[0],'r')
+        vdata0 = fnc.variables[v][0,...]
+        yindx, xindx = np.where((~vdata0.mask))
+        fnc.close()
+
+        
+        for dirfile in dirfiles:
+            # in metdata directory
+            if(not os.path.isfile(dirfile)): return
+            fnc = Dataset(dirfile,'r')
+
+            # only need to read once for all files
+            if ('LATIXY' not in met.keys()):
+                if 'LATIXY' in fnc.variables.keys():
+                    met['LATIXY']=np.asarray(fnc.variables['LATIXY'])[yindx,xindx]
+                elif 'lat' in fnc.variables.keys():
+                    met['LATIXY']=np.asarray(fnc.variables['lat'])[yindx,xindx]
+            if ('LONGXY' not in met.keys()):
+                if 'LONGXY' in fnc.variables.keys():
+                    met['LONGXY']=np.asarray(fnc.variables['LONGXY'])[yindx,xindx]
+                elif 'lon' in fnc.variables.keys():
+                    met['LONGXY']=np.asarray(fnc.variables['lon'])[yindx,xindx]
+        
+            # non-time variables from multiple files
+            if(v in fnc.variables.keys()): 
+                # for 'time', need to convert tunit AND must do for each var, due to from different files
+                if ('time' in fnc.variables.keys()):
+                    t=np.asarray(fnc.variables['time'])
+                    tdims = fnc.variables['time'].dimensions
+                    if('units' in fnc.variables['time'].ncattrs()):
+                        tunit= fnc.variables['time'].getncattr('units')
+                        if ('days since' in tunit):
+                            t0=str(tunit).strip('days since')
+                            if(t0.endswith(' 00') and not t0.endswith(' 00:00:00')):
+                                t0=t0+':00:00'
+                            t0=datetime.strptime(t0,'%Y-%m-%d %X')
+                            #t0=t0-datetime.strptime('1950-01-01 00:00:00','%Y-%m-%d %X') 
+                            # the above is not right, because  'datetime' is a leap-year system
+                            y0=t0.year
+                            m0=t0.month
+                            d0=t0.day-1.0
+                            days0 = (y0-1950)*365+mdoy[m0-1]+d0+t0.second/86400.0
+                            t = t + days0
+
+                            tvar = np.hstack((tvar, t))
+                            
+                    # values
+                    if(len(vdata)<=0):
+                        vdata=np.asarray(fnc.variables[v])[:,yindx,xindx]
+                    else:                                              
+                        d=np.asarray(fnc.variables[v])[:,yindx,xindx]
+                        vdata=np.vstack((vdata,d))
+        
+                    if(v not in vdims.keys()):
+                        vdim = fnc.variables[v].dimensions
+
+        # done with 1 variable for all dirfiles
+        # must sort both time and data due to 'dirfiles' are not time-sorted (and maybe varied for each variable)
+        if(len(tvar)>0): 
+            tt  = sorted(tvar)
+            it = sorted(range(len(tvar)), key=lambda k: tvar[k])
+                
+                
+            if ('time' not in met.keys()): # only need once, assuming all variables exactly same timing
+                met['time'] = tt
+                vdims['time'] = tdims
+                met['tunit']='days since 1950-01-01 00:00:00' # Force all time unit to be this one
+
+            if(v not in met.keys()):
+                met[v]=vdata[it]
+        
+            if(v not in vdims.keys()):
+                vdims[v] = vdim
+                
+    # all vars done
+                
+    return vdims,met
+    
+####################################################################################################
+
+#------ ------ Read a single ELM met NC file user-defined ---------------------------------
+
 
 ####################################################################################################
 #
@@ -1288,6 +1430,14 @@ def clm_metdata_CRUJRA(crujra_dirfilehead, template_clm_metfile=''):
 
 #clm_metdata_CRUJRA('./rawdata/crujra.v2.3.5d')
 
+print('Testing')
+metvd, metdata = clm_metdata_Daymet_ERA5_read('./1980/11935/', fileheader='', ptxyind=[], varnames=[])
 
+write_options = SimpleNamespace( \
+            met_idir = './', \
+            nc_create = True, \
+            nc_write = False, \
+            nc_write_mettype = 'cplbypass_ERA5_daymet' )
 
-
+elm_metdata_write(write_options, metdata) 
+print('Done Testing')

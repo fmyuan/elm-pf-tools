@@ -3,7 +3,7 @@ import os, math
 import numpy as np
 from netCDF4 import Dataset
 import glob
-#import netcdf_modules as ncmod
+from pytools.commons_utils import Modules_netcdf
 
 #ncopath = '/usr/local/nco/bin/'
 #####################################################################################################
@@ -224,7 +224,7 @@ def clm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0
     
      
 #
-# ------- GSWP3 met forcing data extraction for site or sites ------------------------------------
+# ------- meteorological forcing data extraction for site or sites ------------------------------------
 #
 def clm_metdata_extraction(metdomainfile, metfiles, sites, ncopath=''):
     # ---- sites

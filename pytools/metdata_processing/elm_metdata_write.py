@@ -8,10 +8,10 @@ import numpy as np
 from netCDF4 import Dataset
 
 # customized modules
-from src.pytools.commons_utils.Modules_netcdf import putvar
+from pytools.commons_utils.Modules_netcdf import putvar
 
 
-def elm_metdata_write(options, metdata):
+def elm_metdata_write(options, metdata, time_dim=0):
     
     """
     options.*
@@ -37,7 +37,10 @@ def elm_metdata_write(options, metdata):
             RH or QBOT
             TBOT
             WIND
-            
+     
+    time_dim=0
+            time dimension indice in met data, by default 0, i.e. [time, ...]
+            Note: if not, may need to swap for either standard ELM format or cpl_bypass format     
     
     """
    
@@ -119,6 +122,25 @@ def elm_metdata_write(options, metdata):
                 if len(ncfilein)<=0 and len(ncfilein_cplbypass)<=0:
                     sys.exit('there is NO file as -'+fdirheader)
                 ncfilein_cplbypass = ncfilein_cplbypass[0]
+
+            elif 'ERA5' in met_type or 'era5' in met_type:
+                if (varname == 'FSDS'):
+                    fdir = metidir+'/SolarHrly/'
+                elif (varname == 'PRECTmms'):
+                    fdir = metidir+'/PrecipHrly/'
+                else:
+                    fdir = metidir+'/TPHWLHrly/'
+                ncfilein = sorted(glob.glob("%s*.nc" % fdir))
+                if len(ncfilein)>0: ncfilein = ncfilein[0]
+                
+                if '/cpl_bypass' not in metidir:                
+                    fdirheader = metidir+'/cpl_bypass_full/Daymet_ERA5.1km_'+varname+'_'
+                else:
+                    fdirheader = metidir+'/Daymet_ERA5.1km_'+varname+'_'
+                ncfilein_cplbypass = sorted(glob.glob("%s*.nc" % fdirheader))
+                if len(ncfilein)<=0 and len(ncfilein_cplbypass)<=0:
+                    sys.exit('there is NO file as -'+fdirheader)
+                ncfilein_cplbypass = ncfilein_cplbypass[0]
             
             # new template nc file, and has a prv file 
             if options.nc_write and ncfilein_prv != ncfilein and \
@@ -193,19 +215,25 @@ def elm_metdata_write(options, metdata):
             #(2) in cplbypass format (NOTE: can output both original and cplbypass)
             if (NCOUT_CPLBYPASS): print('cpl_bypass template file: '+ ncfilein_cplbypass)
             if (NCOUT_CPLBYPASS and ncfilein_cplbypass!=''):
-                if 'site' in met_type.lower()  or 'GSWP3' in met_type or 'crujra' in met_type.lower(): 
+                if 'site' in met_type.lower() or \
+                   'GSWP3' in met_type or \
+                   'crujra' in met_type.lower() or \
+                   'ERA5' in met_type: 
                     if 'site' in met_type.lower():
                         ncfileout_cplbypass='all_hourly.nc'
-                    elif 'gswp3' in met_type.lower() or 'crujra' in met_type.lower():
+                    elif 'gswp3' in met_type.lower() or \
+                         'crujra' in met_type.lower() or \
+                         'era5' in met_type.lower():
                         ncfileout_cplbypass=ncfilein_cplbypass.split('/')[-1]
                         if 'daymet' in met_type.lower():
                             ncfileout_cplbypass=ncfileout_cplbypass.replace('1901', '1980')
                     else:
-                        print('currently only support 3 types of cpl_bypass: Site or GSWP3* or CRUJRA')
+                        print('currently only support 3 types of cpl_bypass: Site or GSWP3* or CRUJRA or ERA5*')
                         sys.exit(-1)
                         
                     tname = 'DTIME'
                     t_jointed=metdata['time']
+                        
                     sdata = metdata[varname]
                     
                     if (options.nc_create):
@@ -235,6 +263,7 @@ def elm_metdata_write(options, metdata):
                         
                         # time
                         try:
+                            # tunit from template file, which need to be replaced by that from metdata
                             tunit = Dataset(ncfilein_cplbypass).variables[tname].getncattr('units')
                             t0=str(tunit.lower()).strip('days since')
                             if(t0.endswith(' 00:00')):
@@ -244,10 +273,21 @@ def elm_metdata_write(options, metdata):
                             else:
                                 t0=t0+' 00:00:00'
                             t0=datetime.strptime(t0,'%Y-%m-%d %X') # time must be in format '00:00:00'
-                            yr0=np.floor(t_jointed[0]/365.0)+1
-                            t=t_jointed - (yr0-1)*365.0
-                            tunit = tunit.replace(str(t0.year).zfill(4)+'-', str(int(yr0)).zfill(4)+'-')
-                            tunit = tunit.replace('-'+str(t0.month).zfill(2)+'-', '-01-')
+                            
+                            
+                            if 'tunit' in metdata.keys():
+                                if 'days since' in metdata['tunit']:
+                                    #t_jointed alread in unit of days since ...
+                                    tunit = metdata['tunit']
+                                    t = t_jointed
+                            
+                            else:
+                                #default, assuming days since year 0
+                                yr0=np.floor(t_jointed[0]/365.0)+1
+                                t=t_jointed - (yr0-1)*365.0
+                                tunit = tunit.replace(str(t0.year).zfill(4)+'-', str(int(yr0)).zfill(4)+'-')
+                                tunit = tunit.replace('-'+str(t0.month).zfill(2)+'-', '-01-')
+                            
                             if(tunit.endswith(' 00') and not tunit.endswith(' 00:00:00')):
                                 tunit=tunit+':00:00'
                         except Exception as e:
@@ -288,8 +328,11 @@ def elm_metdata_write(options, metdata):
                     # the following line IS WRONG
                     # varvals = (sdata_jointed-add_offset)/scale_factor # this IS WRONG when written, i.e. NOT NEEDED absolutely
                     
-                    # varvals = np.reshape(sdata, (1,-1)) # depending on source data, in CPL_BYPASS forcing-data format, dimension in (gridcell, DTIME) 
+                    # note if in CPL_BYPASS forcing-data format, dimension is in (gridcell, DTIME)
+                    # but source met data may not.
                     varvals = sdata
+                    if time_dim!=len(sdata.shape)-1:
+                        varvals = np.swapaxes(sdata, time_dim, -1)
                     
                     # varatts must in format: 'varname::att=att_val; varname::att=att_val; ...'
                     varatts = varname+'::add_offset='+str(add_offset)+ \
@@ -300,7 +343,7 @@ def elm_metdata_write(options, metdata):
                     
                 
                 else:
-                    print('TODO: CPL_BYPASS format other than "Site/GSWP3" not yet supported')
+                    print('TODO: CPL_BYPASS format other than "Site/GSWP3/crujra/ERA5" not yet supported')
                     sys.exit(-1)
             #
             elif(NCOUT_CPLBYPASS):
