@@ -13,6 +13,7 @@ import netCDF4
 from pyproj import Proj
 from pyproj import Transformer
 from pyproj import CRS
+from scipy.sparse.linalg._eigen.lobpcg.lobpcg import _get_indx
 
 
 #------------------------------------------------------------------------------------------------------------------
@@ -434,12 +435,18 @@ def Daymet_TileInfo(inputdir, years=[1980],tiles=[],ncf0='TPHWLHrly/clmforc.Daym
             if 'FSDS' in f.variables.keys(): v='FSDS'
             if 'TBOT' in f.variables.keys(): v='TBOT'            
             data = f.variables[v][0,...]
-            data_fill = f.variables[v]._FillValue
             
             # all points
             tlen = lats.size
 
-            yindx, xindx = np.where((~data.mask))
+            if geox.size==1:
+                yindx = np.where((~data.mask))[0]   # data.mask won't produce 2d indices for this situation
+                xindx = deepcopy(yindx); xindx[:]=0
+            elif geoy.size==1:
+                xindx = np.where((~data.mask))[0]
+                yindx = deepcopy(xindx); yindx[:]=0                
+            else:
+                yindx, xindx = np.where((~data.mask))
             gindx = np.where((~data.reshape(tlen).mask))[0]
             tindx = np.empty_like(gindx); tindx[:]=itile
                 
@@ -457,7 +464,17 @@ def Daymet_TileInfo(inputdir, years=[1980],tiles=[],ncf0='TPHWLHrly/clmforc.Daym
             f.close()
               
     # end of for idir in alldirs
-        
+    # sorting first by geox, then by geoy, then by tileno
+    indx_sorted = np.lexsort((tile_no,tile_geoy,tile_geox))
+    tile_no = tile_no[indx_sorted]
+    tile_gindx = tile_gindx[indx_sorted]
+    tile_xindx = tile_xindx[indx_sorted]
+    tile_yindx = tile_yindx[indx_sorted]
+    tile_lat   = tile_lat[indx_sorted]
+    tile_lon   = tile_lon[indx_sorted]
+    tile_geox  = tile_geox[indx_sorted]
+    tile_geoy  = tile_geoy[indx_sorted]
+       
     # write to nc file
 
     if ncfout !='' and tile_gindx.size>0:
@@ -525,7 +542,7 @@ def Daymet_TileInfo(inputdir, years=[1980],tiles=[],ncf0='TPHWLHrly/clmforc.Daym
     #
 #----------------------------------------------------------------------------------------------
 
-'''
+
 print('Testing: ')
 Daymet_TileInfo('./')
-'''                    
+                    

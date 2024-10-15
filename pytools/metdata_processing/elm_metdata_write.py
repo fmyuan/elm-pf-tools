@@ -8,8 +8,7 @@ import numpy as np
 from netCDF4 import Dataset
 
 # customized modules
-from pytools.commons_utils.Modules_netcdf import putvar
-
+from Modules_netcdf import putvar
 
 def elm_metdata_write(options, metdata, time_dim=0):
     
@@ -302,6 +301,22 @@ def elm_metdata_write(options, metdata, time_dim=0):
                         if 'site' in met_type.lower():
                             error=putvar(ncfileout_cplbypass,['start_year'], np.floor(t[0]/365.0))
                             error=putvar(ncfileout_cplbypass,['end_year'], np.floor(t[-1]/365.0))
+
+                        else:
+                            # except for 'site', other type of cpl_bypass requires zone_mapping.txt file
+                            lon = metdata['LONGXY']
+                            lat = metdata['LATIXY']
+                            g_zno = 1
+                            f = open('./zone_mappings.txt', 'w')
+                            for ig in range(len(lon)):
+                                f.write('%12.5f ' % lon[ig] )
+                                f.write('%12.6f ' % lat[ig] )
+                                f.write('%5d ' % g_zno )
+                                f.write('%5d ' % (ig+1) )
+                                f.write('\n')
+                            f.close()
+
+
                                             
                     # scaling data as initeger
                     if (varname=='PRECTmms'):
