@@ -90,10 +90,15 @@ def elm_metdata_write(options, metdata, time_dim=0):
                 else:
                     fdir = metidir+'/TPHWL3Hrly/'
                 ncfilein = sorted(glob.glob("%s*.nc" % fdir))
-                ncfilein = ncfilein[0]
+                if len(ncfilein)>0: ncfilein = ncfilein[0]
                 
-                fdirheader = metidir+'/GSWP3_'+varname+'_'
+                if '/cpl_bypass' not in metidir:                
+                    fdirheader = metidir+'/cpl_bypass_template/GSWP3_daymet4_'+varname+'_'
+                else:
+                    fdirheader = metidir+'/GSWP3_daymet4_'+varname+'_'
                 ncfilein_cplbypass = sorted(glob.glob("%s*.nc" % fdirheader))
+                if len(ncfilein)<=0 and len(ncfilein_cplbypass)<=0:
+                    sys.exit('there is NO file as -'+fdirheader)
                 ncfilein_cplbypass = ncfilein_cplbypass[0]
                 
             elif 'site' in met_type.lower():
@@ -265,7 +270,9 @@ def elm_metdata_write(options, metdata, time_dim=0):
                             # tunit from template file, which need to be replaced by that from metdata
                             tunit = Dataset(ncfilein_cplbypass).variables[tname].getncattr('units')
                             t0=str(tunit.lower()).strip('days since')
-                            if(t0.endswith(' 00:00')):
+                            if(t0.endswith(' 00:00:00')):
+                                t0=t0
+                            elif(t0.endswith(' 00:00')):
                                 t0=t0+':00'
                             elif (t0.endswith(' 00')):
                                 t0=t0+':00:00'

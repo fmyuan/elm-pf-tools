@@ -1256,9 +1256,9 @@ def clm_metdata_CRUJRA(crujra_dirfilehead, template_clm_metfile=''):
     #
 #
 
-def clm_metdata_Daymet_ERA5_read(daymetera5_dir, fileheader='', ptxyind=[], varnames=[]):
+def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', ptxyind=[], varnames=[]):
     #
-    # Daymet_ERA5 data formats
+    # Daymet_ERA5 or GSWP3 data formats
     #  file naming (a full year, hourly) for a 2degx2deg tile: 
         # year/tile_no/SolarHrly/clmforc.Daymet4.1km.Solr.yyyy-mm.nc
         # year/tile_no/PrecipHrly/clmforc.Daymet4.1km.Prec.yyyy-mm.nc
@@ -1284,6 +1284,9 @@ def clm_metdata_Daymet_ERA5_read(daymetera5_dir, fileheader='', ptxyind=[], varn
     
     varlist=['FSDS','PRECTmms','FLDS','PSRF','QBOT','TBOT','WIND']
 
+    ts_str=''
+    if ts_hr!=1: ts_str=str(ts_hr)
+
     if (len(varnames)<1): varnames=varlist
     for v in varnames:
         if v not in varlist:
@@ -1294,13 +1297,13 @@ def clm_metdata_Daymet_ERA5_read(daymetera5_dir, fileheader='', ptxyind=[], varn
             
         # file directories
         if (v == 'FSDS'):
-            fdir = daymetera5_dir+'/SolarHrly/'
+            fdir = daymetera5_dir+'/Solar'+ts_str+'Hrly/'
             if fileheader0=='': fileheader = 'clmforc.Daymet4.1km.Solr'
         elif (v == 'PRECTmms'):
-            fdir = daymetera5_dir+'/PrecipHrly/'
+            fdir = daymetera5_dir+'/Precip'+ts_str+'Hrly/'
             if fileheader0=='': fileheader = 'clmforc.Daymet4.1km.Prec'
         else:
-            fdir = daymetera5_dir+'/TPHWLHrly/'
+            fdir = daymetera5_dir+'/TPHWL'+ts_str+'Hrly/'
             if fileheader0=='': fileheader = 'clmforc.Daymet4.1km.TPQWL'
 
         #
@@ -1431,13 +1434,13 @@ def clm_metdata_Daymet_ERA5_read(daymetera5_dir, fileheader='', ptxyind=[], varn
 #clm_metdata_CRUJRA('./rawdata/crujra.v2.3.5d')
 
 print('Testing')
-metvd, metdata = clm_metdata_Daymet_ERA5_read('./1980/11935/', fileheader='', ptxyind=[], varnames=[])
+metvd, metdata = clm_metdata_Daymet_downscaled_read('./TILE11935/', ts_hr=3, fileheader='', ptxyind=[], varnames=[])
 
 write_options = SimpleNamespace( \
             met_idir = './', \
             nc_create = True, \
             nc_write = False, \
-            nc_write_mettype = 'cplbypass_ERA5_daymet' )
+            nc_write_mettype = 'cplbypass_GSWP3_daymet' )
 
 elm_metdata_write(write_options, metdata) 
 print('Done Testing')
