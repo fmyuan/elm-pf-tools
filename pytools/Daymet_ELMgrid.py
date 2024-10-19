@@ -106,7 +106,7 @@ def Daymet_ELM_gridmatching(Grid1_Xdim, Grid1_Ydim, Grid2_x, Grid2_y, \
             
         if False: # comment out the following - not correct
         #if(len(ij[0])<1):
-             # none of DAYMET cell centroid inside a ELM grid, find the close one instead
+            # none of DAYMET cell centroid inside a ELM grid, find the close one instead
             closej  = np.where((Grid2_gyy<=jnth) & (Grid2_gyy>jsth)) # do lat/y first, due to evenly-intervaled along lat/y
             if closej[0].size<=0:
                 closei  = np.where((Grid2_gxx<=iest) & (Grid2_gxx>iwst)) # do lon/x first

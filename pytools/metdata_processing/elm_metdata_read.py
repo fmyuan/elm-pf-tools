@@ -1321,6 +1321,17 @@ def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', p
         fnc = Dataset(dirfiles[0],'r')
         vdata0 = fnc.variables[v][0,...]
         yindx, xindx = np.where((~vdata0.mask))
+        # only need to read once for all files
+        if ('LATIXY' not in met.keys()):
+            if 'LATIXY' in fnc.variables.keys():
+                met['LATIXY']=np.asarray(fnc.variables['LATIXY'])[yindx,xindx]
+            elif 'lat' in fnc.variables.keys():
+                met['LATIXY']=np.asarray(fnc.variables['lat'])[yindx,xindx]
+        if ('LONGXY' not in met.keys()):
+            if 'LONGXY' in fnc.variables.keys():
+                met['LONGXY']=np.asarray(fnc.variables['LONGXY'])[yindx,xindx]
+            elif 'lon' in fnc.variables.keys():
+                met['LONGXY']=np.asarray(fnc.variables['lon'])[yindx,xindx]
         fnc.close()
 
         
@@ -1328,24 +1339,18 @@ def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', p
             # in metdata directory
             if(not os.path.isfile(dirfile)): return
             fnc = Dataset(dirfile,'r')
-
-            # only need to read once for all files
-            if ('LATIXY' not in met.keys()):
-                if 'LATIXY' in fnc.variables.keys():
-                    met['LATIXY']=np.asarray(fnc.variables['LATIXY'])[yindx,xindx]
-                elif 'lat' in fnc.variables.keys():
-                    met['LATIXY']=np.asarray(fnc.variables['lat'])[yindx,xindx]
-            if ('LONGXY' not in met.keys()):
-                if 'LONGXY' in fnc.variables.keys():
-                    met['LONGXY']=np.asarray(fnc.variables['LONGXY'])[yindx,xindx]
-                elif 'lon' in fnc.variables.keys():
-                    met['LONGXY']=np.asarray(fnc.variables['lon'])[yindx,xindx]
         
             # non-time variables from multiple files
             if(v in fnc.variables.keys()): 
                 # for 'time', need to convert tunit AND must do for each var, due to from different files
                 if ('time' in fnc.variables.keys()):
-                    t=np.asarray(fnc.variables['time'])
+                    t=fnc.variables['time'][...]
+                    if len(np.where(t.mask)[0])>0:
+                        tindx = np.where(~t.mask)[0]
+                        t=t[tindx]
+                    else:
+                        tindx = []
+
                     tdims = fnc.variables['time'].dimensions
                     if('units' in fnc.variables['time'].ncattrs()):
                         tunit= fnc.variables['time'].getncattr('units')
@@ -1362,29 +1367,38 @@ def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', p
                             days0 = (y0-1950)*365+mdoy[m0-1]+d0+t0.second/86400.0
                             t = t + days0
 
-                            tvar = np.hstack((tvar, t))
+                    tvar = np.hstack((tvar, t))
                             
-                    # values
+                # values
+                if 'time' in fnc.variables[v].dimensions:
+                    d = np.asarray(fnc.variables[v])[:,yindx,xindx]
+                    if len(tindx)>0: d = d[tindx,...]
+
                     if(len(vdata)<=0):
-                        vdata=np.asarray(fnc.variables[v])[:,yindx,xindx]
+                        vdata=d
                     else:                                              
-                        d=np.asarray(fnc.variables[v])[:,yindx,xindx]
                         vdata=np.vstack((vdata,d))
         
                     if(v not in vdims.keys()):
                         vdim = fnc.variables[v].dimensions
-
+                #
+            #
+            fnc.close()
+            
         # done with 1 variable for all dirfiles
         # must sort both time and data due to 'dirfiles' are not time-sorted (and maybe varied for each variable)
         if(len(tvar)>0): 
             tt  = sorted(tvar)
             it = sorted(range(len(tvar)), key=lambda k: tvar[k])
-                
-                
+                                
             if ('time' not in met.keys()): # only need once, assuming all variables exactly same timing
-                met['time'] = tt
+                met['time'] = np.asarray(tvar[it])
                 vdims['time'] = tdims
                 met['tunit']='days since 1950-01-01 00:00:00' # Force all time unit to be this one
+            elif (len(tvar) != len(met['time'])):
+                met['time_'+v] = np.asarray(tvar[it])
+                vdims['time_'+v] = tdims
+                met['tunit_'+v]='days since 1950-01-01 00:00:00' # Force all time unit to be this one
 
             if(v not in met.keys()):
                 met[v]=vdata[it]

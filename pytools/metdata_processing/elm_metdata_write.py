@@ -81,6 +81,8 @@ def elm_metdata_write(options, metdata, time_dim=0):
         
         for varname in vnames:
             if varname in ['LONGXY','LATIXY','time']: continue  #skip and always write if new output nc file
+            if varname not in metdata.keys(): continue
+
             
             if 'GSWP3' in met_type:
                 if (varname == 'FSDS'):
@@ -299,7 +301,7 @@ def elm_metdata_write(options, metdata, time_dim=0):
                         except Exception as e:
                             print(e)
                             tunit = ''
-                        error=putvar(ncfileout_cplbypass, [tname], t, varatts=tname+'::units='+tunit)
+                        error=putvar(ncfileout_cplbypass, [tname], np.asarray(t), varatts=tname+'::units='+tunit)
                         # varatts must in format: 'varname::att=att_val; varname::att=att_val; ...'
                         if error!=0: sys.exit('nfmod.putvar WRONG')
                         
@@ -361,7 +363,7 @@ def elm_metdata_write(options, metdata, time_dim=0):
                         ';'+varname+'::scale_factor='+str(scale_factor)
                     error=putvar(ncfileout_cplbypass, [varname], varvals, varatts=varatts)
                     #error=nfmod.putvar(ncfileout_cplbypass, [varname], varvals)
-                    if error!=0: sys.exit('nfmod.putvar WRONG-'+varname+'-'+ncfileout_cplbypass)
+                    if error!=0: sys.exit('nfmod.putvar WRONG - '+varname+', - '+ncfileout_cplbypass)
                     
                 
                 else:
