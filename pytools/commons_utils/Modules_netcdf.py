@@ -402,16 +402,19 @@ def nc2csv(file, varnames):
 
 #----------------------------------------------------------------------------             
 # convert geotiff to ncfile
-def geotiff2nc(file, bandinfos):
+def geotiff2nc(file, bandinfos, outdata=False):
     # file: file name
     # bandinfos in 2-D strings: tiff file' bands and its NC name, units, long_name, standard_name
-    import datetime as dt
     import rasterio
-    import re
 
     f = rasterio.open(file, mode='r')
     alldata = f.read()
     nband,ny,nx = np.shape(alldata)
+    try:
+        filled_value = f.nodata
+        alldata = np.ma.masked_equal(alldata,filled_value)
+    except:
+        filled_value = -9999
         
 
     # create NetCDF output file
@@ -453,7 +456,7 @@ def geotiff2nc(file, bandinfos):
     varo = {}
     for iv in range(0,nvars):
         v = bandinfos['bands'][iv]
-        varo[v] = ncof.createVariable(v, np.double,  ('geoy', 'geox'), fill_value=-1.0e20)
+        varo[v] = ncof.createVariable(v, np.double,  ('geoy', 'geox'), fill_value=filled_value)
         if 'units' in bandinfos.keys():
             varo[v].units = bandinfos['units'][iv]
         if 'long_name' in bandinfos.keys():
@@ -469,6 +472,9 @@ def geotiff2nc(file, bandinfos):
     geoyo[:]=geoy
 
     ncof.close()
+    
+    if outdata:
+        return geox,geoy,f.crs.wkt,alldata
 #
 #----------------------------------------------------------------------------             
 # average specific variable(s) along named dimension and write back for all
@@ -629,6 +635,11 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 #                    "non_vegetated",
 #                    "water"]}
 #geotiff2nc(file, bandinfos)
+'''
+file='raster_cavm_v1.tif'
+bandinfos={'bands':['grid_code']}
+geotiff2nc(file, bandinfos)
+'''
 
 #varmeanby1dim - examples for surface data generation to check single variable
 #varmeanby1dim('surfdata_pft.nc', 'surfdata_VIC.nc','gridcell', \
