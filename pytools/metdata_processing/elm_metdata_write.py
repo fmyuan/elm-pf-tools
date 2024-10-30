@@ -44,9 +44,10 @@ def elm_metdata_write(options, metdata, time_dim=0):
     """
    
 
-    if('Site' in options.nc_write_mettype or 'cplbypass_Site' in options.nc_write_mettype): 
+    if('site' in options.nc_write_mettype.lower() \
+       or 'cplbypass_site' in options.nc_write_mettype.lower()): 
         vnames=['LONGXY','LATIXY','time', \
-                'TBOT', 'PRECTmms', 'RH', 'FSDS', 'FLDS', 'PSRF', 'WIND']
+                'ZBOT','TBOT', 'PRECTmms', 'RH', 'FSDS', 'FLDS', 'PSRF', 'WIND']
     else:
         vnames=['LONGXY','LATIXY','time', \
                 'TBOT', 'PRECTmms', 'QBOT', 'FSDS', 'FLDS', 'PSRF', 'WIND']
@@ -104,9 +105,9 @@ def elm_metdata_write(options, metdata, time_dim=0):
                 ncfilein_cplbypass = ncfilein_cplbypass[0]
                 
             elif 'site' in met_type.lower():
-                fdir = metidir+'/'
+                fdir = metidir+'/CLM1PT_data_template'
                 # So 'metdir' must be full path, e.g. ../atm/datm7/CLM1PT_data/1x1pt_US-Brw
-                ncfilein_cplbypass=fdir+'all_hourly.nc'
+                ncfilein_cplbypass=fdir+'/all_hourly.nc'
                 
                 ncfilein = sorted(glob.glob("%s/????-??.nc" % fdir))
                 ncfilein = ncfilein[0]
@@ -140,7 +141,7 @@ def elm_metdata_write(options, metdata, time_dim=0):
                 if len(ncfilein)>0: ncfilein = ncfilein[0]
                 
                 if '/cpl_bypass' not in metidir:                
-                    fdirheader = metidir+'/cpl_bypass_full/Daymet_ERA5.1km_'+varname+'_'
+                    fdirheader = metidir+'/cpl_bypass_template/Daymet_ERA5.1km_'+varname+'_'
                 else:
                     fdirheader = metidir+'/Daymet_ERA5.1km_'+varname+'_'
                 ncfilein_cplbypass = sorted(glob.glob("%s*.nc" % fdirheader))
@@ -186,6 +187,13 @@ def elm_metdata_write(options, metdata, time_dim=0):
                                         if dname == tname: len_dimension = len(t_jointed)
                                         
                                         dst.createDimension(dname, len_dimension if not dimension.isunlimited() else None)
+
+                                    # variables
+                                    for vname in src.variables.keys():
+                                        vtype = src.variables[vname].datatype
+                                        vdim = src.variables[vname].dimensions
+                                        dst.createVariable(vname, vtype, vdim)
+                                        dst[vname].setncatts(src[vname].__dict__)
     
                                 # time and locations
                                 try:
@@ -205,9 +213,12 @@ def elm_metdata_write(options, metdata, time_dim=0):
                                 except Exception as e:
                                     print(e)
                                     tunit = ''
+                                   
                                 error=putvar(ncfileout, [tname], t, varatts=tname+'::units='+tunit)
                                 error=putvar(ncfileout,['LONGXY'], metdata['LONGXY'])
                                 error=putvar(ncfileout,['LATIXY'], metdata['LATIXY'])
+                                
+                                
                             #end of if create nc file
                             #
                             error=putvar(ncfileout, [varname], sdata)
@@ -344,6 +355,8 @@ def elm_metdata_write(options, metdata, time_dim=0):
                         data_ranges = [20000.0, 120000.0]
                     elif (varname=='WIND'):
                         data_ranges = [-1.0, 100.0]
+                    else:
+                        continue
                     
                     add_offset = (data_ranges[1]+data_ranges[0])/2.0
                     scale_factor = (data_ranges[1]-data_ranges[0])*1.1/(2**15)

@@ -465,4 +465,4 @@ def multiple_cplbypass_extraction(fsites):
 
 #clm_metdata_extraction('../domain.T62.050609.nc', './Solar6Hrly/clmforc.Qian.c2006.T62.Solr', [[267.0228], [40.6878]], ncopath='/usr/local/gcc-x/nco_pacakge/nco-5.2.x/bin/')
 
-clm_metdata_extraction('./domain_42_FLUXNETSITES_simyr1850_c170912.nc', './42_FLUXNETSITES/20', [[5.9981], [50.3051]], ncopath='/usr/local/gcc-x/nco_pacakge/nco-5.2.x/bin/')
+#clm_metdata_extraction('./domain_42_FLUXNETSITES_simyr1850_c170912.nc', './42_FLUXNETSITES/20', [[5.9981], [50.3051]], ncopath='/usr/local/gcc-x/nco_pacakge/nco-5.2.x/bin/')

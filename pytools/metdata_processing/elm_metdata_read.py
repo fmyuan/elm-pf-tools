@@ -7,9 +7,9 @@ from netCDF4 import Dataset
 from calendar import isleap
 from numpy import intersect1d
 import glob
-from pip._vendor.distlib.util import CSVReader
 from types import SimpleNamespace
 
+from pytools.metdata_processing import met_utils
 from pytools.metdata_processing.elm_metdata_write import elm_metdata_write
 ####################################################################################################
 #
@@ -859,7 +859,7 @@ def singleReadNcfile(metdirfile, uservars=None, \
 #
 def singleReadCsvfile(filename):
     
-    
+    import pandas as pd
     # headers to be extracted from 'data_header', for ELM offline forcing 
     
     # Toolik '5_minute_data_v21.csv'
@@ -871,6 +871,7 @@ def singleReadCsvfile(filename):
     #              'wind_sp_5m_5min')
     
     # Toolik '1_hour_data.csv'
+    '''
     std_header = ('date', 'hour', \
                   'air_temp_1m', 'air_temp_3m', 'air_temp_5m', \
                   'lw_dn_avg', \
@@ -878,7 +879,7 @@ def singleReadCsvfile(filename):
                   'rain', 'rain2', \
                   'rh_1m','rh_3m', 'rh_5m', \
                   'wind_sp_1m','wind_sp_5m')
-    
+    '''
     # WERC-ATLAS data in SP,AK
     #std_header = ('date', 'hour', \
     #'Air Temperature @ 1 m (C)', 'Air Temperature @ 3 m (C)', \
@@ -887,33 +888,51 @@ def singleReadCsvfile(filename):
     #'Wind Direction (degrees from true North)', 'standard deviation of Wind Direction', \
     #'Rainfall(mm)')
 
+    # PIE Met_forcing_wide.csv'
+    data_header = ('date', 'hour', \
+                  'Atm_press (Kpa)', \
+                  'Precip (mm)', \
+                  'Pyranometer', \
+                  'RH (%)', \
+                  'Temp (oC)', \
+                  'Wind (m/s)')
+    data_offset = [0.0, 0.0, 0.0,    0.0,        0.0, 0.0, 273.15, 0.0]
+    data_scalor = [1.0, 1.0, 100.0,  1.0/3600.0, 1.0, 1.0, 1.0,    1.0]
+    stdclm_header = ('date','hour', \
+                  'PSRF', 'PRECTmms', 'FSDS', 'RH', 'TBOT', 'WIND')
+
+    
     
     #missing ='nan'
     #
     try:
-        f0 = CSVReader(filename, dtype={'hour': 'float'})
+        f0 = pd.read_csv(filename)
         
-        indx_data =[]
-        key_data=[]
+        indx_csvdata =[]
+        indx_keydata=[]
 
-        data_header = f0.columns.values
-        for j in data_header:
-            if (len(j.strip())>0)  and (j.strip() in std_header):
-                jidx = std_header.index(j.strip())
-                indx = np.argwhere(data_header==j)[0]
+        csv_header = f0.columns.values
+        for j in csv_header:
+            if (len(j.strip())>0)  and (j.strip() in data_header):
+                jidx = data_header.index(j.strip())
+                indx = np.argwhere(csv_header==j)[0]
                 if (indx[0]>=0): 
-                    indx_data.append(indx[0])
-                    j_std = std_header[jidx] # the standard header corresponding to 'data_header'
-                    key_data.append(j_std)
+                    indx_csvdata.append(indx[0])
+                    indx_keydata.append(jidx)
         
         data_value = {}
-        for i,indx in enumerate(indx_data):
-            key = key_data[i]
-            val = np.asarray(f0[key])
-            if (not key in data_value.keys()):
-                data_value[key] = val
+        for i,indx in enumerate(indx_csvdata):
+            v = stdclm_header[indx_keydata[i]]
+            val = np.asarray(f0[data_header[i]])
+            
+            # in case unit conversion for non-date/time dataset
+            if v not in ['date','time']:
+                val = val*data_scalor[indx_keydata[i]]+data_offset[indx_keydata[i]]
+            
+            if (not v in data_value.keys()):
+                data_value[v] = val
             else:
-                data_value[key] = np.append(data_value[key],val)
+                data_value[v] = np.append(data_value[v],val)
                 
 
     except ValueError:
@@ -923,99 +942,53 @@ def singleReadCsvfile(filename):
     #
     del f0
     
-    # timing coversion
+    # timing coversion    
     ymd=[int(s.split('/')[0]) for s in data_value['date']]
     data_value['MONTH']=np.asarray(ymd)
     ymd=[int(s.split('/')[1]) for s in data_value['date']]
     data_value['DAY']=np.asarray(ymd)
     ymd=[int(s.split('/')[2]) for s in data_value['date']]
     data_value['YEAR']=np.asarray(ymd)
-    data_value['HOUR']=np.asarray([math.floor(t/100.0) for t in data_value['hour']])
-    data_value['MM']=np.asarray([math.fmod(t,100.0) for t in data_value['hour']])
+    
+    data_value['HOUR']=np.asarray([math.floor(t) for t in data_value['hour']])
+    data_value['MM']=np.asarray([(t-math.floor(t))*60.0 for t in data_value['hour']])
     ix=np.argwhere(data_value['HOUR']==24)
     if (len(ix)>0): # data @24:00 is dated as day of @00:00, so have to do the following hack
         data_value['HOUR'][ix]=23
         data_value['MM'][ix]=59
+        
+    #leap year: removal Feb-29 data points
+    leap_indx = np.where(((data_value['MONTH']==2) & (data_value['DAY']==29)))
+    if (len(leap_indx[0])>0):
+        for v in data_value.keys():
+            data_value[v] = np.delete(data_value[v],leap_indx)
     
+    # DOY
+    data_value['DOY'] = np.empty_like(data_value['YEAR'])
+    mdoy=[0,31,59,90,120,151,181,212,243,273,304,334,365] #monthly starting DOY 
+    for im in range(1,13):
+        im_indx = np.where((data_value['MONTH']==im))
+        data_value['DOY'][im_indx] = mdoy[im-1]+data_value['DAY'][im_indx]
+        
+    #time: days since starting of the started year
+    data_value['time'] = np.empty_like(data_value['YEAR'])
+    start_yr = min(data_value['YEAR'])
+    data_value['tunit']='days since '+str(int(start_yr))+'-01-01 00:00:00' # Force all time unit to be this one
+    data_value['time'] = (data_value['YEAR']-start_yr+1)*365.0+ \
+                        (data_value['DOY']-1.0) + \
+                        (data_value['HOUR']+data_value['MM']/60.0)/24.0 
 
-    # 
-    yrmin=int(np.min(data_value['YEAR']))
-    yrmax=int(np.max(data_value['YEAR']))
-    tdata={}
-    for ivar in data_value.keys(): 
-        if (ivar not in ['date', 'hour','MM']): tdata[ivar] = []
-    if 'DOY' not in data_value.keys(): tdata['DOY']=[]
-    hrly=3  # 3-hourly data aggregation
-    for yr in range(yrmin,yrmax):
-        days = 365
-        if(isleap(yr)): days=366
-        for doy in range(1,days+1):
-            for hour in range(0,24,hrly):
-                tdata['YEAR'] = np.append(tdata['YEAR'],yr)
-                tdata['DOY'] = np.append(tdata['DOY'],doy)
-                curdate=datetime(yr,1,1)+timedelta(doy-1)
-                tdata['MONTH'] = np.append(tdata['MONTH'],curdate.month)
-                tdata['DAY'] = np.append(tdata['DAY'],curdate.day)
-                tdata['HOUR'] = np.append(tdata['HOUR'],hour)
+    # FLDS data NOT available?
+    if 'FLDS' not in data_value.keys():
+        data_value['FLDS'] = \
+            met_utils.calcFLDS(data_value['TBOT'], data_value['PSRF'], rh_100=data_value['RH'])
+
+    if 'ZBOT' not in data_value.keys():
+        data_value['ZBOT'] = np.empty_like(data_value['TBOT'])
+        data_value['ZBOT'][...] = 2.0
     
-                yridx = np.argwhere(data_value['YEAR']==yr)
-                dayidx = np.argwhere((data_value['MONTH']==curdate.month) & \
-                                     (data_value['DAY']==curdate.day))
-                tidx = np.argwhere((data_value['HOUR']>=hour) & \
-                                   (data_value['HOUR']<(hour+hrly)))   # So 3-hrly is the starting time
-                idx=intersect1d(yridx, dayidx)
-                idx=intersect1d(idx, tidx)
-                for ivar in tdata.keys():
-                    if ivar not in ['YEAR','MONTH','DAY','DOY','HOUR']:
-                        if (len(idx)>0): 
-                            if(len(idx)>1): 
-                                ivar_val = np.nanmean(data_value[ivar][idx])
-                            else:
-                                ivar_val = data_value[ivar][idx[0]]
-                                                    
-                            tdata[ivar] = np.append(tdata[ivar],ivar_val)
-                        else:
-                            tdata[ivar] = np.append(tdata[ivar],np.nan)
-    
-    #
-    # pass to clm data format
-    del data_value
-
-    # standard varlists from ELM offline forcing
-    # ['DTIME'], ['tunit']='days since 1901-01-01 00:00:00'
-    #clm_header = ('DTIME','tunit', \
-    #              'FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND')
-
-    clm_data = {}
-    clm_data['YEAR'] = tdata['YEAR']
-    clm_data['MONTH'] = tdata['MONTH']
-    clm_data['DAY'] = tdata['DAY']
-    clm_data['HOUR'] = tdata['HOUR']
-    clm_data['DOY'] = tdata['DOY']
-    #clm_data['TBOT'] = np.nanmean([tdata['Air Temperature @ 1 m (C)'], \
-                        #           tdata['Air Temperature @ 3 m (C)']], axis=0)+273.15
-    clm_data['TBOT'] = np.nanmean([tdata['air_temp_1m'], tdata['air_temp_3m'], \
-                                    tdata['air_temp_5m']], axis=0)+273.15
-
-    clm_data['FLDS'] = np.empty_like(clm_data['TBOT']); clm_data['FLDS']= tdata['lw_dn_avg']
-    clm_data['FSDS'] = np.empty_like(clm_data['TBOT']); clm_data['FSDS']=tdata['sw_dn_avg']
-    
-    #clm_data['PRECTmms'] = tdata['Rainfall(mm)']
-    clm_data['PRECTmms'] = np.nanmean([tdata['rain'], tdata['rain2']], axis=0)
-    
-    clm_data['PSRF'] = np.empty_like(clm_data['TBOT']); clm_data['PSRF'][:]=101325.0
-    
-    #clm_data['RH'] = np.nanmean([tdata['Relative Humidity @ 1 m (%)'], \
-    #                             tdata['Relative Humidity @ 3 m (%)']], axis=0)
-    clm_data['RH'] = np.nanmean([tdata['rh_1m'], tdata['rh_3m'], \
-                                 tdata['rh_5m']], axis=0)
-
-    #clm_data['WIND'] = tdata['Wind Speed (m/s)']
-    clm_data['WIND'] = np.nanmean([tdata['wind_sp_1m'],tdata['wind_sp_5m']], axis=0)
-
-    clm_header = clm_data.keys()
-
-    return clm_header, clm_data
+    # return data
+    return data_value.keys(), data_value
 
 
 ####################################################################################################
@@ -1437,8 +1410,20 @@ def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', p
 #lat = 65.25  
 #met_cplbypass = clm_metdata_cplbypass_read(cplbypass_dir,cplbypass_fileheader, cplbypass_mettype, 'TBOT', lon, lat)
 
-#site,odata_header,odata = \
-#    singleNCDCReadCsvfile('2016100_initproc.csv')
+print('Testing')
+odata_header,odata = \
+    singleReadCsvfile('Met_forcing_wide_fmy.csv')
+odata['LATIXY'] = 42.75697
+odata['LONGXY'] = -70.89137+360
+
+write_options = SimpleNamespace( \
+            met_idir = './', \
+            nc_create = True, \
+            nc_write = False, \
+            nc_write_mettype = 'cplbypass_Site' )
+
+elm_metdata_write(write_options, odata) 
+print('Done Testing')
 
 
 #odata_header,odata = \
@@ -1446,7 +1431,7 @@ def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', p
     
 
 #clm_metdata_CRUJRA('./rawdata/crujra.v2.3.5d')
-
+'''
 print('Testing')
 metvd, metdata = clm_metdata_Daymet_downscaled_read('./TILE11935/', ts_hr=3, fileheader='', ptxyind=[], varnames=[])
 
@@ -1458,3 +1443,4 @@ write_options = SimpleNamespace( \
 
 elm_metdata_write(write_options, metdata) 
 print('Done Testing')
+'''

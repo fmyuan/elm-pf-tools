@@ -10,7 +10,7 @@ from numpy import intersect1d
 from matplotlib.pyplot import axis
 import glob
 #import dask.dataframe as dd
-from src.pytools.commons_utils import Modules_netcdf as ncmod
+from commons_utils import Modules_netcdf as ncmod
 #from src.pytools.metdata_checking import tunit
 
 #ncopath = '/usr/local/nco/bin/'
@@ -187,7 +187,7 @@ def clm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0
                         ' '+filedir+'/surfdata.pftdyn.nc '+filedir_new+'/surfdata.pftdyn.nc')
 
       
-    if('GSWP3' in met_type or 'Site' in met_type or 'CRUJRA' in met_type):
+    if('GSWP3' in met_type or 'Site' in met_type or 'CRUJRA' in met_type or 'ERA5' in met_type):
         varlist=['FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
         if 'Site' in met_type:
             varlist=['FLDS','FSDS','PRECTmms','PSRF','RH','TBOT','WIND']
@@ -212,6 +212,11 @@ def clm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0
                     file=met_type.strip()+'_'+v+'_1901-2022_z'+str(int(zone)).zfill(2)+'.nc'
                     file_new=met_type.strip()+'_'+v+'_1901-2022_z'+str(int(zone_new)).zfill(2)+'.nc'
             
+            elif('ERA5' in met_type):
+                file=met_type.strip()+'_'+v+'_1980-2023_z'+str(int(zone)).zfill(2)+'.nc'
+                file_new=met_type.strip()+'_'+v+'_1980-2023_z'+str(int(zone_new)).zfill(2)+'.nc'
+
+
             elif('Site' in met_type):
                 file='./all_hourly.nc'
                 file_new='./all_hourly.nc'
@@ -1660,13 +1665,22 @@ def multiple_cplbypass_extraction(fsites):
     lats = np.asarray(lats)
     for i in range(len(lats)):
         #clm_metdata_cplbypass_extraction('/Users/f9y/mygithub/pt-e3sm-inputdata/atm/datm7/atm_forcing.datm7.GSWP3.0.5d.v2.c180716/cpl_bypass_full/', \
+
         #clm_metdata_cplbypass_extraction('/lustre/or-scratch/cades-ccsi/proj-shared/project_acme/e3sm_inputdata/atm/datm7/atm_forcing.datm7.GSWP3.0.5d.v2.c180716/cpl_bypass_full/', \
         #                                  'GSWP3', \
         #                                  ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/', z=1, l=i+1)
-        clm_metdata_cplbypass_extraction('/home/fmyuan/mydata/unstructured_permafrost/', \
-                                          'domain', \
+
+        #clm_metdata_cplbypass_extraction('/home/fmyuan/mydata/unstructured_permafrost/', \
+        #                                  'domain', \
+        #                                  lons[i], lats[i], \
+        #                                  ncopath='/usr/bin/', z=1, l=i+1)
+
+        clm_metdata_cplbypass_extraction('./TILE11935/cpl_bypass_full/', \
+                                          'GSWP3_daymet4', \
                                           lons[i], lats[i], \
-                                          ncopath='/usr/bin/', z=1, l=i+1)
+                                          ncopath='/sw/baseline/spack-envs/base/opt/linux-rhel8-x86_64/gcc-8.5.0/nco-5.1.5-scmfzcuxfmldbn3lwwcjuesd22eumhwk/bin/', \
+                                          z=1, l=i+1)
+
         subfnc = glob.glob("%s*.%s" % ('./subset/', 'nc'))
         for ifile in subfnc:
             ncoutfile = ifile.split('/')[-1]
@@ -1730,8 +1744,12 @@ def multiple_cplbypass_extraction(fsites):
 #clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', 203.1241, 70.5725,ncopath='/usr/local/nco/bin/') #BEO
 #clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', -157.4089, 70.4696,ncopath='/usr/local/nco/bin/')  #ATQ
 ##clm_metdata_cplbypass_extraction('./', 'CRUJRAV2.3.c2023.0.5x0.5', -97.0287, 27.9798, ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/')  #test
-#multiple_cplbypass_extraction('info_14sites.txt')
 
-#clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', -80.25611, 34.97139, ncopath='/usr/local/gcc-x/nco_pacakge/nco-5.2.x/bin/')
+#multiple_cplbypass_extraction('info_14sites.txt')
+multiple_cplbypass_extraction('info_PIE3sites.txt')
+
+
+#NGEE-p4 sites: BEO(TILE14412), C71(TILE13869), CHARS, K64(TILE13868), KFC(TILE13868), QHI(TILE14241)), T27(TILE13868), T47(TILE13868), TFS(TILE14236), TVC(TILE14244)
+#clm_metdata_cplbypass_extraction('./TILE14258/cpl_bypass_full/', 'GSWP3_daymet4', -105.0415, 69.1198, ncopath='/sw/baseline/spack-envs/base/opt/linux-rhel8-x86_64/gcc-8.5.0/nco-5.1.5-scmfzcuxfmldbn3lwwcjuesd22eumhwk/bin/')
 
 
