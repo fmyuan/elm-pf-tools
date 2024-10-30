@@ -9,10 +9,10 @@ from math import nan
 from types import SimpleNamespace
 
 # customized modules
-from src.pytools.metdata_processing import elm_metdata_read
-from src.pytools.metdata_processing import met_utils
-from src.pytools.metdata_processing.met_utils import vpsat_pa
-from src.pytools.metdata_processing.elm_metdata_write import elm_metdata_write
+from pytools.metdata_processing import elm_metdata_read
+from pytools.metdata_processing import met_utils
+from pytools.metdata_processing.met_utils import vpsat_pa
+from pytools.metdata_processing.elm_metdata_write import elm_metdata_write
 
 # ---------------------------------------------------------------
 #  Data sub-timing (down) precipitation (rate-type data), from up-integration (known)

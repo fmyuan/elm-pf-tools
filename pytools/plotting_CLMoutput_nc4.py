@@ -99,7 +99,7 @@ def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, pftvidx, pft_ind
 
 
 # Plot Grided data
-def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=None, varname='', plotlabel='', plottype='default'):
+def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=None, varname='', plotlabel='', plottype='default',TRENDLINE=False):
 
     ax=plt.subplot(nrow, ncol, isubplot)
 
@@ -168,20 +168,21 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
                     plt.plot(t, sdata[:,igrd], label=("Site "+str(igrd+1)))
                 
                 #trending line added
-                if (varname=='FSNO' or 'Snow Depth' in varname):
-                    tindx=np.where((t>=1980) & (t<=2015))[0]
-                    t1=t[tindx]
-                    y1=sdata[tindx,igrd]
-                    y1_trend = np.polyfit(t1, y1, 1)
-                    funcy1 = np.poly1d(y1_trend)
-                    plt.plot(t1,funcy1(t1), '--', label=None)
-
-                    #tindx=np.where((t>=2002) & (t<=2014))[0]
-                    #t2=t[tindx]
-                    #y2=sdata[tindx,igrd]
-                    #y2_trend = np.polyfit(t2, y2, 1)
-                    #funcy2 = np.poly1d(y2_trend)
-                    #plt.plot(t2,funcy2(t2), '--', label=None)
+                if TRENDLINE:
+                    if (varname=='FSNO' or 'Snow Depth' in varname):
+                        tindx=np.where((t>=1980) & (t<=2015))[0]
+                        t1=t[tindx]
+                        y1=sdata[tindx,igrd]
+                        y1_trend = np.polyfit(t1, y1, 1)
+                        funcy1 = np.poly1d(y1_trend)
+                        plt.plot(t1,funcy1(t1), '--', label=None)
+    
+                        #tindx=np.where((t>=2002) & (t<=2014))[0]
+                        #t2=t[tindx]
+                        #y2=sdata[tindx,igrd]
+                        #y2_trend = np.polyfit(t2, y2, 1)
+                        #funcy2 = np.poly1d(y2_trend)
+                        #plt.plot(t2,funcy2(t2), '--', label=None)
 
                 
             #gridtext.append(["NAMC","DSLT","AS","WBT","TT-WBT","TT"])

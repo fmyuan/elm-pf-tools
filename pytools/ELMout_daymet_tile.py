@@ -1,21 +1,16 @@
 #!/usr/bin/env python
 
-import os, sys, time, math
+import sys, math
 import glob
-import re
 import numpy as np
-from datetime import datetime, date
-from matplotlib.dates import date2num, num2date
 
 from optparse import OptionParser
 
 from netCDF4 import Dataset
 from copy import deepcopy
 
-import netCDF4
 from Modules_CLMoutput_nc4 import CLM_NcRead_1simulation
 
-from pyproj import Proj
 from pyproj import Transformer
 from pyproj import CRS
 
@@ -26,25 +21,25 @@ except ImportError:
     HAS_MPI4PY=False
 
 #------------------------------------------------------------------------------------------------------------------
-def Daymet_ELM_ncmap(ncmapfile, redoxy=False, resx=1000.0, resy=1000.0):
+def Daymet_ELM_ncmap(ncmapfile, truncate=False, redoxy=False, resx=1000.0, resy=1000.0):
     # read-in ncmapping file
     
     data = Dataset(ncmapfile,'r')
 
-    if('lon' in data.variables.keys()):
-        lon=np.squeeze(data['lon'][...])
+    if('xc' in data.variables.keys()):
+        lon=data['xc'][...]
     elif('LONGXY' in data.variables.keys()):
         lon=data['LONGXY'][...]
-    elif('xc' in data.variables.keys()):
-        lon=data['xc'][...]
+    elif('lon' in data.variables.keys()):
+        lon=np.squeeze(data['lon'][...])
     else:
         print('NOT recognized lon or LONGXY or xc')
-    if('lat' in data.variables.keys()):
-        lat=data['lat'][...]
+    if('yc' in data.variables.keys()):
+        lat=data['yc'][...]
     elif('LATIXY' in data.variables.keys()):
         lat=data['LATIXY'][...]
-    elif('yc' in data.variables.keys()):
-        lat=data['yc'][...]
+    elif('lat' in data.variables.keys()):
+        lat=data['lat'][...]
     else:
         print('NOT recognized lat or LATIXY or yc')
 
@@ -60,31 +55,25 @@ def Daymet_ELM_ncmap(ncmapfile, redoxy=False, resx=1000.0, resy=1000.0):
         geoy=data['y'][...]
     else:
         print('NOT recognized geoy')
-
-    lon = np.squeeze(lon)
-    lat = np.squeeze(lat)
-
     xidx=np.squeeze(data['gridXID'][...])-1  # in domain.nc, those index are 1-based
     yidx=np.squeeze(data['gridYID'][...])-1  # in domain.nc, those index are 1-based
     gidx=np.squeeze(data['gridID'][...])-1  # in domain.nc, those index are 1-based
 
 
-    # xidx/yidx/gidx are really actual indices included in dataset
-    # but geox/geoy are for whole NA. So needed to truncat
-    #
-    geox = geox[xidx]
-    geoy = geoy[yidx]
-    # reset offset to min. corners and re-arrange gidx from 0 
-    xidx = xidx - min(xidx)
-    yidx = yidx - min(yidx)
-    gidx = np.asarray(range(len(gidx)))
-    
-
-    
     # may need to generate a txt mapping file
-    resx = float(resx) #daymet cell resolution in meters: 1000 m by default
-    resy = float(resy)
     if redoxy:
+        # xidx/yidx/gidx are really actual indices included in dataset
+        # but geox/geoy are for whole NA. So needed to truncat
+        #
+        geox = geox[xidx]
+        geoy = geoy[yidx]
+        # reset offset to min. corners and re-arrange gidx from 0 
+        xidx = xidx - min(xidx)
+        yidx = yidx - min(yidx)
+        gidx = np.asarray(range(len(gidx)))
+                
+        resx = float(resx) #daymet cell resolution in meters: 1000 m by default
+        resy = float(resy)
         #
         xmin = np.min(geox)
         xmax = np.max(geox)
@@ -101,12 +90,12 @@ def Daymet_ELM_ncmap(ncmapfile, redoxy=False, resx=1000.0, resy=1000.0):
         fheader='   lon          lat            geox            geoy        i     j     g '
         f.write(fheader+'\n')
         for idx in range(len(gidx)):
-            if abs(geox[idx]-xx[xidx[idx]])>abs(resx/2.0):
-                print('mis-matched gridcell X-coord. : ', gidx[idx]+1, geox[idx], xx[xidx[idx]])
-                sys.exit(-1)
-            if abs(geoy[idx]-yy[yidx[idx]])>abs(resy/2.0):
-                print('mis-matched gridcell Y-coord. : ', gidx[idx]+1, geoy[idx], yy[yidx[idx]])
-                sys.exit(-1)
+            #if abs(geox[idx]-xx[xidx[idx]])>abs(resx/2.0):
+            #    print('mis-matched gridcell X-coord. : ', gidx[idx]+1, geox[idx], xx[xidx[idx]])
+                #sys.exit(-1)
+            #if abs(geoy[idx]-yy[yidx[idx]])>abs(resy/2.0):
+            #    print('mis-matched gridcell Y-coord. : ', gidx[idx]+1, geoy[idx], yy[yidx[idx]])
+                #sys.exit(-1)
             
             # re-write daymet_elm_mapping.txt    
             #'(f12.5,1x,f12.6,1x, 2(f15.1, 1x),3(I5,1x))'
@@ -120,9 +109,9 @@ def Daymet_ELM_ncmap(ncmapfile, redoxy=False, resx=1000.0, resy=1000.0):
             f.write('\n')
         f.close()
 
-    else:
+    elif truncate:
         # xidx/yidx is really actual indices
-        # geox/geoy need to sort by xidx/yidx and removal of duplicate
+        # geox/geoy need to sort by xidx/yidx and removal of duplicate or extra
         # the following approach can g(uaranttee xidx/yidx match with original geox/geoy order 
 
         [idx, i] = np.unique(yidx, return_index=True)
@@ -134,6 +123,20 @@ def Daymet_ELM_ncmap(ncmapfile, redoxy=False, resx=1000.0, resy=1000.0):
         ii = np.argsort(idx)
         idx = i[ii]
         xx = geox[idx]
+        
+        # offset xidx/yidx
+        xidx = xidx - min(xidx)
+        yidx = yidx - min(yidx)
+        gidx = np.asarray(range(len(gidx)))
+
+    
+    else:
+        # xidx/yidx is really actual indices in geox/geoy meshed grid (sourted already)
+        yy = geoy
+        xx = geox
+        
+        # gidx is the flatten xidx/yidx, so gidx must be found its order in 1D data
+        gidx = np.asarray(range(len(gidx)))
         
     
     # output 2-D grid net geox/geoy, mapping index of  1D gidx <==> (xidx,yidx)
@@ -413,6 +416,7 @@ if (options.elmheader != ""):
     
     if ('nc' in options.gridmap.strip()):
     # no mapping file, then will obtain info from nc file itself
+    # note: xidx/yidx are indices in 2D map (xx-yy), gidx is indices in 1D data
         mapfile = options.gridmap.strip()
         [xx, yy, xidx, yidx, gidx] = Daymet_ELM_ncmap(mapfile, \
                                     redoxy=options.redoxy, \
@@ -534,11 +538,13 @@ if (options.elmheader != ""):
         # copy all data in src, and do 1D-grid --> 2D-geox/geoy copy
         for name, variable in src.variables.items():
             vname = name
+            src_dims = variable.dimensions
+
             if name=='DTIME': vname='time' # rename 'DTIME' to 'time' so that VISIT can regcon. it
-            if name=='lat': vname='LATIXY' # 'lon/lat' or 'geox/y' is a dimension name of 2D mesh
-            if name=='lon': vname='LONGXY'
-            if name=='geoy': vname='geox2d'
-            if name=='geox': vname='geoy2d'
+            if name=='lat' and 'lat' not in src_dims: vname='lat2d' # 'lon/lat' or 'geox/y' is a dimension name of 2D mesh
+            if name=='lon' and 'lon' not in src_dims: vname='lon2d'
+            if name=='geoy' and 'geoy' not in src_dims: vname='geox2d'
+            if name=='geox' and 'geox' not in src_dims: vname='geoy2d'
 
             if ('ALL' not in elm_varname) and \
                (name not in elm_varname.split(',') and vname not in elm_varname.split(',')): 
@@ -547,11 +553,9 @@ if (options.elmheader != ""):
 
             
             #if(ncfile == alldirfiles[0]): print(name)
-            
-            src_dims = variable.dimensions
-            
-            # if merge tile domain.nc, it's dims are (ni,nj)
-            dim_domain = 'none'
+                        
+            # if merge tile domain.nc, it's dims are (ni,nj), with nj=1
+            dim_domain = 'ni'
             if 'domain' in ncfile:
                 dim_domain = 'ni'
                 if (src.dimensions['nj'].size>1 and src.dimensions['ni'].size==1): dim_domain='nj'
@@ -575,6 +579,12 @@ if (options.elmheader != ""):
                 for vdim in src_dims:
                     dim=vdim
                     if vdim=='DTIME': dim='time'# rename 'DTIME' to 'time' so that VISIT can regcon. it
+                    if vdim=='nj' and src.dimensions['nj'].size==1:
+                        #skip nj dim and squeeze data
+                        nj=src_dims.index('nj') 
+                        src_data = np.squeeze(src_data, axis=nj)
+                        continue
+
                     i = i + 1
                     if dim in ('gridcell','lndgrid', 'n', dim_domain): 
                         idim = i
@@ -629,6 +639,11 @@ if (options.elmheader != ""):
                             len_grid = src.dimensions['gridcell'].size
                         elif('lndgrid' in src.dimensions.keys()):
                             len_grid = src.dimensions['lndgrid'].size
+                        elif('nj' in src.dimensions.keys() and 'ni' in src.dimensions.keys()):
+                            len_grid = src.dimensions['ni'].size
+                            idim = idim - 1
+                            src_data=np.squeeze(src_data)
+                            
                             
                         if(math.fmod(len_dim, len_grid)==0):
                             len_dim = int(len_dim/len_grid)
