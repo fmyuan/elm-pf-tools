@@ -3,12 +3,12 @@
 import sys
 from datetime import datetime
 import glob
-#from optparse import OptionParser
+from optparse import OptionParser
 import numpy as np
 from netCDF4 import Dataset
 
 # customized modules
-from Modules_netcdf import putvar
+from pytools.commons_utils.Modules_netcdf import putvar
 
 def elm_metdata_write(options, metdata, time_dim=0):
     
@@ -44,9 +44,10 @@ def elm_metdata_write(options, metdata, time_dim=0):
     """
    
 
-    if('Site' in options.nc_write_mettype or 'cplbypass_Site' in options.nc_write_mettype): 
+    if('site' in options.nc_write_mettype.lower() \
+       or 'cplbypass_site' in options.nc_write_mettype.lower()): 
         vnames=['LONGXY','LATIXY','time', \
-                'TBOT', 'PRECTmms', 'RH', 'FSDS', 'FLDS', 'PSRF', 'WIND']
+                'ZBOT','TBOT', 'PRECTmms', 'RH', 'FSDS', 'FLDS', 'PSRF', 'WIND']
     else:
         vnames=['LONGXY','LATIXY','time', \
                 'TBOT', 'PRECTmms', 'QBOT', 'FSDS', 'FLDS', 'PSRF', 'WIND']
@@ -94,19 +95,25 @@ def elm_metdata_write(options, metdata, time_dim=0):
                 ncfilein = sorted(glob.glob("%s*.nc" % fdir))
                 if len(ncfilein)>0: ncfilein = ncfilein[0]
                 
-                if '/cpl_bypass' not in metidir:                
-                    fdirheader = metidir+'/cpl_bypass_template/GSWP3_daymet4_'+varname+'_'
+                if '/cpl_bypass' not in metidir:
+                    if 'daymet' in met_type:
+                        fdirheader = metidir+'/cpl_bypass_template/GSWP3_daymet4_'+varname+'_'
+                    else:
+                        fdirheader = metidir+'/cpl_bypass_template/GSWP3_'+varname+'_'
                 else:
-                    fdirheader = metidir+'/GSWP3_daymet4_'+varname+'_'
+                    if 'daymet' in met_type:
+                        fdirheader = metidir+'/GSWP3_daymet4_'+varname+'_'
+                    else:
+                        fdirheader = metidir+'/GSWP3_'+varname+'_'
                 ncfilein_cplbypass = sorted(glob.glob("%s*.nc" % fdirheader))
                 if len(ncfilein)<=0 and len(ncfilein_cplbypass)<=0:
                     sys.exit('there is NO file as -'+fdirheader)
                 ncfilein_cplbypass = ncfilein_cplbypass[0]
                 
             elif 'site' in met_type.lower():
-                fdir = metidir+'/'
+                fdir = metidir+'/CLM1PT_data_template'
                 # So 'metdir' must be full path, e.g. ../atm/datm7/CLM1PT_data/1x1pt_US-Brw
-                ncfilein_cplbypass=fdir+'all_hourly.nc'
+                ncfilein_cplbypass=fdir+'/all_hourly.nc'
                 
                 ncfilein = sorted(glob.glob("%s/????-??.nc" % fdir))
                 ncfilein = ncfilein[0]
@@ -140,7 +147,7 @@ def elm_metdata_write(options, metdata, time_dim=0):
                 if len(ncfilein)>0: ncfilein = ncfilein[0]
                 
                 if '/cpl_bypass' not in metidir:                
-                    fdirheader = metidir+'/cpl_bypass_full/Daymet_ERA5.1km_'+varname+'_'
+                    fdirheader = metidir+'/cpl_bypass_template/Daymet_ERA5.1km_'+varname+'_'
                 else:
                     fdirheader = metidir+'/Daymet_ERA5.1km_'+varname+'_'
                 ncfilein_cplbypass = sorted(glob.glob("%s*.nc" % fdirheader))
@@ -186,6 +193,13 @@ def elm_metdata_write(options, metdata, time_dim=0):
                                         if dname == tname: len_dimension = len(t_jointed)
                                         
                                         dst.createDimension(dname, len_dimension if not dimension.isunlimited() else None)
+
+                                    # variables
+                                    for vname in src.variables.keys():
+                                        vtype = src.variables[vname].datatype
+                                        vdim = src.variables[vname].dimensions
+                                        dst.createVariable(vname, vtype, vdim)
+                                        dst[vname].setncatts(src[vname].__dict__)
     
                                 # time and locations
                                 try:
@@ -205,9 +219,12 @@ def elm_metdata_write(options, metdata, time_dim=0):
                                 except Exception as e:
                                     print(e)
                                     tunit = ''
+                                   
                                 error=putvar(ncfileout, [tname], t, varatts=tname+'::units='+tunit)
                                 error=putvar(ncfileout,['LONGXY'], metdata['LONGXY'])
                                 error=putvar(ncfileout,['LATIXY'], metdata['LATIXY'])
+                                
+                                
                             #end of if create nc file
                             #
                             error=putvar(ncfileout, [varname], sdata)
@@ -344,6 +361,8 @@ def elm_metdata_write(options, metdata, time_dim=0):
                         data_ranges = [20000.0, 120000.0]
                     elif (varname=='WIND'):
                         data_ranges = [-1.0, 100.0]
+                    else:
+                        continue
                     
                     add_offset = (data_ranges[1]+data_ranges[0])/2.0
                     scale_factor = (data_ranges[1]-data_ranges[0])*1.1/(2**15)
@@ -376,36 +395,10 @@ def elm_metdata_write(options, metdata, time_dim=0):
         # for varname in vnames
     
     print('DONE!')
+    
+    return 0
 
 #
 
 # ---------------------------------------------------------------
-"""
-parser = OptionParser()
-
-# E3SM met data directory for template
-parser.add_option("--e3sm_metdir", dest="met_idir", default="./", \
-                  help="e3sminput met directory (default = ./, i.e., under current directory)")
-# other sources of data
-parser.add_option("--user_metdir", dest="user_metdir", default="./", \
-                  help="user-defined met directory (default = ./, i.e., under current directory)")
-parser.add_option("--user_metfile", dest="user_metfile", default="", \
-                  help="user-defined met file(s) under user_metdir (default = '', i.e., None)")
-parser.add_option("--user_metvars", dest="user_metvars", default="", \
-                  help="user-defined met file(s) var names by exact order of 'LONGXY,LATIXY,time,TBOT,PRECTmms,QBOT,FSDS,FLDS,PSRF,WIND' ")
-parser.add_option("--estFLDS", dest="estFLDS", default=False, \
-                  help = "Estimating FLDS", action="store_true")
-parser.add_option("--nc_create", dest="nc_create", default=False, \
-                  help = "output new nc file", action="store_true")
-parser.add_option("--nc_write", dest="nc_write", default=False, \
-                  help = "output to a existed nc file", action="store_true")
-parser.add_option("--ncout_mettype", dest="nc_write_mettype", default="", \
-                  help = "output to nc files in defined format (default = '', i.e., as original)")
-#
-(options, args) = parser.parse_args()
-
-elm_metdata_write(options)
-
-#--------------------------------------------------------------------------------------
-"""
 

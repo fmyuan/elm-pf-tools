@@ -432,11 +432,11 @@ def multiple_cplbypass_extraction(fsites):
                 os.system('mv '+ifile+' ./'+ncoutfile) 
             else:
                 if 'domain' in ifile:
-                    ncmod.mergefilesby1dim(tmpnc, ifile, ncoutfile, 'ni')
+                    Modules_netcdf.mergefilesby1dim(tmpnc, ifile, ncoutfile, 'ni')
                 elif 'surfdata' in ifile:
-                    ncmod.mergefilesby1dim(tmpnc, ifile, ncoutfile, 'gridcell')
+                    Modules_netcdf.mergefilesby1dim(tmpnc, ifile, ncoutfile, 'gridcell')
                 else:
-                    ncmod.mergefilesby1dim(tmpnc, ifile, ncoutfile, 'n')
+                    Modules_netcdf.mergefilesby1dim(tmpnc, ifile, ncoutfile, 'n')
                 
             os.system('cp '+ncoutfile+' '+tmpnc)
         
@@ -462,7 +462,3 @@ def multiple_cplbypass_extraction(fsites):
 #clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', -157.4089, 70.4696,ncopath='/usr/local/nco/bin/')  #ATQ
 ##clm_metdata_cplbypass_extraction('./', 'CRUJRAV2.3.c2023.0.5x0.5', -97.0287, 27.9798, ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/')  #test
 ##multiple_cplbypass_extraction('info_14sites.txt')
-
-#clm_metdata_extraction('../domain.T62.050609.nc', './Solar6Hrly/clmforc.Qian.c2006.T62.Solr', [[267.0228], [40.6878]], ncopath='/usr/local/gcc-x/nco_pacakge/nco-5.2.x/bin/')
-
-clm_metdata_extraction('./domain_42_FLUXNETSITES_simyr1850_c170912.nc', './42_FLUXNETSITES/20', [[5.9981], [50.3051]], ncopath='/usr/local/gcc-x/nco_pacakge/nco-5.2.x/bin/')

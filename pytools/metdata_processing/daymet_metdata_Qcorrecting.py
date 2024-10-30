@@ -1,26 +1,12 @@
 #!/usr/bin/env python
 
-import os, sys
-from datetime import datetime
-import glob
-import re
-import math
-from optparse import OptionParser
-import numpy as np
 from netCDF4 import Dataset
-from copy import deepcopy
-from scipy import interpolate
 from scipy.ndimage import gaussian_filter
 
 # customized modules
-import Modules_metdata
-#from Modules_metdata import clm_metdata_cplbypass_read    # CPL_BYPASS
-#from Modules_metdata import clm_metdata_read              # GSWP3
-#from Modules_metdata import singleNCDCReadCsvfile         # NCDC 
-#from Modules_metdata import subsetDaymetRead1NCfile       # DAYMET in nc4 format
-#from Modules_metdata import singleDaymetReadCsvfile       # DAYMET in csv format
-from hdf5_modules import Read1hdf                         # for ATS metdata in h5 format
-import netcdf_modules as nfmod
+from pytools.metdata_processing.daymet_utils import *
+from pytools.commons_utils.Modules_hdf5 import Read1hdf                         # for ATS metdata in h5 format
+from pytools.commons_utils.Modules_netcdf import 
 
 # ---------------------------------------------------------------
 def DataTimeDown(sdata_jointting, src, target, data_method='offset'):

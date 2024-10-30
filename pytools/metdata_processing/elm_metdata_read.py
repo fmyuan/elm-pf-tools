@@ -7,10 +7,16 @@ from netCDF4 import Dataset
 from calendar import isleap
 from numpy import intersect1d
 import glob
-from pip._vendor.distlib.util import CSVReader
+import dask.dataframe as dd
+
 from types import SimpleNamespace
 
-from pytools.metdata_processing.elm_metdata_write import elm_metdata_write
+try:
+    from mpi4py import MPI
+    HAS_MPI4PY=True
+except ImportError:
+    HAS_MPI4PY=False
+
 ####################################################################################################
 #
 # -------subset reading DAYMET data in nc format  ----------------
@@ -573,11 +579,12 @@ def clm_metdata_cplbypass_read(filedir,met_type, varnames, lons=[-999], lats=[-9
 #    
 #------ ------ read a met variables from a standard CLM full met directory 
 #
-def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, varnames):
+def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon=[-999], lat=[-999], varnames=[]):
     #
     # datm domain file  
     all_lons=[]
     all_lats=[]
+    UNSTRUCTURED = False
     try:
         f = Dataset(met_domain,'r')
     
@@ -589,6 +596,7 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, varnames
              
         all_lons = np.asarray(all_lons)
         all_lats = np.asarray(all_lats)
+        if all_lats.shape[0]==1 and all_lats.shape[1]>1: UNSTRUCTURED=True
     except ValueError:
         print("Error in reading datm domain file:" + met_domain)
         
@@ -622,11 +630,18 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, varnames
         sys.exit()
     ij=np.unique(ij)
     ij=np.unravel_index(ij, all_lats.shape)
-    iy=ij[0]
-    if len(all_lats.shape)>1: 
-        ix=ij[1]
+    
+    if UNSTRUCTURED:
+        iy = [0]
+        ix = ij[1]
     else:
-        ix=[0]
+        iy=ij[0]
+        if len(all_lats.shape)>1: 
+            ix=ij[1]
+        else:
+            ix=[0]
+
+    print('len ix,iy: ', len(ix), len(iy))
 
     #files data-reading
     met ={}
@@ -675,6 +690,10 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, varnames
             else:
                 fdirheader=fdir+fileheader.strip()
                 dirfiles = sorted(glob.glob("%s*.*" % fdirheader))  # maybe file pattern in 'fileheader'
+            if len(dirfiles)<=0:
+                print('NO metdata file Found: ',v, ' IN ', fdir+fileheader)
+                continue
+            
             for dirfile in dirfiles:
                 # in metdata directory
                 if(os.path.isfile(dirfile)):
@@ -683,15 +702,25 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, varnames
                     # only need to read once for all files
                     if ('LATIXY' not in met.keys()):
                         if 'LATIXY' in fnc.variables.keys():
-                            met['LATIXY']=np.asarray(fnc.variables['LATIXY'])[iy,ix]
+                            met['LATIXY']=np.asarray(fnc.variables['LATIXY'])
                         elif 'lat' in fnc.variables.keys():
-                            met['LATIXY']=np.asarray(fnc.variables['lat'])[iy,ix]
+                            met['LATIXY']=np.asarray(fnc.variables['lat'])
+                        if UNSTRUCTURED:
+                            met['LATIXY'] = met['LATIXY'][ix]
+                        else:
+                            met['LATIXY'] = met['LATIXY'][iy,ix]
+
                     if ('LONGXY' not in met.keys()):
                         if 'LONGXY' in fnc.variables.keys():
-                            met['LONGXY']=np.asarray(fnc.variables['LONGXY'])[iy,ix]
+                            met['LONGXY']=np.asarray(fnc.variables['LONGXY'])
                         elif 'lon' in fnc.variables.keys():
-                            met['LONGXY']=np.asarray(fnc.variables['lon'])[iy,ix]
-        
+                            met['LONGXY']=np.asarray(fnc.variables['lon'])       
+                        if UNSTRUCTURED:
+                            met['LONGXY'] = met['LONGXY'][ix]
+                        else:
+                            met['LONGXY'] = met['LONGXY'][iy,ix]
+                        
+                    
                     # non-time variables from multiple files
                     if(v in fnc.variables.keys()): 
                         # for 'time', need to convert tunit AND must do for each var, due to from different files
@@ -717,9 +746,15 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, varnames
                             
                         # values
                         if(len(vdata)<=0):
-                            vdata=np.asarray(fnc.variables[v])[:,iy,ix]
+                            if UNSTRUCTURED:
+                                vdata=np.asarray(fnc.variables[v])[:,ix]
+                            else:
+                                vdata=np.asarray(fnc.variables[v])[:,iy,ix]
                         else:                                              
-                            d=np.asarray(fnc.variables[v])[:,iy,ix]
+                            if UNSTRUCTURED:
+                                d=np.asarray(fnc.variables[v])[:,ix]
+                            else:
+                                d=np.asarray(fnc.variables[v])[:,iy,ix]
                             vdata=np.vstack((vdata,d))
         
                         if(v not in vdims.keys()):
@@ -749,7 +784,7 @@ def clm_metdata_read(metdir,fileheader, met_type, met_domain, lon, lat, varnames
         print('NOT supported Met_type: '+ met_type)
         sys.exit(-1)
         
-    return ix,iy, vdims,met
+    return ix,iy,vdims,met
     
 ####################################################################################################
 
@@ -857,63 +892,88 @@ def singleReadNcfile(metdirfile, uservars=None, \
 #
 # -------Read 1 site met data, *.csv, TOTALLY user-defined ----------------
 #
-def singleReadCsvfile(filename):
+def singleReadCsvfile(filename, hrly=99, tc2tk=False, PRCP2s=False):
+    # filename: csv data with one line header
+    # hrly: optional, hours if aggregating data to more longer interval than orginal data 
+    # tc2tk: optional, convert Tair from degreeC to degreeK
+    # PRECP2s: optional, covert Preciptation unit to per second (from per interval or period) 
     
-    
-    # headers to be extracted from 'data_header', for ELM offline forcing 
+    # std elm var and its headers to be extracted from 'data_header', 
+    # for ELM offline forcing 
+    # 'ELM std name:csv column header;csv column header2'
     
     # Toolik '5_minute_data_v21.csv'
-    #std_header = ('date', 'hour', \
-    #              'air_temp_3m_5min', 'air_temp_5m_5min', \
-    #              'lw_dn_avg_5min', \
-    #              'sw_dn_avg_5min', \
-    #              'rh_3m_5min', 'rh_5m_5min', \
-    #              'wind_sp_5m_5min')
+    #std_header = ('data:date', 'hour:hour', \
+    #              'TBOT:air_temp_3m_5min;air_temp_5m_5min', \
+    #              'FLDS:lw_dn_avg_5min', \
+    #              'FSDS:sw_dn_avg_5min', \
+    #              'RH:rh_3m_5min;rh_5m_5min', \
+    #              'WIND:wind_sp_5m_5min')
     
     # Toolik '1_hour_data.csv'
-    std_header = ('date', 'hour', \
-                  'air_temp_1m', 'air_temp_3m', 'air_temp_5m', \
-                  'lw_dn_avg', \
-                  'sw_dn_avg', \
-                  'rain', 'rain2', \
-                  'rh_1m','rh_3m', 'rh_5m', \
-                  'wind_sp_1m','wind_sp_5m')
+    #std_header = ('date:date', 'hour:hour', \
+    #              'TBOT:air_temp_1m;air_temp_3m;air_temp_5m', \
+    #              'FLDS:lw_dn_avg', \
+    #              'FSDS:sw_dn_avg', \
+    #              'PRECTmms:rain;rain2', \
+    #              'RH:rh_1m;rh_3m;rh_5m', \
+    #              'WIND:wind_sp_1m;wind_sp_5m')
     
     # WERC-ATLAS data in SP,AK
-    #std_header = ('date', 'hour', \
-    #'Air Temperature @ 1 m (C)', 'Air Temperature @ 3 m (C)', \
-    #'Relative Humidity @ 1 m (%)', 'Relative Humidity @ 3 m (%)', \
-    #'Wind Speed (m/s)', \
-    #'Wind Direction (degrees from true North)', 'standard deviation of Wind Direction', \
-    #'Rainfall(mm)')
+    #std_header = ('date:date', 'hour:hour', \
+    #'TBOTc:Air Temperature @ 1 m (C); Air Temperature @ 3 m (C)', \
+    #'RH:Relative Humidity @ 1 m (%);Relative Humidity @ 3 m (%)', \
+    #'WIND:Wind Speed (m/s)', \
+    #'PRECTmms:Rainfall(mm)')
+
+    # PIE met towers 'Met_Final_for ELM.csv'
+    # 'ELM std name:csv column header;csv column header2'
+    std_header = ('date:date', 'hour:hour', \
+                  'TBOT:TBOT', \
+                  'RH:RH', \
+                  'WIND:Wind', \
+                  'PSRF:PSRF', \
+                  'FSDS:FSDS', \
+                  'FLDS:', \
+                  'PRECTmms:PRECTmms')
 
     
     #missing ='nan'
+    missing =''
     #
     try:
-        f0 = CSVReader(filename, dtype={'hour': 'float'})
+        f0 = dd.read_csv(filename, parse_dates=['date'])
+        #f0 = dd.read_csv(filename, dtype={'hour': 'float'}) # if hour in format hh:mm:ss
         
-        indx_data =[]
-        key_data=[]
-
-        data_header = f0.columns.values
-        for j in data_header:
-            if (len(j.strip())>0)  and (j.strip() in std_header):
-                jidx = std_header.index(j.strip())
-                indx = np.argwhere(data_header==j)[0]
-                if (indx[0]>=0): 
-                    indx_data.append(indx[0])
-                    j_std = std_header[jidx] # the standard header corresponding to 'data_header'
-                    key_data.append(j_std)
-        
+        data_name  = []
         data_value = {}
-        for i,indx in enumerate(indx_data):
-            key = key_data[i]
-            val = np.asarray(f0[key])
-            if (not key in data_value.keys()):
-                data_value[key] = val
-            else:
-                data_value[key] = np.append(data_value[key],val)
+
+        cols_header = f0.columns.values
+        for j in std_header:
+            j_std = j.strip().split(':')[0]
+            j_cols= j.strip().split(':')[1]
+            j_cols= j_cols.strip().split(';')
+            if (len(j_cols)>0 and j_cols[0]!=''):
+                data_name.append(j_std)# the standard header corresponding to 'data_header'
+                key_data =[]
+                for cols in j_cols:
+                    print(cols)
+                    indx = np.argwhere(cols_header==cols)[0]
+                    if len(indx)>0:key_data.append(cols)
+        
+                for key in key_data:
+                    col_val = np.asarray(f0[key])
+                    if (not j_std in data_value.keys()):
+                        data_value[j_std] = col_val
+                    else:
+                        if (np.ndim(data_value[j_std])==1):
+                            data_value[j_std] = np.append(data_value[j_std][:,None],col_val[:,None],axis=1) # mutiple data source for variable j_std
+                        else:
+                            data_value[j_std] = np.append(data_value[j_std],col_val[:,None],axis=1) # mutiple data source for variable j_std
+                            
+                #
+                if np.ndim(data_value[j_std])>1:
+                    data_value[j_std] = np.nanmean(data_value[j_std], axis=1)
                 
 
     except ValueError:
@@ -923,15 +983,16 @@ def singleReadCsvfile(filename):
     #
     del f0
     
-    # timing coversion
-    ymd=[int(s.split('/')[0]) for s in data_value['date']]
-    data_value['MONTH']=np.asarray(ymd)
-    ymd=[int(s.split('/')[1]) for s in data_value['date']]
-    data_value['DAY']=np.asarray(ymd)
-    ymd=[int(s.split('/')[2]) for s in data_value['date']]
-    data_value['YEAR']=np.asarray(ymd)
-    data_value['HOUR']=np.asarray([math.floor(t/100.0) for t in data_value['hour']])
-    data_value['MM']=np.asarray([math.fmod(t,100.0) for t in data_value['hour']])
+    # datetime conversion
+    datestr=np.datetime_as_string(data_value['date'], unit='D')
+    y=[int(s.split('-')[0]) for s in datestr]
+    data_value['YEAR']=np.asarray(y)
+    m=[int(s.split('-')[1]) for s in datestr]
+    data_value['MONTH']=np.asarray(m)
+    d=[int(s.split('-')[2]) for s in datestr]
+    data_value['DAY']=np.asarray(d)
+    data_value['HOUR']=np.asarray([math.floor(t) for t in data_value['hour']])
+    data_value['MM']=np.asarray([(t-math.floor(t))*60.0 for t in data_value['hour']])
     ix=np.argwhere(data_value['HOUR']==24)
     if (len(ix)>0): # data @24:00 is dated as day of @00:00, so have to do the following hack
         data_value['HOUR'][ix]=23
@@ -945,12 +1006,16 @@ def singleReadCsvfile(filename):
     for ivar in data_value.keys(): 
         if (ivar not in ['date', 'hour','MM']): tdata[ivar] = []
     if 'DOY' not in data_value.keys(): tdata['DOY']=[]
-    hrly=3  # 3-hourly data aggregation
-    for yr in range(yrmin,yrmax):
+    
+    # for hourly data aggregation, if needed
+    if hrly==99: # no temporal data aggregation
+        hrly=data_value['hour'][1]-data_value['hour'][0]
+    # redo timing in sequence SO THAT any missing data will be caught OR integrating if needed
+    for yr in range(yrmin,yrmax+1):
         days = 365
         if(isleap(yr)): days=366
         for doy in range(1,days+1):
-            for hour in range(0,24,hrly):
+            for hour in np.arange(0,24,hrly):
                 tdata['YEAR'] = np.append(tdata['YEAR'],yr)
                 tdata['DOY'] = np.append(tdata['DOY'],doy)
                 curdate=datetime(yr,1,1)+timedelta(doy-1)
@@ -981,46 +1046,20 @@ def singleReadCsvfile(filename):
     # pass to clm data format
     del data_value
 
-    # standard varlists from ELM offline forcing
-    # ['DTIME'], ['tunit']='days since 1901-01-01 00:00:00'
-    #clm_header = ('DTIME','tunit', \
-    #              'FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND')
-
-    clm_data = {}
-    clm_data['YEAR'] = tdata['YEAR']
-    clm_data['MONTH'] = tdata['MONTH']
-    clm_data['DAY'] = tdata['DAY']
-    clm_data['HOUR'] = tdata['HOUR']
-    clm_data['DOY'] = tdata['DOY']
-    #clm_data['TBOT'] = np.nanmean([tdata['Air Temperature @ 1 m (C)'], \
-                        #           tdata['Air Temperature @ 3 m (C)']], axis=0)+273.15
-    clm_data['TBOT'] = np.nanmean([tdata['air_temp_1m'], tdata['air_temp_3m'], \
-                                    tdata['air_temp_5m']], axis=0)+273.15
-
-    clm_data['FLDS'] = np.empty_like(clm_data['TBOT']); clm_data['FLDS']= tdata['lw_dn_avg']
-    clm_data['FSDS'] = np.empty_like(clm_data['TBOT']); clm_data['FSDS']=tdata['sw_dn_avg']
+    clm_header = tdata.keys()
+    # some misc. data conversion
+    if tc2tk:     
+        tdata['TBOT'] = tdata['TBOT']+273.15
+    if PRCP2s:
+        tdata['PRECTmms'] = tdata['PRECTmms']/hrly
     
-    #clm_data['PRECTmms'] = tdata['Rainfall(mm)']
-    clm_data['PRECTmms'] = np.nanmean([tdata['rain'], tdata['rain2']], axis=0)
-    
-    clm_data['PSRF'] = np.empty_like(clm_data['TBOT']); clm_data['PSRF'][:]=101325.0
-    
-    #clm_data['RH'] = np.nanmean([tdata['Relative Humidity @ 1 m (%)'], \
-    #                             tdata['Relative Humidity @ 3 m (%)']], axis=0)
-    clm_data['RH'] = np.nanmean([tdata['rh_1m'], tdata['rh_3m'], \
-                                 tdata['rh_5m']], axis=0)
-
-    #clm_data['WIND'] = tdata['Wind Speed (m/s)']
-    clm_data['WIND'] = np.nanmean([tdata['wind_sp_1m'],tdata['wind_sp_5m']], axis=0)
-
-    clm_header = clm_data.keys()
-
-    return clm_header, clm_data
+    return clm_header, tdata
 
 
-####################################################################################################
 #
 # ------- CRU-JRA met forcing data convertion-extraction for CLM/ELM ------------------------------------
+#
+
 #
 def clm_metdata_CRUJRA(crujra_dirfilehead, template_clm_metfile=''):
     # CRU-JRA data formats
@@ -1280,7 +1319,7 @@ def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', p
     #files data-reading
     met ={}
     vdims={}
-    mdoy=[0,31,59,90,120,151,181,212,243,273,304,334]#monthly starting DOY
+    mdoy=[0,31,59,90,120,151,181,212,243,273,304,334,365]#monthly starting DOY
     
     varlist=['FSDS','PRECTmms','FLDS','PSRF','QBOT','TBOT','WIND']
 
@@ -1334,12 +1373,10 @@ def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', p
                 met['LONGXY']=np.asarray(fnc.variables['lon'])[yindx,xindx]
         fnc.close()
 
-        
         for dirfile in dirfiles:
             # in metdata directory
-            if(not os.path.isfile(dirfile)): return
+            if (not os.path.isfile(dirfile)): continue
             fnc = Dataset(dirfile,'r')
-        
             # non-time variables from multiple files
             if(v in fnc.variables.keys()): 
                 # for 'time', need to convert tunit AND must do for each var, due to from different files
@@ -1350,7 +1387,7 @@ def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', p
                         t=t[tindx]
                     else:
                         tindx = []
-
+                    #
                     tdims = fnc.variables['time'].dimensions
                     if('units' in fnc.variables['time'].ncattrs()):
                         tunit= fnc.variables['time'].getncattr('units')
@@ -1366,34 +1403,39 @@ def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', p
                             d0=t0.day-1.0
                             days0 = (y0-1950)*365+mdoy[m0-1]+d0+t0.second/86400.0
                             t = t + days0
-
+                        #
+                    #
                     tvar = np.hstack((tvar, t))
                             
                 # values
                 if 'time' in fnc.variables[v].dimensions:
                     d = np.asarray(fnc.variables[v])[:,yindx,xindx]
                     if len(tindx)>0: d = d[tindx,...]
-
+                
                     if(len(vdata)<=0):
                         vdata=d
                     else:                                              
                         vdata=np.vstack((vdata,d))
-        
+                    
                     if(v not in vdims.keys()):
                         vdim = fnc.variables[v].dimensions
                 #
             #
             fnc.close()
             
+            # done with 1 dirfile
+
         # done with 1 variable for all dirfiles
         # must sort both time and data due to 'dirfiles' are not time-sorted (and maybe varied for each variable)
         if(len(tvar)>0): 
             tt  = sorted(tvar)
+                
             it = sorted(range(len(tvar)), key=lambda k: tvar[k])
                                 
             if ('time' not in met.keys()): # only need once, assuming all variables exactly same timing
                 met['time'] = np.asarray(tvar[it])
                 vdims['time'] = tdims
+                print('checking timing length: ', len(met['time']),len(tt),v)
                 met['tunit']='days since 1950-01-01 00:00:00' # Force all time unit to be this one
             elif (len(tvar) != len(met['time'])):
                 met['time_'+v] = np.asarray(tvar[it])
@@ -1411,8 +1453,6 @@ def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', p
     return vdims,met
     
 ####################################################################################################
-
-#------ ------ Read a single ELM met NC file user-defined ---------------------------------
 
 
 ####################################################################################################
@@ -1447,14 +1487,83 @@ def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', p
 
 #clm_metdata_CRUJRA('./rawdata/crujra.v2.3.5d')
 
-print('Testing')
-metvd, metdata = clm_metdata_Daymet_downscaled_read('./TILE11935/', ts_hr=3, fileheader='', ptxyind=[], varnames=[])
 
-write_options = SimpleNamespace( \
+"""
+if HAS_MPI4PY:
+    mycomm = MPI.COMM_WORLD
+    myrank = mycomm.Get_rank()
+    mysize = mycomm.Get_size()
+else:
+    mycomm = 0
+    myrank = 0
+    mysize = 1
+
+print('Testing ', myrank)
+
+# variable names
+#vars=['QBOT','PSRF','FSDS','FLDS']
+vars_name=['TBOT','WIND','PRECTmms']
+vars_rank = []
+for i in range(len(vars_name)):
+    if myrank == i%mysize:
+        vars_rank=np.append(vars_rank, int(i))
+
+
+from pytools.metdata_processing.elm_metdata_write import elm_metdata_write
+
+
+#--------------
+
+
+#--------------
+#tno=['11749','11750','11751','11929','11930','11931','11932','11933','11934','11935','11936','11937','11938']
+tno=['14244']
+for i in tno:
+    for iv in range(len(vars_rank)):
+        v = vars_name[int(vars_rank[iv])]
+        print('TILE: ', i, int(vars_rank[iv]), v, myrank)
+        if not os.path.isdir('./TILE'+i): continue
+        metvd, metdata = clm_metdata_Daymet_downscaled_read('./TILE'+i+'/', ts_hr=1, fileheader='', ptxyind=[], varnames=[v])
+
+        write_options = SimpleNamespace( \
             met_idir = './', \
             nc_create = True, \
             nc_write = False, \
-            nc_write_mettype = 'cplbypass_GSWP3_daymet' )
+            nc_write_mettype = 'cplbypass_ERA5_daymet' )
 
-elm_metdata_write(write_options, metdata) 
-print('Done Testing')
+        elm_metdata_write(write_options, metdata) 
+
+    if HAS_MPI4PY: mycomm.Barrier()
+    if myrank==0:
+        os.system('mv *.nc ./TILE'+i+'/cpl_bypass_full/')
+        os.system('mv zone_mappings.txt ./TILE'+i+'/cpl_bypass_full/')
+
+        print('Done Testing ./TILE',i)
+"""
+#--------------
+"""
+for iv in range(len(vars_rank)):
+    v = vars_name[int(vars_rank[iv])]
+    print('variable ', int(vars_rank[iv]), v, ' ON: ', myrank)
+    ix, iy, metvd, metdata = clm_metdata_read('./', 'clmforc.GSWP3.c2011.0.5x0.5.', 'GSWP3', './domain.lnd.360x720_cruncep.c20190221_cavm1d.nc', lon=[-999], lat=[-999], varnames=[v])
+
+    if len(metdata)<=0:
+        print('data not found for variable ', v)
+        continue
+        
+    write_options = SimpleNamespace( \
+            met_idir = './', \
+            nc_create = True, \
+            nc_write = False, \
+            nc_write_mettype = 'cplbypass_GSWP3' )
+
+    elm_metdata_write(write_options, metdata)
+
+if HAS_MPI4PY: mycomm.Barrier()
+if myrank==0:
+    os.system('mv GSWP3*.nc ./cpl_bypass_full/')
+    os.system('mv zone_mappings.txt ./cpl_bypass_full/')
+
+    print('Done Testing ./')
+
+"""

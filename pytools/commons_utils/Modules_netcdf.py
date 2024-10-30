@@ -654,6 +654,11 @@ geotiff2nc(file, bandinfos)
             #
             #var_name='ALL', # all variables averaged, but excluding in 'var_excl'
             #var_excl='PCT_CROP,PCT_GLACIER,PCT_LAKE,PCT_NATVEG,PCT_NAT_PFT,PCT_URBAN,PCT_WETLAND,PFTDATA_MASK') # only those averaged
+#varmeanby1dim('AKSP_1km_0_gswp3-daymet_elm.h0.20xx-07.nc', \
+#              'AKSP_1km_0_gswp3-daymet_elm.h0.20xx-07_ave.nc','time', \
+#              var_name='ALL')
+
+
 
 # overlayfiles - examples for joint 2 daymet nc files
 #ncfilein1 = 'ELM_sim_for_NSIDC_yearly_dayssnowfree_1997-2019_1WestAlaskaArctic.nc'
