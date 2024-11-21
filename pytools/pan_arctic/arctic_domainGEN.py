@@ -631,21 +631,75 @@ def ncdata_subsetbyindx(indx, mask=[], input_pathfile='./lnd/clm2/surfdata_map/s
     
   
 def main():
+
+    import glob
+    try:
+        from mpi4py import MPI
+        HAS_MPI4PY=True
+    except ImportError:
+        HAS_MPI4PY=False
+
     """
     args = sys.argv[1:]
     input_path = args[0]
     output_path = args[1]
     """
     
-    input_path= './'
-    output_path = input_path
+    input_path= '~/e3sm_inputdata/'
+    output_path = './'
     
-    #domain_unstructured_fromraster()
+    """
+    # the following ONLY runs once
+    domain_unstructured_fromraster()
+    """
+    
+    """
+    # example of simple command python run
     
     idx_original, newdomain = domain_subsetbymask(outdata=True)
     #domain_subsetbymask(input_pathfile='domain.lnd.Daymet_NA.1km.2d.c240327.nc')
     
-    ncdata_subsetbyindx(idx_original, mask=newdomain['mask'])
+    #ncdata_subsetbyindx(idx_original, mask=newdomain['mask'])
+    ncdata_subsetbyindx(idx_original, mask=newdomain['mask'], \
+        input_pathfile='./lnd/clm2/surfdata_map/landuse.timeseries_0.5x0.5_HIST_simyr1850-2015_c211019.nc')
+    """
+
+    # example run with srun
+    idx_original, newdomain = domain_subsetbymask( \
+        input_pathfile=input_path+'./share/domain/domain.clm/domain.lnd.360x720_cruncep.c20190221.nc', \
+        mask1dncf='./domain.lnd.pan-arctic_CAVM.1km.1d.c241018.nc', \
+        outdata=True) #outdata=True will do masking but no-writing-nc file
+
+    allncfiles = sorted(glob.glob("%s*.%s" % ('./allnc_dir/','nc')))
+    if HAS_MPI4PY:
+        mycomm = MPI.COMM_WORLD
+        myrank = mycomm.Get_rank()
+        mysize = mycomm.Get_size()
+        
+        len_total = len(allncfiles)
+        len_myrank = int(math.floor(len_total/mysize))
+        len_mod = int(math.fmod(len_total,mysize))
+
+        n_myrank = np.full([mysize], int(1)); n_myrank = np.cumsum(n_myrank)*len_myrank
+        x_myrank = np.full([mysize], int(0))
+        if(len_mod>0): x_myrank[:len_mod] = 1
+        n_myrank = n_myrank + np.cumsum(x_myrank) - 1        # ending index, starting 0, for each rank
+        n0_myrank = np.hstack((0, n_myrank[0:mysize-1]+1))   # starting index, starting 0, for each rank
+    
+        #print('on ',myrank, 'indx: ',n0_myrank[myrank], n_myrank[myrank])
+        allncfiles_byrank = allncfiles[n0_myrank[myrank]:n_myrank[myrank]]
+    
+    else:
+        mycomm = 0
+        myrank = 0
+        mysize = 1
+        allncfiles_byrank = allncfiles
+    
+    for ncfile in allncfiles_byrank:
+        #print('ON ', myrank, ' : ',ncfile)
+        ncdata_subsetbyindx(idx_original, mask=newdomain['mask'], input_pathfile=ncfile)
+
+
     
 if __name__ == '__main__':
     main()
