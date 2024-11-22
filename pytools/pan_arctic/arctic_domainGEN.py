@@ -8,7 +8,9 @@ import netCDF4 as nc
 import numpy as np
 from pyproj import Transformer
 from pyproj import CRS
-from pytools.commons_utils.Modules_netcdf import geotiff2nc
+
+"""
+from commons_utils.Modules_netcdf import geotiff2nc
 
 def domain_unstructured_fromraster(output_pathfile='./domain.lnd.pan-arctic_CAVM.1km.1d.c241018.nc', rasterfile='./raster_cavm_v1.tif', outdata=False):
     
@@ -245,6 +247,8 @@ def domain_unstructured_fromraster(output_pathfile='./domain.lnd.pan-arctic_CAVM
     
     if outdata:
         return XC, YC, data 
+
+"""
 
 def domain_subsetbymask(input_pathfile='./share/domains/domain.clm/domain.lnd.360x720_cruncep.c20190221.nc', mask1dncf='./share/domains/domain.clm/domain.lnd.pan-arctic_CAVM.1km.1d.c241018.nc', maskncv='mask',WRITE2D=True,outdata=False):
 
@@ -645,17 +649,12 @@ def main():
     output_path = args[1]
     """
     
-    input_path= '~/e3sm_inputdata/'
-    output_path = './'
+    input_path= './'
+    output_path = input_path
+    
+    #domain_unstructured_fromraster()
     
     """
-    # the following ONLY runs once
-    domain_unstructured_fromraster()
-    """
-    
-    """
-    # example of simple command python run
-    
     idx_original, newdomain = domain_subsetbymask(outdata=True)
     #domain_subsetbymask(input_pathfile='domain.lnd.Daymet_NA.1km.2d.c240327.nc')
     
@@ -666,9 +665,9 @@ def main():
 
     # example run with srun
     idx_original, newdomain = domain_subsetbymask( \
-        input_pathfile=input_path+'./share/domain/domain.clm/domain.lnd.360x720_cruncep.c20190221.nc', \
+        input_pathfile='./domain.lnd.360x720_cruncep.c20190221.nc', \
         mask1dncf='./domain.lnd.pan-arctic_CAVM.1km.1d.c241018.nc', \
-        outdata=True) #outdata=True will do masking but no-writing-nc file
+        outdata=True)
 
     allncfiles = sorted(glob.glob("%s*.%s" % ('./allnc_dir/','nc')))
     if HAS_MPI4PY:
@@ -686,8 +685,9 @@ def main():
         n_myrank = n_myrank + np.cumsum(x_myrank) - 1        # ending index, starting 0, for each rank
         n0_myrank = np.hstack((0, n_myrank[0:mysize-1]+1))   # starting index, starting 0, for each rank
     
-        #print('on ',myrank, 'indx: ',n0_myrank[myrank], n_myrank[myrank])
-        allncfiles_byrank = allncfiles[n0_myrank[myrank]:n_myrank[myrank]]
+        #print('on ',myrank, 'indx: ',len_total, n0_myrank[myrank], n_myrank[myrank], \
+        #        allncfiles[n0_myrank[myrank]],allncfiles[n_myrank[myrank]])
+        allncfiles_byrank = allncfiles[n0_myrank[myrank]:n_myrank[myrank]+1] # [n0:n] IS not inclusive of [n]
     
     else:
         mycomm = 0
@@ -695,10 +695,12 @@ def main():
         mysize = 1
         allncfiles_byrank = allncfiles
     
+    if (myrank>=mysize-3): print(allncfiles_byrank[0], allncfiles_byrank[-1], 'ON: ', myrank)
     for ncfile in allncfiles_byrank:
-        #print('ON ', myrank, ' : ',ncfile)
-        ncdata_subsetbyindx(idx_original, mask=newdomain['mask'], input_pathfile=ncfile)
-
+        #if (myrank>=mysize-3): print('ON ', myrank, ' : ',ncfile)
+        ncdata_subsetbyindx(idx_original, mask=newdomain['mask'], indx_dim=['lat', 'lon'], input_pathfile=ncfile)
+        subset=(ncfile.split('/'))[-1].split('.nc')[0]+'_subset.nc'
+        os.system('mv '+subset+' '+ncfile.split('/')[-1])
 
     
 if __name__ == '__main__':

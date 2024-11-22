@@ -1283,22 +1283,21 @@ surffile_orig = './default/surfdata.nc'
 landuse_timeseries_orig = './default/surfdata.pftdyn.nc'
 
 #----
-
+len_total = len(lon_new)
 if HAS_MPI4PY:
     mycomm = MPI.COMM_WORLD
     myrank = mycomm.Get_rank()
     mysize = mycomm.Get_size()
     
-    fsurf_mynew = str(myrank)+fsurf_new
-
-    len_myrank = math.floor(len(lon_new)/mysize)
-    len_mod = math.fmod(len(lon_new),mysize)
-    n_myrank = np.full([mysize], np.int(1));n_myrank = np.cumsum(n_rank)*len_myrank
+    len_myrank = int(math.floor(len_total/mysize))
+    len_mod = int(math.fmod(len_total,mysize))
+    n_myrank = np.full([mysize], np.int(1));n_myrank = np.cumsum(n_myrank)*len_myrank
     x_myrank = np.full([mysize], np.int(0));x_myrank[:len_mod] = 1
     n_myrank = n_myrank + np.cumsum(x_myrank) - 1        # ending index, starting 0, for each rank
     n0_myrank = np.hstack((0, n_myrank[0:mysize-1]+1))   # starting index, starting 0, for each rank
 
-    lon_new = lon_new[n0_myrank:n_myrank]
+    lon_new = len_total[n0_myrank:n_myrank]
+    fsurf_mynew = str(myrank)+fsurf_new
 
 else:
     mycomm = 0
