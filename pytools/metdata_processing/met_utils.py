@@ -76,7 +76,7 @@ def calcFLDS(tk, pres_pa, q_kgkg=[], rh_100=[]):
 #
 #------- ------- extract a set of met variables from CPL_BYPASS directory 
 #
-def clm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0, l=0):
+def elm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0, l=0):
     #
     if ('Site' in met_type):
         zone=1
@@ -226,7 +226,7 @@ def clm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0
 #
 # ------- meteorological forcing data extraction for site or sites ------------------------------------
 #
-def clm_metdata_extraction(metdomainfile, metfiles, sites, ncopath=''):
+def elm_metdata_extraction(metdomainfile, metfiles, sites, ncopath=''):
     # ---- sites
     if (len(sites)<2):
         print('sites must have paired location points: x/y or longitude/latidue')
@@ -420,7 +420,7 @@ def multiple_cplbypass_extraction(fsites):
         #clm_metdata_cplbypass_extraction('/lustre/or-scratch/cades-ccsi/proj-shared/project_acme/e3sm_inputdata/atm/datm7/atm_forcing.datm7.GSWP3.0.5d.v2.c180716/cpl_bypass_full/', \
         #                                  'GSWP3', \
         #                                  ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/', z=1, l=i+1)
-        clm_metdata_cplbypass_extraction('/home/fmyuan/mydata/unstructured_permafrost/', \
+        elm_metdata_cplbypass_extraction('/home/fmyuan/mydata/unstructured_permafrost/', \
                                           'domain', \
                                           lons[i], lats[i], \
                                           ncopath='/usr/bin/', z=1, l=i+1)

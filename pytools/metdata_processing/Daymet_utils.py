@@ -386,11 +386,13 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True, FillValue=None)
     # end of for varname in vars:
     if ncfname !='': ncfile.close()
     
-def Daymet_TileInfo(inputdir, years=[1980],tiles=[],ncf0='TPHWLHrly/clmforc.Daymet4.1km.TPQWL.1980-01.nc',ncfout='daymet_tiles.nc', FillValue=None):
+def Daymet_TileInfo(inputdir, years=[1980],tiles=[],ncf0='TPHWLHrly/clmforc.Daymet4.1km.TPQWL.1980-01.nc',\
+                    ncfv='TBOT',ncfout='daymet_tiles.nc', FillValue=None):
     # INPUTS: inputdir    - daymet data directory, under which data structured as: yyyy/tileno/
     #    (optional) years - by default, year 1980 under 'inputdir'
     #    (optional) tiles - by default, all tiles under 'inputdir/1980/'
     #    (optional) ncf0  - nc file name (only one needed) containing daymet tile info
+    #    (optional) ncfv  - data variable name (used as mask)
     #    (optional) ncfout - 
     # OUTPUTS: by default, return and write to NC file for each pts
     #                     lon, lat, geox, geoy, tileno, xindx, yindx
@@ -399,7 +401,10 @@ def Daymet_TileInfo(inputdir, years=[1980],tiles=[],ncf0='TPHWLHrly/clmforc.Daym
         
     # tiles to be checked
     if (len(tiles)<1):
-        alldirs = sorted(glob.glob(os.path.join(inputdir+str(years[0])+'/','*')))
+        if len(years)<1:
+            alldirs = inputdir
+        else:
+            alldirs = sorted(glob.glob(os.path.join(inputdir+str(years[0])+'/','*')))
     else:
         alldirs = []
         for t in tiles:
@@ -423,6 +428,7 @@ def Daymet_TileInfo(inputdir, years=[1980],tiles=[],ncf0='TPHWLHrly/clmforc.Daym
     #
     for idir in alldirs:
         itile = idir.split('/')[-1]
+        if itile=='.': itile='0'
         ncfile = idir+'/'+ncf0
                                 
         if os.path.isfile(ncfile):
@@ -432,19 +438,18 @@ def Daymet_TileInfo(inputdir, years=[1980],tiles=[],ncf0='TPHWLHrly/clmforc.Daym
             geoy = f.variables['y'][...]
             lats = f.variables['lat'][...]
             lons = f.variables['lon'][...]
-            if 'FSDS' in f.variables.keys(): v='FSDS'
-            if 'TBOT' in f.variables.keys(): v='TBOT'            
-            data = f.variables[v][0,...]
+            data = f.variables[ncfv][0,...]
             
             # all points
             tlen = lats.size
 
+            # masked indices
             if geox.size==1:
                 yindx = np.where((~data.mask))[0]   # data.mask won't produce 2d indices for this situation
-                xindx = deepcopy(yindx); xindx[:]=0
+                xindx = np.zeros_like(yindx)
             elif geoy.size==1:
                 xindx = np.where((~data.mask))[0]
-                yindx = deepcopy(xindx); yindx[:]=0                
+                yindx = np.zeros_like(xindx)                
             else:
                 yindx, xindx = np.where((~data.mask))
             gindx = np.where((~data.reshape(tlen).mask))[0]
@@ -462,6 +467,9 @@ def Daymet_TileInfo(inputdir, years=[1980],tiles=[],ncf0='TPHWLHrly/clmforc.Daym
             
             # 
             f.close()
+        
+        else:
+            print('Not a nc file: ', ncfile)
               
     # end of for idir in alldirs
     # sorting first by geox, then by geoy, then by tileno
@@ -544,5 +552,5 @@ def Daymet_TileInfo(inputdir, years=[1980],tiles=[],ncf0='TPHWLHrly/clmforc.Daym
 
 
 print('Testing: ')
-Daymet_TileInfo('./')
+Daymet_TileInfo('./', years=[], ncf0='clmforc.Daymet4.1km.T.2023-01-01-00000.nc')
                     
