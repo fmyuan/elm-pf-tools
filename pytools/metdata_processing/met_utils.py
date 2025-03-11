@@ -78,7 +78,9 @@ def calcFLDS(tk, pres_pa, q_kgkg=[], rh_100=[]):
 #
 def elm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0, l=0):
     #
-    if ('Site' in met_type):
+    met_type2 = met_type.lower()
+    
+    if ('site' in met_type2):
         zone=1
         line=1
         ni = 0
@@ -98,7 +100,7 @@ def elm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0
                 if(allgrds[0]<0.0): allgrds[0]=360.0+allgrds[0] # convert longitude in format of 0 - 360
                 all_lons.append(allgrds[0])
                 all_lats.append(allgrds[1])
-                if (not ('domain' in met_type or 'surfdata' in met_type)):
+                if (not ('domain' in met_type2 or 'surfdata' in met_type2)):
                     all_zones.append(int(allgrds[2]))
                     all_lines.append(int(allgrds[3]))
                 else:
@@ -133,7 +135,7 @@ def elm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0
             if lat>np.max(all_lats) or lat<np.min(all_lats):
                 if math.fabs(d)>max(dmax): return
 
-            if (not ('domain' in met_type or 'surfdata' in met_type)):
+            if (not ('domain' in met_type2 or 'surfdata' in met_type2)):
                 zone = np.array(all_zones)[ni]
                 line = np.array(all_lines)[ni]
                 print(' In Zone: ',zone, ' @line: ',line)
@@ -168,7 +170,8 @@ def elm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0
     f.close()
     
     # domain.nc/surfdata.nc/surfdata.nc, if for GSWP3_daymet4 or only for surfdata/domain nc(s)
-    if (('GSWP3' in met_type and 'daymet4' in met_type) or 'domain' in met_type or 'surfdata' in met_type):
+    if (('gswp3' in met_type2 and 'daymet' in met_type2) or ('era5' in met_type2 and 'daymet' in met_type2) \
+        or 'domain' in met_type2 or 'surfdata' in met_type2):
         os.system(ncopath+'ncks --no_abc -O -d ni,'+str(ni)+','+str(ni)+ \
                         ' '+filedir+'/domain.nc '+filedir_new+'/domain.nc')
         os.system(ncopath+'ncks --no_abc -O -d gridcell,'+str(ni)+','+str(ni)+ \
@@ -177,32 +180,43 @@ def elm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0
                         ' '+filedir+'/surfdata.pftdyn.nc '+filedir_new+'/surfdata.pftdyn.nc')
 
       
-    if('GSWP3' in met_type or 'Site' in met_type or 'CRUJRA' in met_type):
+    if('gswp3' in met_type2 or 'site' in met_type2 or 'crujra' in met_type2 or 'era5' in met_type2):
         varlist=['FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
-        if 'Site' in met_type:
+        if 'site' in met_type2:
             varlist=['FLDS','FSDS','PRECTmms','PSRF','RH','TBOT','WIND']
         
         for v in varlist:
-            if ('GSWP3' in met_type):
-                if('v1' in met_type):
+            if ('gswp3' in met_type2):
+                if('v1' in met_type2):
                     file='./GSWP3_'+v+'_1901-2010_z'+str(int(zone)).zfill(2)+'.nc'
                     file_new='./GSWP3_'+v+'_1901-2010_z'+str(int(zone_new)).zfill(2)+'.nc'
-                elif('daymet' in met_type):
+                elif('daymet' in met_type2):
                     file='./GSWP3_daymet4_'+v+'_1980-2014_z'+str(int(zone)).zfill(2)+'.nc'
                     file_new='./GSWP3_daymet4_'+v+'_1980-2014_z'+str(int(zone_new)).zfill(2)+'.nc'
                 else:
                     file='./GSWP3_'+v+'_1901-2014_z'+str(int(zone)).zfill(2)+'.nc'
                     file_new='./GSWP3_'+v+'_1901-2014_z'+str(int(zone_new)).zfill(2)+'.nc'
             
-            elif('CRUJRA' in met_type):
-                if('V2.3' in met_type):
+            elif('crujra' in met_type2):
+                if('V2.3' in met_type2):
                     file=met_type.strip()+'_'+v+'_1901-2021_z'+str(int(zone)).zfill(2)+'.nc'
                     file_new=met_type.strip()+'_'+v+'_1901-2021_z'+str(int(zone_new)).zfill(2)+'.nc'
                 elif('V2.4' in met_type):
                     file=met_type.strip()+'_'+v+'_1901-2022_z'+str(int(zone)).zfill(2)+'.nc'
                     file_new=met_type.strip()+'_'+v+'_1901-2022_z'+str(int(zone_new)).zfill(2)+'.nc'
+                elif('trendy_2023' in met_type2):
+                    file=met_type.strip()+'_'+v+'_1901-2022_z'+str(int(zone)).zfill(2)+'.nc'
+                    file_new=met_type.strip()+'_'+v+'_1901-2022_z'+str(int(zone_new)).zfill(2)+'.nc'
+                elif('trendy_2024' in met_type2):
+                    file=met_type.strip()+'_'+v+'_1901-2023_z'+str(int(zone)).zfill(2)+'.nc'
+                    file_new=met_type.strip()+'_'+v+'_1901-2023_z'+str(int(zone_new)).zfill(2)+'.nc'
+
+            elif('era5' in met_type2):
+                if('daymet' in met_type2):
+                    file=met_type.strip()+'_'+v+'_1980-2023_z'+str(int(zone)).zfill(2)+'.nc'
+                    file_new=met_type.strip()+'_'+v+'_1980-2023_z'+str(int(zone_new)).zfill(2)+'.nc'
             
-            elif('Site' in met_type):
+            elif('site' in met_type2):
                 file='./all_hourly.nc'
                 file_new='./all_hourly.nc'
             
@@ -213,7 +227,7 @@ def elm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0
             #extracting data
             print('extracting file: '+file + '  =======>  '+file_new)
             
-            if ('Site' in met_type):
+            if ('site' in met_type2):
                 os.system(ncopath+'ncks --no_abc -O -d n,'+str(ni)+','+str(ni)+ \
                                   ' '+file+' '+file_new)
             else:
@@ -408,6 +422,7 @@ def multiple_cplbypass_extraction(fsites):
         
         dtxt=filter(lambda x: x.strip(), dtxt)
         for d in dtxt:
+            print(d.split())
             allgrds=np.array(d.split()[1:3],dtype=float)
             if(allgrds[1]<0.0): allgrds[1]=360.0+allgrds[1] # convert longitude in format of 0 - 360
             lons.append(allgrds[1])
@@ -416,14 +431,15 @@ def multiple_cplbypass_extraction(fsites):
     lons = np.asarray(lons)
     lats = np.asarray(lats)
     for i in range(len(lats)):
-        #clm_metdata_cplbypass_extraction('/Users/f9y/mygithub/pt-e3sm-inputdata/atm/datm7/atm_forcing.datm7.GSWP3.0.5d.v2.c180716/cpl_bypass_full/', \
-        #clm_metdata_cplbypass_extraction('/lustre/or-scratch/cades-ccsi/proj-shared/project_acme/e3sm_inputdata/atm/datm7/atm_forcing.datm7.GSWP3.0.5d.v2.c180716/cpl_bypass_full/', \
-        #                                  'GSWP3', \
-        #                                  ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/', z=1, l=i+1)
-        elm_metdata_cplbypass_extraction('/home/fmyuan/mydata/unstructured_permafrost/', \
-                                          'domain', \
+        #elm_metdata_cplbypass_extraction('/Users/f9y/mygithub/pt-e3sm-inputdata/atm/datm7/atm_forcing.datm7.GSWP3.0.5d.v2.c180716/cpl_bypass_full/', \
+        elm_metdata_cplbypass_extraction('./TILE14236/cpl_bypass_full/', \
+                                          'GSWP3_daymet4', \
                                           lons[i], lats[i], \
-                                          ncopath='/usr/bin/', z=1, l=i+1)
+                                          ncopath='/sw/baseline/spack-envs/base/opt/linux-rhel8-x86_64/gcc-8.5.0/nco-5.1.5-scmfzcuxfmldbn3lwwcjuesd22eumhwk/bin/', z=1, l=i+1)
+        #elm_metdata_cplbypass_extraction('/home/fmyuan/mydata/unstructured_permafrost/', \
+        #                                  'domain', \
+        #                                  lons[i], lats[i], \
+        #                                  ncopath='/usr/bin/', z=1, l=i+1)
         subfnc = glob.glob("%s*.%s" % ('./subset/', 'nc'))
         for ifile in subfnc:
             ncoutfile = ifile.split('/')[-1]
