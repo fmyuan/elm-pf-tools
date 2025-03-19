@@ -402,7 +402,7 @@ def nc2csv(file, varnames):
 
 #----------------------------------------------------------------------------             
 # convert geotiff to ncfile
-def geotiff2nc(file, bandinfos, outdata=False):
+def geotiff2nc(file, bandinfos=None, outdata=False):
     # file: file name
     # bandinfos in 2-D strings: tiff file' bands and its NC name, units, long_name, standard_name
     import rasterio
@@ -416,65 +416,62 @@ def geotiff2nc(file, bandinfos, outdata=False):
     except:
         filled_value = -9999
         
-
-    # create NetCDF output file
-    ncof = Dataset(file+'.nc','w',clobber=True)
     
     # geox/y coordinates in 1-D (axis), centroid
     geox = np.arange(nx)*f.transform[0]+f.transform[2]+f.transform[0]/2.0
     geoy = np.arange(ny)*f.transform[4]+f.transform[5]+f.transform[4]/2.0
         
     
-   
-    # create dimensions, variables and attributes:
-    ncof.createDimension('geox',nx)
-    ncof.createDimension('geoy',ny)
-
-    geoxo = ncof.createVariable('geox',np.double,('geox'))
-    geoxo.units = 'degrees_east (m) or lat'
-    geoxo.standard_name = 'geo-reference x coordinates'
-
-    geoyo = ncof.createVariable('geoy',np.double,('geoy'))
-    geoyo.units = 'degrees_north (m) or lat'
-    geoyo.standard_name = 'geo-reference y coorindates'
-
-    georef = ncof.createVariable('crs','int')
-    georef.CRS = f.crs.wkt
-
-    bounds = ncof.createVariable('bounds','int')
-    bounds.box=f.bounds
-
-    res = ncof.createVariable('resolution','int')
-    res.box=f.res
-
-    # create variables
-    if('bands' in bandinfos.keys()):
+    if not bandinfos is None and 'bands' in bandinfos.keys():
         nvars = len(bandinfos['bands'])
-    else:
-        exit('Must have bands name in bandinfos!')
-        
-    varo = {}
-    for iv in range(0,nvars):
-        v = bandinfos['bands'][iv]
-        varo[v] = ncof.createVariable(v, np.double,  ('geoy', 'geox'), fill_value=filled_value)
-        if 'units' in bandinfos.keys():
-            varo[v].units = bandinfos['units'][iv]
-        if 'long_name' in bandinfos.keys():
-            varo[v].long_name = bandinfos['long_name'][iv]
-        if 'standard_name' in bandinfos.keys():
-            varo[v].standard_name = bandinfos['standard_name'][iv]
 
-        # write variable
-        varo[v][:,:] = alldata[iv]
-        
-    #write x,y
-    geoxo[:]=geox
-    geoyo[:]=geoy
+        # create NetCDF output file
+        ncof = Dataset(file+'.nc','w',clobber=True)
+       
+        # create dimensions, variables and attributes:
+        ncof.createDimension('geox',nx)
+        ncof.createDimension('geoy',ny)
+    
+        geoxo = ncof.createVariable('geox',np.double,('geox'))
+        geoxo.units = 'degrees_east (m) or lat'
+        geoxo.standard_name = 'geo-reference x coordinates'
+    
+        geoyo = ncof.createVariable('geoy',np.double,('geoy'))
+        geoyo.units = 'degrees_north (m) or lat'
+        geoyo.standard_name = 'geo-reference y coorindates'
+    
+        georef = ncof.createVariable('crs','int')
+        georef.CRS = f.crs.wkt
+    
+        bounds = ncof.createVariable('bounds','int')
+        bounds.box=f.bounds
+    
+        res = ncof.createVariable('resolution','int')
+        res.box=f.res
 
-    ncof.close()
+        #write x,y
+        geoxo[:]=geox
+        geoyo[:]=geoy
+    
+        # create variables        
+        varo = {}
+        for iv in range(0,nvars):
+            v = bandinfos['bands'][iv]
+            varo[v] = ncof.createVariable(v, np.double,  ('geoy', 'geox'), fill_value=filled_value)
+            if 'units' in bandinfos.keys():
+                varo[v].units = bandinfos['units'][iv]
+            if 'long_name' in bandinfos.keys():
+                varo[v].long_name = bandinfos['long_name'][iv]
+            if 'standard_name' in bandinfos.keys():
+                varo[v].standard_name = bandinfos['standard_name'][iv]
+    
+            # write variable
+            varo[v][:,:] = alldata[iv]
+        #        
+        ncof.close()
     
     if outdata:
-        return geox,geoy,f.crs.wkt,alldata
+        return geox,geoy,f.res,f.crs.wkt,alldata
 #
 #----------------------------------------------------------------------------             
 # average specific variable(s) along named dimension and write back for all

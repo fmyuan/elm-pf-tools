@@ -14,7 +14,7 @@ from pytools.commons_utils.Modules_netcdf import geotiff2nc
 from geopandas.tools.sjoin import sjoin_nearest
 
 
-def domain_unstructured_fromraster(output_pathfile='./domain.lnd.pan-arctic_CAVM.1km.1d.c241018.nc', \
+def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic_CAVM.1km.1d.c241018.nc', \
                                    rasterfile='./raster_cavm_v1.tif', outdata=False):
     
     # 1000mx1000m grids extracted from CAVM image (geotiff) file
@@ -23,7 +23,7 @@ def domain_unstructured_fromraster(output_pathfile='./domain.lnd.pan-arctic_CAVM
 
     file=rasterfile
     bandinfos={'bands':['grid_code']}
-    allxc, allyc, crs_wkt, alldata = geotiff2nc(file, bandinfos, outdata=True)
+    allxc, allyc, crs_wkt, alldata = geotiff2nc(file, bandinfos=bandinfos, outdata=True)
     alldata = alldata[0] # only 1 banded data
 
     # truncate non-data points as much as possible
@@ -1341,7 +1341,7 @@ def ncdata_subsetbynpwhereindex(npwhere_indices, npwhere_mask=np.empty((0,0)), n
                 dst[vname].setncatts(src[vname].__dict__)
                   
                 # values
-                varvals = src[vname][...]
+                #varvals = src[vname][...]
 
                 # dimensional slicing to extract data
                 if all(d in variable.dimensions for d in indx_dim):
@@ -1351,22 +1351,27 @@ def ncdata_subsetbynpwhereindex(npwhere_indices, npwhere_mask=np.empty((0,0)), n
                     
                     # build a tuple of indices, with masked only in indx_dim
                     ix_mask = 0
-                    if 'gridcell' in vd: ix_mask = 1 # for unstructured surfdata
+                    if 'gridcell' in vd or 'n' in vd: ix_mask = 1 # for unstructured surfdata
                     for i in range(len(vd)):
                         if i==0:
                             newidx = (slice(None),)
                             if i in ix: 
                                 newidx = (npwhere_indices[ix_mask][npwhere_mask>0],)
-                                if not 'gridcell' in vd:ix_mask=ix_mask+1    # for structured surfdata                           
+                                if not 'gridcell' in vd or not 'n' in vd:ix_mask=ix_mask+1    # for structured surfdata                           
                         else:
                             if i in ix:
                                 newidx = newidx+(npwhere_indices[ix_mask][npwhere_mask>0],)
-                                if not 'gridcell' in vd:ix_mask=ix_mask+1    # for structured surfdata                              
+                                if not 'gridcell' in vd or not 'n' in vd:ix_mask=ix_mask+1    # for structured surfdata                              
                             else:
                                 newidx = newidx+(slice(None),)
                                                
-                    varvals = varvals[newidx]
-                #                            
+                    varvals = src[vname][newidx]
+                    #
+                else:
+                    varvals = src[vname][...]
+                    #
+                #
+                                            
                 dst[vname][...] = varvals
                     
             # variable-loop        
@@ -1397,7 +1402,7 @@ def main():
     input_path = args[0]
     output_path = args[1]
     """  
-    input_path= './mysurfnc_dir/surfdata'
+    input_path= './TILE14236/cpl_bypass_full/'
 
     # create an unstructured domain from a raster image, e.g. CAVM image of land cover type, including veg
     #domain_unstructured_fromraster()
@@ -1413,7 +1418,7 @@ def main():
     #return # for only do domain.nc writing
     
     #input_ncfile = './domain.lnd.r05_RRSwISC6to18E3r5.240328.nc'
-    input_ncfile = './mysurfnc_dir/domain_remeshed.nc'
+    input_ncfile = './TILE14236/cpl_bypass_full/domain.nc'
     output_path = './'
     SUBDOMAIN_ONLY = False
     SUBDOMAIN_REORDER = True  # True: masked file re-ordered by userdomain below, otherwise only mask and trunck
@@ -1427,7 +1432,9 @@ def main():
     #userdomain = '/Users/f9y/mygithub/E3SM_REPOS/pt-e3sm-inputdata/atm/datm7/'+ \
     #             'atm_forcing.datm7.GSWP3.0.5d.v2.c180716_NGEE-Grid/'+ \
     #             'atm_forcing.datm7.GSWP3.0.5d.v2.c180716_ngee-TFS-Grid/info_TFS_meq2_sites.txt'
-    userdomain = './zone_mappings.txt'
+    
+    userdomain='./cpl_bypass_TFSmeq2/info_TFS_meq2_sites.txt'
+    #userdomain = './zone_mappings.txt'
     km2perpt = 1.0 # user-grid area in km^2
     # e.g. 
     #  [f9y@baseline-login3 atm_forcing.datm7.GSWP3.0.5d.v2.c180716_ngee4]$ cat info_TFS_meq2_sites.txt 
@@ -1444,9 +1451,9 @@ def main():
         
         dtxt=filter(lambda x: x.strip(), dtxt)
         for d in dtxt:
-            allgrds=np.array(d.split()[0:3],dtype=float)
-            lons.append(allgrds[0])
-            lats.append(allgrds[1])
+            allgrds=np.array(d.split()[1:3],dtype=float)
+            lons.append(allgrds[1])
+            lats.append(allgrds[0])
     f.close()
     lons = np.asarray(lons)
     lats = np.asarray(lats)
@@ -1519,17 +1526,29 @@ def main():
     # (TODO) shall exclude those sources of grid-system NOT consistent with source-domain
     if (myrank>=mysize-3): print(allncfiles_byrank[0], allncfiles_byrank[-1], 'ON: ', myrank)
     for ncfile in allncfiles_byrank:
-        # the following is for surfdata, standard grid dims are ['lsmlat', 'lsmlon'], 
-        # while unstructured dim name is 'gridcell'
-        ncfile_dims = ['gridcell']#['lsmlat', 'lsmlon']
-        dims_new= 'gridcell' # if want to reduce dimensions to single and given a new dimension
+        ncfile_dims = ['lsmlat', 'lsmlon']
+        dims_new =''
+
+        if 'surfdata' in ncfile or 'landuse' in ncfile:
+            # the following is for surfdata, standard grid dims are ['lsmlat', 'lsmlon'], 
+            # while unstructured dim name is 'gridcell'
+            ncfile_dims = ['gridcell']#['lsmlat', 'lsmlon']
+            dims_new= 'gridcell' # if want to reduce dimensions to single and given a new dimension
         
-        if 'domain' in ncfile: 
+        elif 'domain' in ncfile: 
             ncfile_dims = ['nj', 'ni']
             dims_new = '' 
             # if no change of dimensions, but will force dimension len to be 1, 
             # except the last which will be total unmasked grid number
             # (TODO - maybe another option of masked only?)
+
+        elif 'Daymet_ERA5' in ncfile or 'GSWP3_daymet4' in ncfile: 
+            ncfile_dims = ['n']
+            dims_new = '' 
+        
+        else:
+            print('NO subsetting done for surfdata, domain, or forcing data - file NOT exists')
+            return
 
         ncdata_subsetbynpwhereindex(idx_box, npwhere_mask=newmask_box, npwhere_frac=newfrac_box, \
                                     srcnc_pathfile=ncfile, \
