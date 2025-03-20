@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 
 import sys
-#from datetime import datetime
-#import glob
 from optparse import OptionParser
 import numpy as np
 from types import SimpleNamespace
@@ -41,7 +39,8 @@ parser.add_option("--ncout_mettype", dest="nc_write_mettype", default="", \
 
 #--------------------------------------------------------------------------------------
 
-if('Site' in options.nc_write_mettype or 'cplbypass_Site' in options.nc_write_mettype): 
+if('site' in options.nc_write_mettype.lower() \
+   or 'cplbypass_site' in options.nc_write_mettype.lower()): 
     vnames=['LONGXY','LATIXY','time', \
             'TBOT', 'PRECTmms', 'RH', 'FSDS', 'FLDS', 'PSRF', 'WIND']
 else:
@@ -65,14 +64,14 @@ if (options.user_metfile!=''):
         odata_header,odata = \
             elm_metdata_read.singleReadCsvfile(metfile)
         vardatas['time']=(odata['YEAR']-1.0)*365.0+(odata['DOY']-1.0) + \
-                     (odata['HOUR']/24.0)  # days since 0001-01-01 00:00:00
+                     (odata['HOUR']/24.0)  # days since 0001-01-01 00:00:00 and date already in no-leap
         vardatas['tunit'] = 'days since 0001-01-01 00:00'
         
         vardatas['prect_unit'] = 'mm/s'
         
         # may need to manually set lat/lon
-        vardatas['LONGXY'] = [210.4033]
-        vardatas['LATIXY'] = [68.6333]
+        vardatas['LONGXY'] = [-70.899]
+        vardatas['LATIXY'] = [42.757]
         #vardatas['LONGXY'] = [196.4215]
         #vardatas['LATIXY'] = [65.44037]
     elif ('nc' in metfile):
@@ -157,9 +156,6 @@ if (options.nc_create or options.nc_write):
             nc_create = options.nc_create, \
             nc_write = options.nc_write, \
             nc_write_mettype = options.nc_write_mettype )
-    '''
-    options_wrt = options
-    '''
     wrt.elm_metdata_write(options_wrt, vardatas)
 
 #

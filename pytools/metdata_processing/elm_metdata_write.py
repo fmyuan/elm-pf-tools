@@ -325,8 +325,8 @@ def elm_metdata_write(options, metdata, time_dim=0):
                         error=putvar(ncfileout_cplbypass,['LONGXY'], metdata['LONGXY'])
                         error=putvar(ncfileout_cplbypass,['LATIXY'], metdata['LATIXY'])
                         if 'site' in met_type.lower():
-                            error=putvar(ncfileout_cplbypass,['start_year'], np.floor(t[0]/365.0))
-                            error=putvar(ncfileout_cplbypass,['end_year'], np.floor(t[-1]/365.0))
+                            error=putvar(ncfileout_cplbypass,['start_year'], np.floor(t[0]/365.0)+1)
+                            error=putvar(ncfileout_cplbypass,['end_year'], np.floor(t[-1]/365.0)+1)
 
                         else:
                             # except for 'site', other type of cpl_bypass requires zone_mapping.txt file
@@ -346,21 +346,21 @@ def elm_metdata_write(options, metdata, time_dim=0):
                                             
                     # scaling data as initeger
                     if (varname=='PRECTmms'):
-                        data_ranges = [-0.04, 0.04]
+                        data_ranges = [0.0, 0.08]
                     elif (varname=='FSDS'):
-                        data_ranges = [-20.0, 2000.0]
+                        data_ranges = [0.0, 2000.0]
                     elif (varname=='TBOT'):
                         data_ranges = [175.0, 350.0]
                     elif (varname=='RH'):
-                        data_ranges = [0.0, 100.0]
+                        data_ranges = [5.0, 100.0]
                     elif (varname=='QBOT'):
-                        data_ranges = [0.0, 0.10]
+                        data_ranges = [0.0001, 0.10]
                     elif (varname=='FLDS'):
                         data_ranges = [0.0, 1000.0]
                     elif (varname=='PSRF'):
-                        data_ranges = [20000.0, 120000.0]
+                        data_ranges = [40000.0, 120000.0]
                     elif (varname=='WIND'):
-                        data_ranges = [-1.0, 100.0]
+                        data_ranges = [0.0, 100.0]
                     else:
                         continue
                     

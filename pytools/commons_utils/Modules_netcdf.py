@@ -660,11 +660,15 @@ geotiff2nc(file, bandinfos)
 # overlayfiles - examples for joint 2 daymet nc files
 #ncfilein1 = 'ELM_sim_for_NSIDC_yearly_dayssnowfree_1997-2019_1WestAlaskaArctic.nc'
 #ncfilein2 = 'ELM_sim_for_NSIDC_yearly_dayssnowfree_1997-2019_2NorthAlaskaArctic.nc'
-#ncfileout = 'merged.nc'
+#ncfileout = 'merge.ncd.nc'
 #overlayfiles(ncfilein1, ncfilein2, ncfileout)
-
+'''
 # read 1 single variable from a nc file
-#ncfile = 'surfdata.nc'
+print('checking netCDF data')
+ncfile = 'all_hourly.nc'
+ncdata=Dataset(ncfile,'r')
+ncdata2=Dataset('2004-01.nc','r')
+print('DONE!')
 #varname = 'PCT_NATVEG'
 #odata, odata_dims, odata_attr = getvar(ncfile, varname)
-
+'''

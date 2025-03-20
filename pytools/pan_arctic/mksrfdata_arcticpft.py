@@ -200,274 +200,70 @@ def arctic_landunit_natpft_fromcavm_jkumaretal(cavm_domainnc='./domain.lnd.pan-a
         surfdata['PCT_LAKE']    = pct_water
         surfdata['PCT_NATVEG']  = pct_natveg
         surfdata['PCT_NAT_PFT'] = pct_nat_pft
+        surfdata['PCT_CROP'] = np.zeros_like(pct_natveg)
+        surfdata['PCT_URBAN'] = np.zeros_like(pct_natveg)
+        surfdata['PCT_WETLAND'] = np.zeros_like(pct_natveg)
         
         return surfdata
     
 
 # 
-def mksrfdata_arctic(fsurfnc_all, fsrfnc_user='', vsrfnc_user='', redo=False, OriginType=False):
+def mksrfdata_arctic(fsurfnc_template, user_srfnc_file='', user_srfnc_vars='', OriginPFTclass=True):
     
     print('#--------------------------------------------------#')
     print("Creating surface data by merging user-provided dataset")
-    fsurf_arcticpft ='./surfdata_arcticpft.nc'
+    fsurfnc_out ='./'+fsurfnc_template.split('/')[-1]+'-merged'
     
     
     #--------------------------------------
     #
-    # datasets in original arctic pft tiff or nc file (with 12 arctic PFTs + 2 additional tree PFTs)
-    bandinfos={'bands':["arctic_lichen",
+    # PFT classes in B. Sulman et al (2021) paper: 12 arctic PFTs + 2 additional tree PFTs
+    
+    user_pfts={'pftname':[
+                    "non_vegetated",
+                    "arctic_lichen",
                     "arctic_bryophyte",
-                    "arctic_forb",
-                    "arctic_graminoid",
-                    "arctic_wet_graminoid",
+                    "arctic_needleleaf_tree",
+                    "arctic_broadleaf_tree",
                     "arctic_evergreen_shrub",
                     "arctic_evergreen_tall_shrub",
                     "arctic_deciduous_dwarf_shrub",
                     "arctic_deciduous_low_shrub",
                     "arctic_low_to_tall_willowbirch_shrub",
                     "arctic_low_to_tall_alder_shrub",
-                    "arctic_needleleaf_tree",
-                    "arctic_broadleaf_tree",
-                    "non_vegetated",
-                    "water"],
-                'pftnum': [1,2,11,12,13,5,6,7,8,9,10,3,4,0,-1]
+                    "arctic_forb",
+                    "arctic_dry_graminoid",
+                    "arctic_wet_graminoid"
+                    ],
+                'pftnum': [0,1,2,3,4,5,6,7,8,9,10,11,12,13]
                };
     
-    if OriginType:
+    if OriginPFTclass:
         # lichen as not_vegetated (0), moss/forb/graminoids as c3 arctic grass (12),
         # evergreen shrub(9), deci. boreal_shrub(11),
         # evergreen boreal tree(2), deci boreal tree (3)
-        bandinfos['pftnum'] = [0,12,12,12,12,9,9,11,11,11,11,2,3,0,-1]
+        user_pfts['pftnum'] = [0,0,12,2,3,9,9,11,11,11,11,12,12,12]
         natpft = np.asarray(range(17))
     else:
-        natpft = np.asarray(range(max(bandinfos['pftnum'])+1)) # this is the real arcticpft order number 
+        natpft = np.asarray(range(max(user_pfts['pftnum'])+1)) # this is the real arcticpft order number 
     
     #--------------------------------------
-    # 
-    dnames_elm=['gridcell']
-    dnames_lndtopo=['x','y'] #should be projected [x,y]
-    if (redo or os.path.isfile(fsurf_arcticpft)==False):
-        src1=Dataset(fsrfnc_user,'r')
-
-        
-        pct_pft_orig = {}
-        for v in src1.variables['pftname'][0:]:
-            try:
-                ib = bandinfos['bands'].index(v)
-                iv = np.where(src1.variables['pftname'][0:]==v)
-                pct_pft_orig[ib] = src1.variables['pftfrac'][iv][0]
-            except ValueError:
-                iv = -9999
+    #                    
+    # write into nc file
+    with Dataset(fsurfnc_template,'r') as src1, Dataset(user_srfnc_file,'r') as src2, Dataset(fsurfnc_out, "w") as dst:
+        UNSTRUCTURED = False
+        if 'gridcell' in src2.dimensions.items(): UNSTRUCTURED = True
             
-            if v=='water':
-                pct_water = src1.variables['pftfrac'][iv][0]
-
-        x = np.asarray(src1.variables[dnames_lndtopo[0]])
-        y = np.asarray(src1.variables[dnames_lndtopo[1]])
-        src1.close()
-       
-        # assign data to elm-ordered array 
-        # AND have to make sure all PCTs summed to 100%
-        pct_nat_pft = np.zeros((len(natpft),len(y),len(x)),dtype=float)
-        for ip in natpft: 
-            iv = np.where(bandinfos['pftnum']==ip)[0]
-            for i in iv: # in case having multiple classes
-                if i>=0 and i in pct_pft_orig.keys(): 
-                    pct_nat_pft[ip,...] = pct_nat_pft[ip,...]+pct_pft_orig[i]
-        sum_pct = np.sum(pct_nat_pft,0)
-        nonlnd_idx = np.where(sum_pct<=0.0)  # useful to mask later, either 'water' or 'non-land'
-        lnd_idx = np.where(sum_pct>0.0)
-        for ip in natpft: 
-            pct_nat_pft[ip][lnd_idx] = pct_nat_pft[ip][lnd_idx]/sum_pct[lnd_idx]*100.0
-        
-        # water fraction redoing (TODO)
-        
-        
-        
-        # x/y projection to lat/lon 
-        # NAD83/Alaska Albers, for AK Seward Peninsula, ifsar 5-m DEM data
-        #Proj4 = +proj=aea +lat_0=50 +lon_0=-154 +lat_1=55 +lat_2=65 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs
-        geoxy_proj_str = "+proj=aea +lat_0=50 +lon_0=-154 +lat_1=55 +lat_2=65 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
-        geoxyProj = CRS.from_proj4(geoxy_proj_str)
-        # EPSG: 4326
-        # Proj4: +proj=longlat +datum=WGS84 +no_defs
-        lonlatProj = CRS.from_epsg(4326) # in lon/lat coordinates
-        Txy2lonlat = Transformer.from_proj(geoxyProj, lonlatProj, always_xy=True)
-
-        xx_new, yy_new = np.meshgrid(x, y)
-        lon_new,lat_new = Txy2lonlat.transform(xx_new,yy_new)
-        ij=np.where(lon_new<0.0)
-        if(len(ij[0])>0): lon_new[ij]=lon_new[ij]+360.0 # for convenience, longitude from 0~360
-        
-        # write into nc file
-        with Dataset(fsrfnc_user,'r') as src1, Dataset(fsurfnc_all,'r') as src2, Dataset(fsurf_arcticpft, "w") as dst:
-            
-            # new surfdata dimensions
-            for dname2, dimension2 in src2.dimensions.items():
-                if dname2 in dnames_elm:
-                    i=np.where(np.asarray(dnames_elm)==dname2)[0][0]
-                    dimension1 = src1.dimensions[dnames_lndtopo[i]]
-                    len_dimension2 = len(dimension1)            # dim length from new data
-                    dst.createDimension(dname2, len_dimension2 if not dimension2.isunlimited() else None)
-                if dname2 == 'natpft':
-                    len_dimension2 = len(natpft)            # dim length from new data
-                    dst.createDimension(dname2, len_dimension2 if not dimension2.isunlimited() else None)
+        # new surfdata dimensions
+        for dname2, dimension2 in src2.dimensions.items():
+            if dname2 == 'natpft':
+                len_dimension2 = len(natpft)            # dim length from new data
+            else:
+                len_dimension2 = len(dimension2)
+            dst.createDimension(dname2, len_dimension2 if not dimension2.isunlimited() else None)
             #
             
-            # pft dim
-            pdim = ('natpft')
-            
-            # 2-D structured grids (lat/lon)
-            if 'lsmlat' in dnames_elm or 'lsmlon' in dnames_elm:
-                vname = 'lsmlat'
-                vdim = ('lsmlat')
-                vtype = src1.variables['lat'].datatype
-                laty=dst.createVariable(vname, vtype, vdim)
-                laty.units = 'degrees_north'
-                laty.standard_name = 'latitude'
-                dst[vname][...] = np.copy(src1.variables['lat'][...])
-                
-                vname = 'lsmlon'
-                vdim = ('lsmlon')
-                vtype = src1.variables['lon'].datatype
-                lonx=dst.createVariable(vname, vtype, vdim)
-                lonx.units = 'degrees_east'
-                lonx.standard_name = 'longitude'
-                dst[vname][...] = np.copy(src1.variables['lon'][...])
-
-                gdim = ('lsmlat','lsmlon')
-                pgdim = ('natpft','lsmlat','lsmlon')
-            
-            else:
-                #1d unstructured domain
-                gdim = ('gridcell')
-                len_dimension2 = lat_new.size
-                dst.createDimension('gridcell', len_dimension2)
-
-                pgdim = ('natpft','gridcell')
-
-                
-                xdim = ('geox')
-                dst.createDimension('geox', x.size)
-                vname = 'geox'
-                vtype = x.dtype
-                x1d=dst.createVariable(vname, vtype, xdim, fill_value=nan)
-                x1d.units = 'm'
-                x1d.standard_name = 'geo-projected coordinate x'
-                dst[vname][...] = x
-                
-                ydim = ('geoy')
-                dst.createDimension('geoy', y.size)
-                vname = 'geoy'
-                vtype = y.dtype
-                y1d=dst.createVariable(vname, vtype, ydim, fill_value=nan)
-                y1d.units = 'm'
-                y1d.standard_name = 'geo-projected coordinate y'
-                dst[vname][...] = y
-                
-                vname = 'gridcell_jy'
-                vtype = np.int32
-                yy=dst.createVariable(vname, vtype, gdim, fill_value=-9999)
-                yy.units = '-'
-                yy.standard_name = 'geo-projected coordinate y indices, 0-based, for gridcell'
-                dst[vname][...] = np.unravel_index(range(yy_new.size), yy_new.shape)[0]
-                
-                vname = 'gridcell_ix'
-                vtype = np.int32
-                xx=dst.createVariable(vname, vtype, gdim, fill_value=-9999)
-                xx.units = '-'
-                xx.standard_name = 'geo-projected coordinate x indices, 0-based, for gridcell'
-                dst[vname][...] = np.unravel_index(range(xx_new.size), xx_new.shape)[1]
-            
-            vname = 'LATIXY'
-            vdim = gdim
-            vtype = src2.variables['LATIXY'].datatype
-            lat2d=dst.createVariable(vname, vtype, vdim, fill_value=nan)
-            lat2d.units = 'degrees_north'
-            lat2d.standard_name = 'latitude'
-            vals = dst.variables[vname][...]
-            if 'gridcell' in gdim:
-                vals[:,...] = lat_new.flatten()
-                dst[vname][...] = np.copy(vals)
-            else:
-                vals = np.moveaxis(vals,0,1)
-                vals[:,...] = np.copy(src1.variables['lat'][...])
-                dst[vname][...] = np.moveaxis(vals,1,0)
-            del vals
-            
-            vname = 'LONGXY'
-            vdim = gdim
-            vtype = src2.variables['LONGXY'].datatype
-            lon2d=dst.createVariable(vname, vtype, vdim, fill_value=nan)
-            lon2d.units = 'degrees_east'
-            lon2d.standard_name = 'longitude'
-            vals = dst.variables[vname][...]
-            if 'gridcell' in gdim:
-                vals[:,...] = lon_new.flatten()
-            else:
-                vals[:,...] = lon_new
-            dst[vname][...] = np.copy(vals)
-            del vals
-                        
-            vname = 'natpft'
-            vdim = pdim
-            variable = src2.variables[vname]
-            dst.createVariable(vname, variable.datatype, vdim, fill_value=-99)
-            dst[vname].setncatts(src2[vname].__dict__)
-            vals = dst.variables[vname][...]
-            vals[:] = natpft
-            dst[vname][...] = np.copy(vals)
-            del vals
-
-            #double PCT_NAT_PFT(natpft, lsmlat, lsmlon) ;
-            vname = 'PCT_NAT_PFT'
-            vdim = pgdim
-            variable = src2.variables[vname]
-            dst.createVariable(vname, variable.datatype, vdim, fill_value=nan)
-            dst[vname].setncatts(src2[vname].__dict__)
-            vals = dst.variables[vname][...]
-            if 'gridcell' in vdim:
-                for ip in natpft:
-                    vals[ip,...] = pct_nat_pft[ip].flatten()
-            else:
-                vals[:,...] = pct_nat_pft
-            dst[vname][...] = np.copy(vals)
-            del vals
-
-            #need to re-calculate 'water' fraction from above
-            vals_sum = np.sum(pct_nat_pft, axis=0)
-            
-            # if 'sum' is less than 100, the residue is actually 'water' in original data
-            # then need to adjust PCT_NATVEG in a gridcell
-            sumpft = np.ones_like(vals_sum)*100.0
-            idx=np.where(vals_sum<100.0) # excluding 100 and above
-            if len(idx[0])>0:
-                sumpft[idx]=vals_sum[idx]
-                vname = 'PCT_NATVEG'
-                vdim = gdim
-                vtype = src2.variables[vname].datatype
-                dst.createVariable(vname, vtype, vdim)
-                dst[vname].setncatts(src2[vname].__dict__)
-                vals = dst.variables[vname][...]
-                if 'gridcell' in vdim:
-                    vals[:,...] = sumpft.flatten()
-                else:
-                    vals[:,...] = sumpft
-                dst[vname][...] = np.copy(vals)
-                del vals
-                
-                # 'water' in original data shall be called 'lake' in ELM land units
-                vname = 'PCT_LAKE'
-                vtype = src2.variables[vname].datatype
-                dst.createVariable(vname, vtype, vdim)
-                dst[vname].setncatts(src2[vname].__dict__)
-                vals = dst.variables[vname][...]
-                if 'gridcell' in vdim:
-                    vals[:,...] = 100.0-sumpft.flatten()
-                else:
-                    vals[:,...] = 100.0-sumpft
-                dst[vname][...] = np.copy(vals)
-                del vals
+        # (TODD)            
         # 
 
 #--------------------------------------------------------------------
