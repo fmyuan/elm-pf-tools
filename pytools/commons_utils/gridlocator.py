@@ -7,7 +7,7 @@ import numpy as np
 def nearest_pts_latlon_kdtree(allpoints, excl_points=0, latname='Latitude', lonname='Longitude'):
     import scipy.spatial as spatial
     from math import radians, cos, sin, asin, sqrt
-   #"Based on https://stackoverflow.com/q/43020919/190597"
+    #"Based on https://stackoverflow.com/q/43020919/190597"
     R = 6367000.0 # meters
     def dist_to_arclength(chord_length):
         """
@@ -144,9 +144,9 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
             src_xv[src_xv<0.0]=360+src_xv[src_xv<0.0]
         else:
             src_xv[src_xv>180.0]=-360+src_xv[src_xv>180.0]
-        src_yv = src_grids['yv']
-
-    
+            # need to re-adj for cross -180/180 line's grid
+            
+        src_yv = src_grids['yv']    
     
     # 
     # 1.5 times of grid-size edges 
@@ -156,11 +156,15 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         #probably unstructed grids
         if 'xv' in src_grids.keys() and \
             'yv' in src_grids.keys():
-            x_edge = max(np.squeeze(abs(src_xv[...,0]-src_xv[...,1])))*1.5
-            y_edge = max(np.squeeze(abs(src_yv[...,0]-src_yv[...,2])))*1.5        
+            xdiff = np.squeeze(abs(src_xv[...,0]-src_xv[...,1]))
+            xdiff = xdiff[np.where(xdiff<=180.0)] # removal those cross line 0/360 or -180/180
+            x_edge = np.nanmean(xdiff)*1.5
+            y_edge = np.nanmean(np.squeeze(abs(src_yv[...,0]-src_yv[...,2])))*1.5        
     else:
-        x_edge = max(np.diff(src_xc[0,:]))*1.5
-        y_edge = max(np.diff(src_yc[:,0]))*1.5
+        xdiff = np.diff(src_xc[0,:])
+        xdiff = xdiff[np.where(abs(xdiff)<=180.0)] # removal those cross line 0/360 or -180/180
+        x_edge = np.nanmean(xdiff)*1.5
+        y_edge = np.nanmean(np.diff(src_yc[:,0]))*1.5
     # [mask_xc,mask_yc] box
     x_min = min(mask_xc)-x_edge
     if unlimit_xmin: x_min = min(src_xc[0,:])-x_edge # but may not want to do trunking
@@ -184,10 +188,10 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
 
     if 'xv' in src_grids.keys() and \
         'yv' in src_grids.keys():    
-        yv1 = src_yv[0,...]; xv1 = src_xv[0,...]
-        yv2 = src_yv[1,...]; xv2 = src_xv[1,...]
-        yv3 = src_yv[2,...]; xv3 = src_xv[2,...]
-        yv4 = src_yv[3,...]; xv4 = src_xv[3,...]        
+        yv1 = src_yv[...,0]; xv1 = src_xv[...,0]
+        yv2 = src_yv[...,1]; xv2 = src_xv[...,1]
+        yv3 = src_yv[...,2]; xv3 = src_xv[...,2]
+        yv4 = src_yv[...,3]; xv4 = src_xv[...,3]        
         yv1=yv1[boxed_idx]; xv1=xv1[boxed_idx]
         yv2=yv2[boxed_idx]; xv2=xv2[boxed_idx]
         yv3=yv3[boxed_idx]; xv3=xv3[boxed_idx]
@@ -213,17 +217,17 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         # note: here don't override xc,yc, so xc=X_axis[i], yc=Y_axis[j]
         polygonized = np.isin(XX, X_axis[i]) & np.isin(YY, Y_axis[j])
         ji = np.nonzero(polygonized) 
-        grid_xid = xid[ji]     
-        grid_yid = yid[ji]    
-        grid_id = xyid[ji]  
+        sub_xid = xid[ji]     
+        sub_yid = yid[ji]    
+        sub_xyid= xyid[ji]  
 
     else:
         # unstructured  yc[1,ni], xc[1,ni]
 
         # new indices of paired [yc,xc] in grid-mesh YY/XX
-        grid_xid = xid[j,i]     
-        grid_yid = yid[j,i] 
-        grid_id = xyid[j,i]        
+        sub_xid = xid[j,i]     
+        sub_yid = yid[j,i] 
+        sub_xyid= xyid[j,i]        
     #
 
     # masked points
@@ -237,18 +241,16 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         print('nearest point searching')
 
         # re-meshed XX/YY centroids
-        grid_centroids = geopd.GeoDataFrame({'pid':poly_id,"gid":grid_id,"xid":grid_xid,"yid":grid_yid, \
-                                             "x":xc,"y":yc})
-        grid_centroids['geometry'] = grid_centroids.apply(lambda p: Point(p.x, p.y), axis=1)
+        grid_centroids = geopd.GeoDataFrame({'pid':poly_id,"xyid":sub_xyid,"xid":sub_xid,"yid":sub_yid, \
+                                             "xc":xc,"yc":yc})
+        grid_centroids['geometry'] = grid_centroids.apply(lambda p: Point(p.xc, p.yc), axis=1)
 
         pointsInGrids = sjoin_nearest(points, \
-                                      grid_centroids[['pid','gid','xid','yid','geometry']], how='inner')
+                                      grid_centroids[['pid','xyid','xid','yid','geometry']], how='inner')
         
-        grids_pid = pointsInGrids.pid
-        masked_pid = pointsInGrids.pts_indices
-        #sorted_pid, originIndx_pid, pts_counts  = np.unique(points_id, \
-        #                                    return_inverse=True, return_counts=True)
-        #pts_id = sorted_pid[originIndx_pid]
+        remask_pid = pointsInGrids.pid  # the original (untrunked) grid/polygon flatten id
+        remask_xyid = pointsInGrids.xyid  # the grid/polygon flatten id in new XX/YY mesh (re-ordered)
+        remask_maskid = pointsInGrids.pts_indices # the orginal (masking) point id
 
     
     elif 'xv' in src_grids.keys() \
@@ -271,66 +273,67 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         #lines_str = vlines+hlines
         #polygons = list(polygonize(MultiLineString(lines_str)))
         
-        grids = geopd.GeoDataFrame({'pid':poly_id,"gid":grid_id,"xid":grid_xid,"yid":grid_yid,"geometry":polygons})
-     
-     
-     
-        pointsInPolys = sjoin(points, grids[['pid','gid','xid','yid','geometry']], how='inner')
-        grids_pid = pointsInPolys.pid
-        masked_pid = pointsInPolys.pts_indices
+        grids = geopd.GeoDataFrame({'pid':poly_id,"xyid":sub_xyid,"xid":sub_xid,"yid":sub_yid,"geometry":polygons})
+    
+        pointsInPolys = sjoin(points, grids[['pid','xyid','xid','yid','geometry']], how='inner')
+        remask_pid = pointsInPolys.pid.values  # the original (untrunked) grid/polygon flatten id
+        remask_xyid = pointsInPolys.xyid.values  # the grid/polygon flatten id in new XX/YY mesh (re-ordered)        
+        remask_maskid = pointsInPolys.pts_indices.values # the orginal (masking) point id
         
     #
         
-    if not keep_duplicated:
-        srcpolys_unique_pid, originIndx_pid = np.unique(grids_pid, return_inverse=True)
-        srcpolys_id = srcpolys_unique_pid[originIndx_pid]
-        
-        # need to obtain all masked_pts id for each srcpts_unique_pid
-        # so that, could do some maths within a srcpts_unique_pid
-        srcpolys_unique_pid, pts_start, pts_count  = np.unique(grids_pid, \
+    # need to obtain all original masked_pts id for each srcpts_unique_pid
+    # so that, could do some maths within a srcpts_unique_pid
+    srcpolys_unique_pid, pts_startidx, pts_count  = np.unique(remask_pid, \
                             return_index=True, return_counts=True)
+    sorted_ptsingrids = np.column_stack((remask_pid, remask_maskid))
+    sorted_ptsingrids = sorted_ptsingrids[sorted_ptsingrids[:,0].argsort()]      
+    srcpolys_contained_maskid = {}
+    for i in range(len(srcpolys_unique_pid)):
+        # sorted unique grid id as key, for which masked_pid contained can be saved
+        srcpolys_contained_maskid[srcpolys_unique_pid[i]] = \
+            sorted_ptsingrids[pts_startidx[i]:pts_startidx[i]+pts_count[i],1]
 
-        sorted_ptsingrids = np.column_stack((grids_pid, masked_pid))
-        # sorting 2d arrays, by column 0, i.e. grids_pid
-        sorted_ptsingrids = sorted_ptsingrids[sorted_ptsingrids[:,0].argsort()]
-        
-        srcpolys_contained_maskid = {}
-        for i in range(len(srcpolys_unique_pid)):
-            # sorted unique grid id as key, for which masked_pid contained can be saved
-            srcpolys_contained_maskid[srcpolys_unique_pid[i]] = \
-                sorted_ptsingrids[pts_start[i]:pts_start[i]+pts_count[i],1]
-        
-        
-    else:
-        srcpolys_id = grids_pid
-        
-        srcpolys_contained_maskid = {}
-        srcpolys_unique_pid = srcpolys_id # for output, not really sorted unique id
-        for i in srcpolys_unique_pid:
-            srcpolys_contained_maskid[i] = masked_pid[i]
+    # re-masking grids, which actually conaining masked_xc/_yc/_id in new XX/YY mesh
+    sub_remasked = np.isin(sub_xyid, remask_xyid)
 
-        #
+    if keep_duplicated or reorder_src:
         
-    if reorder_src:
-        # shuffle indices or data array by data order in mask
-        boxed_idx = (boxed_idx[0][srcpolys_id], boxed_idx[1][srcpolys_id])
-        xc = xc[srcpolys_id]
-        yc = yc[srcpolys_id]
-        xv1 = xv1[srcpolys_id]; yv1=yv1[srcpolys_id]
-        xv2 = xv2[srcpolys_id]; yv2=yv2[srcpolys_id]
-        xv3 = xv3[srcpolys_id]; yv3=yv3[srcpolys_id]
-        xv4 = xv4[srcpolys_id]; yv4=yv4[srcpolys_id]        
+        sorted_ptsidx = remask_xyid # not really sorted here
+        if keep_duplicated:
+            xc = xc[sorted_ptsidx]
+            yc = xc[sorted_ptsidx]
+        elif reorder_src:
+            # shuffle indices or data array by data order in mask
+            sorted_ptsingrids = np.column_stack((remask_maskid, remask_pid, remask_xyid))
+            sorted_ptsingrids = sorted_ptsingrids[sorted_ptsingrids[:,0].argsort()]
+            sorted_ptsidx = sorted_ptsingrids[:,2] # i.e. sorted 'remask_xyid' by 'remask_maskid'
+
+            # using mask_pts x/y, but still with src_xv/yv below
+            xc = mask_xc[remask_maskid]
+            yc = mask_yc[remask_maskid]
+                    
+        if 'xv' in src_grids.keys() and \
+            'yv' in src_grids.keys():    
+            yv1=yv1[sorted_ptsidx]; xv1=xv1[sorted_ptsidx]
+            yv2=yv2[sorted_ptsidx]; xv2=xv2[sorted_ptsidx]
+            yv3=yv3[sorted_ptsidx]; xv3=xv3[sorted_ptsidx]
+            yv4=yv4[sorted_ptsidx]; xv4=xv4[sorted_ptsidx]
         
         # re-do indices of [yc,xc] in [YY,XX] meshgrid
-        grid_id = grid_id[originIndx_pid]
-        grid_xid= grid_xid[originIndx_pid]
-        grid_yid= grid_yid[originIndx_pid]
+        boxed_idx = (boxed_idx[0][sorted_ptsidx], boxed_idx[1][sorted_ptsidx])
+        sub_xyid = sub_xyid[sorted_ptsidx]
+        sub_xid= sub_xid[sorted_ptsidx]
+        sub_yid= sub_yid[sorted_ptsidx]
+        sub_remasked = sub_remasked[sorted_ptsidx]
+        
 
-    if out2d:
+    if out2d and (keep_duplicated or reorder_src):
         # to 2D but masked    
-        grid_id_arr = np.reshape(grid_id,xyid.shape)
-        grid_xid_arr = np.reshape(grid_xid,xyid.shape)
-        grid_yid_arr = np.reshape(grid_yid,xyid.shape)
+        grid_id_arr = np.reshape(sub_xyid,xyid.shape)
+        grid_xid_arr = np.reshape(sub_xid,xyid.shape)
+        grid_yid_arr = np.reshape(sub_yid,xyid.shape)
+        grid_remasked_arr = np.reshape(sub_remasked,xyid.shape)
         
         xc_arr = np.reshape(xc,xyid.shape)
         yc_arr = np.reshape(yc,xyid.shape)
@@ -344,9 +347,10 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
                            np.reshape(yv4,xyid.shape)), axis=2)
     else:
     
-        grid_id_arr = grid_id
-        grid_xid_arr = grid_xid
-        grid_yid_arr = grid_yid
+        grid_id_arr = sub_xyid
+        grid_xid_arr = sub_xid
+        grid_yid_arr = sub_yid
+        grid_remasked_arr = sub_remasked
         xc_arr = xc
         yc_arr = yc
         xv_arr = np.stack((xv1,xv2,xv3,xv4), axis=1)
@@ -367,7 +371,7 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
     subdomain['yc'] = yc_arr
     subdomain['xv'] = xv_arr
     subdomain['yv'] = yv_arr
-    subdomain['remasked'] = np.ones_like(xc) # mask those unique grids or polygons by mask_id (TODO)
+    subdomain['remasked'] = grid_remasked_arr
         
-    return subdomain, srcpolys_unique_pid, srcpolys_contained_maskid
+    return subdomain, boxed_idx, srcpolys_unique_pid, srcpolys_contained_maskid
 #

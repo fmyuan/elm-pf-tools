@@ -94,11 +94,11 @@ def arctic_landunit_natpft_fromcavm_jkumaretal(cavm_domainnc='./domain.lnd.pan-a
 
     # fresh-water (open water), as PCT_LAKE in surfdata
     pct_water = np.zeros_like(landcov)
-    pct_water[np.where(landcov==91)] = 1.0
+    pct_water[np.where(landcov==91.0)] = 1.0
 
     # glaciers, as PCT_GLACIER in surfdata
     pct_glacier = np.zeros_like(landcov)
-    pct_glacier[np.where(landcov==93)] = 1.0
+    pct_glacier[np.where(landcov==93.0)] = 1.0
     
     # partial barren, assumed as category 0 in natural PFTs, i.e. not_vegetated
     # (NOTE: this will have to merged into veged only, and re-normalled to 100%)    
@@ -156,6 +156,7 @@ def arctic_landunit_natpft_fromcavm_jkumaretal(cavm_domainnc='./domain.lnd.pan-a
     pct_water = pct_water.flatten()[grids_uid]
     pct_barren = pct_barren.flatten()[grids_uid]
     pct_natveg = pct_natveg.flatten()[grids_uid]
+    pct_glacier = pct_glacier.flatten()[grids_uid]
     
     pct_vegedonly = pct_vegedonly.flatten()[grids_uid]
     indx_vegedonly = np.where(pct_vegedonly>0.0)    
@@ -174,11 +175,12 @@ def arctic_landunit_natpft_fromcavm_jkumaretal(cavm_domainnc='./domain.lnd.pan-a
         # get real veged PFT fraction from  JKumar & TQ Zhang et al.
         # vegedonly_pftdata, from JKumar and T-Q Zhang etal
         bandinfos = vegedonly_pftdata['bandinfos']
-        for ip in bandinfos['pftnum']:
+        if iv in bandinfos['pftnum']:
+            newpftdata = vegedonly_pftdata[iv]
+            newpftdata = newpftdata[~newpftdata.mask]
             for i in range(len(grids_uid)):
                 igrid = grids_uid[i]
-                newpftdata = vegedonly_pftdata[vegedonly_pftdata['bandinfos']['pftnum'][ip]]
-                newpftdata = newpftdata[~newpftdata.mask]
+                print(i, iv) # for checking
                 pct_iv[i] = np.nanmean(newpftdata[grids_maskptsid[igrid]])
             #
             # after all grids_uid done            
@@ -193,6 +195,7 @@ def arctic_landunit_natpft_fromcavm_jkumaretal(cavm_domainnc='./domain.lnd.pan-a
 
     if outdata:
         surfdata = {}
+        surfdata['natpft_info'] = bandinfos
         surfdata['LONGXY'] = xc
         surfdata['LATIXY'] = yc
         surfdata['AREA']   = area_km
@@ -208,11 +211,11 @@ def arctic_landunit_natpft_fromcavm_jkumaretal(cavm_domainnc='./domain.lnd.pan-a
     
 
 # 
-def mksrfdata_arctic(fsurfnc_template, user_srfnc_file='', user_srfnc_vars='', OriginPFTclass=True):
+def mksrfdata_updatevals(fsurfnc_in, user_srf_data={}, user_srfnc_file='', user_srf_vars='', OriginPFTclass=True):
     
     print('#--------------------------------------------------#')
-    print("Creating surface data by merging user-provided dataset")
-    fsurfnc_out ='./'+fsurfnc_template.split('/')[-1]+'-merged'
+    print("Replacing values in surface data by merging user-provided dataset")
+    fsurfnc_out ='./'+fsurfnc_in.split('/')[-1]+'-merged'
     
     
     #--------------------------------------
@@ -238,6 +241,7 @@ def mksrfdata_arctic(fsurfnc_template, user_srfnc_file='', user_srfnc_vars='', O
                 'pftnum': [0,1,2,3,4,5,6,7,8,9,10,11,12,13]
                };
     
+    
     if OriginPFTclass:
         # lichen as not_vegetated (0), moss/forb/graminoids as c3 arctic grass (12),
         # evergreen shrub(9), deci. boreal_shrub(11),
@@ -246,25 +250,82 @@ def mksrfdata_arctic(fsurfnc_template, user_srfnc_file='', user_srfnc_vars='', O
         natpft = np.asarray(range(17))
     else:
         natpft = np.asarray(range(max(user_pfts['pftnum'])+1)) # this is the real arcticpft order number 
-    
+ 
+    #--------------------------------------
+    UNSTRUCTURED = False    
+    if not user_srfnc_file !='':
+        print('read data from: ', user_srfnc_file)
+        f=Dataset(user_srfnc_file)
+        if 'gridcell' in f.dimensions.items(): UNSTRUCTURED = True
+    elif not len(user_srf_data)<=0:
+        if len(np.squeeze(user_srf_data['LATIXY']).shape())==1:
+            UNSTRUCTURED = True
+            
+        if user_srf_vars=='':
+            user_vname = user_srf_vars.keys()
+        else:
+            user_vname = user_srf_vars.split(',')
+        user_srf = user_srf_data
+        
     #--------------------------------------
     #                    
     # write into nc file
-    with Dataset(fsurfnc_template,'r') as src1, Dataset(user_srfnc_file,'r') as src2, Dataset(fsurfnc_out, "w") as dst:
-        UNSTRUCTURED = False
-        if 'gridcell' in src2.dimensions.items(): UNSTRUCTURED = True
+    with Dataset(fsurfnc_in,'r') as src, Dataset(fsurfnc_out, "w") as dst:
             
         # new surfdata dimensions
-        for dname2, dimension2 in src2.dimensions.items():
-            if dname2 == 'natpft':
-                len_dimension2 = len(natpft)            # dim length from new data
+        for dname, dimension in src.dimensions.items():
+            if dname == 'natpft':
+                len_dimension = len(natpft)            # dim length from new data
+            elif dname == 'gridcell':
+                len_dimension = user_srf['LATIXY'].flatten().size()
+            elif dname in ['lsmlat','lat']:
+                len_dimension = user_srf['LATIXY'].shape()[0]
+            elif dname in ['lsmlon', 'lon']:
+                len_dimension = user_srf['LONGXY'].shape()[1]                
             else:
-                len_dimension2 = len(dimension2)
-            dst.createDimension(dname2, len_dimension2 if not dimension2.isunlimited() else None)
+                len_dimension = len(dimension)
+            dst.createDimension(dname, len_dimension if not dimension.isunlimited() else None)
             #
             
-        # (TODD)            
-        # 
+        # create variables and write to dst
+        for vname, variable in src.variables.items():
+
+            if UNSTRUCTURED:
+                vdim = variable.dimensions
+                if 'gridcell' not in vdim and \
+                    ('lsmlat' in vdim and 'lsmlon' in vdim):
+                    vdim = vdim.replace('lsmlon', 'gridcell')
+                    vdim = vdim.remove('lsmlat')
+            else:
+                vdim = variable.dimensions
+    
+            # create variables, but will update its values later 
+            # NOTE: here the variable value size updated due to newly-created dimensions above
+            dst.createVariable(vname, variable.datatype, vdim)
+            # copy variable attributes all at once via dictionary after created
+            dst[vname].setncatts(src[vname].__dict__)
+                  
+            # values
+            src_vals = src[vname][...]
+
+            # dimension length may change, so need to 
+            if vname in user_vname:
+                varvals = src[vname][...]
+                #
+            else:
+                varvals = src[vname][...]
+                #
+            
+            #                                
+            dst[vname][...] = varvals
+                    
+        # end of variable-loop        
+                
+        
+        print('user surfdata merged and nc file created and written successfully!')
+        
+    #
+#
 
 #--------------------------------------------------------------------
 def main():
@@ -281,10 +342,14 @@ def main():
     vegedonly_pftdata_toolik=arctic_veged_fromraster_jkumaretal(\
         inputpath='/Users/f9y/Desktop/NGEE-P4_sites/ToolikFieldStation_TFS/toolik_clip_2024_11_14/')
 
-    arctic_landunit_natpft_fromcavm_jkumaretal( \
-        cavm_domainnc='./domain.lnd.pan-arctic_CAVM.1km.1d.c241018.nc', \
+    surf_fromcavm_jk = arctic_landunit_natpft_fromcavm_jkumaretal( \
+        cavm_domainnc='../domain.lnd.pan-arctic_CAVM.1km.1d.c241018.nc', \
         vegedonly_pftdata=vegedonly_pftdata_toolik, \
-        outnc_surf='surfdata_test.nc')
+        outdata=True)
+    
+    mksrfdata_updatevals('./surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d_TFSarcticpfts.nc', \
+                         user_srf_data=surf_fromcavm_jk, user_srf_vars='', OriginPFTclass=False)
+    
       
 if __name__ == '__main__':
     main()
