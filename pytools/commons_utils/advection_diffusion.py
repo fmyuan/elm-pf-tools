@@ -621,6 +621,7 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
     #
     print('triag solver')
     
+    ''''''
     du2, dl2, d2, x, info = \
         scilapack.dgtsv(c_tri[:-1], b_tri, a_tri[1:], r_tri)
         # (du, d, dl, b) - superdiagonal, main diagonal, subdiagonal, right-hand
@@ -631,9 +632,10 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
     if(info > 0):
         print('dgtsv error in adv_diff line __LINE__: singular matrix')
         exit(info)
+    '''
     
-    
-    #x = trid_naive(c_tri, b_tri, a_tri, r_tri)
+    x = tridiag_naive(a_tri, b_tri, c_tri, r_tri)
+    '''
     
     conc_after = x[:-1]
 
@@ -698,15 +700,18 @@ def test():
     # ----- randomly generated inputs to test functions -------------------
     # insert np.nan into [0], so that indices matching with Fortran-style 
     
-    # water flow caused
+    # water flow caused transport (advection, leaching etc)
     OFF_QADV   = True
     NO_QSRC    = True
+    UNI_VWC    = True
     
     # solute diffusion + reactions
     UNI_CONC   = False
     ZERO_DIFUS = False
+    
     NO_CONC_R  = True
     
+    #-------------------
     nlevbed = 10
  
     porosity    = np.random.rand((nlevbed+1)) *0.10 + 0.40         # range: 0.4 ~ 0.5
@@ -715,6 +720,7 @@ def test():
     # soil water and its flow
     sat         = np.random.rand((nlevbed+1)) *0.95 + 0.05         # saturation for Volumetric soil moisture in layer (m3/m3 or m/m)
     vwc         = sat * porosity                                   # range: 0.02~0.50
+    if UNI_VWC: vwc[1:] = np.nanmean(vwc)
     sat[0]      = np.nan
 
     qadv        = (np.random.rand((nlevbed+2))-0.5)*1.e-6          # (mH2O/s), vertical into layer via interface (up: positive, down: negative)
@@ -749,10 +755,12 @@ def test():
 
 
     #---- solutions
-    '''
+    ''''''
+    conc_perwater = conc*vwc
     conc_next, niter = a_step_explicit(nlevbed, zsoi[1:], dzsoi[1:], zisoi[1:], \
-        conc[1:], qadv[1:], vwc[1:], porosity[1:], conc_dt[1:], diffus[1:], dt)
-    conc_after = np.insert(conc_next, 0, np.nan)
+        conc_perwater[1:], qadv[1:], vwc[1:], porosity[1:], conc_dt[1:], diffus[1:], dt)
+    conc_after = conc_next/vwc[1:]
+    conc_after = np.insert(conc_after, 0, np.nan)
     
     
     ''' 
@@ -760,7 +768,7 @@ def test():
         conc, conc_dt, qadv, diffus, \
         vwc, qsrc, conc_surf, \
         dt)
-    ''''''
+    '''
       
     # ---- mass balance checking
     dmass_error = mass_checking(nlevbed, dzsoi, vwc, \
