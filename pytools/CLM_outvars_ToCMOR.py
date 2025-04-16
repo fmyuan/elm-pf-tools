@@ -65,7 +65,7 @@ if (os.path.isdir(outdir.strip())):
                 
 #------------get all CMOR variable NC header files-----------------------------------
 ftxt = []
-if(options.cmorlist<>''):  # varlist txt file is checked first, so over-ride 'options.varlist'
+if(options.cmorlist!=''):  # varlist txt file is checked first, so over-ride 'options.varlist'
     if (os.path.isdir(options.cmorlist.strip())):
         fdir = options.cmorlist.strip()
         if(not fdir.endswith('/')):
@@ -348,7 +348,7 @@ for ivar in range(0,len(CMOR_varname)):
         os.system(ncopath+"ncap2 --append -s '"+ vstring +";' "+ outfile_new + " -o "+ outfile_new)
         
     # multiplier, if any other than 1
-    if(multiplier <> 1.0):
+    if(multiplier != 1.0):
         vstring = var_new + '='+var_new+'*'+str(multiplier)
         os.system(ncopath+"ncap2 --append -s '"+ vstring +";' "+ outfile_new + " -o "+ outfile_new)
 
@@ -367,7 +367,7 @@ for ivar in range(0,len(CMOR_varname)):
                 att_val = float(att_val.replace('f',''))
             else:
                 att_type='d'
-                att_val = double(att_val)
+                att_val = float(att_val)
             
         else:
             att_type='i'

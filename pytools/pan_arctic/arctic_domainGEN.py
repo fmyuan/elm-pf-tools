@@ -73,6 +73,14 @@ def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic
     Txy2lonlat = Transformer.from_proj(geoxyProj, lonlatProj, always_xy=True)
     #Tlonlat2xy = Transformer.from_proj(lonlatProj, geoxyProj, always_xy=True)
 
+    # note: in QGIS, CAVM raster projection above has issue to convert into WGS84
+    # we may want to do one-more conversion?
+    # Polar stereographic ellipsoidal projection with WGS-84 ellipsoid for IMS data
+    #Proj4: +proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs
+    #imsprjstr = "+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs"
+    #imsProj = CRS.from_proj4(imsprjstr)
+    #Txy2imsxy = Transformer.from_proj(geoxyProj, imsProj, always_xy=True)
+    #lon,lat = Txy2imsxy.transform(XC,YC)
 
     lon,lat = Txy2lonlat.transform(XC,YC)
 
@@ -651,6 +659,58 @@ def domain_ncwrite(elmdomain_data, WRITE2D=True, ncfile='domain.nc', coord_syste
 
     w_nc_fid.close()  # close the new file 
 
+def domain_remeshbynewmesh(input_pathfile='./domain.nc', newmesh='', \
+                     LONGXY360=False, ncwrite_coords=True):
+    '''
+    re-meshing ELM domain grids, by providing a new mesh
+        input_pathfile - source ELM domain nc file, with required variables of 'xc', 'yc', 'xv', 'yv', 'mask','frac'
+                         grid system is lat/lon with dimension names of (nj, ni) of nj for latitude and ni for longitude
+        LONGXY360      - true if longitude from 0-360; otherwise -180 ~ 180
+        ncwrite_coords - when output type is 'domain_ncwrite', write coordinates and info OR not
+    '''
+    
+    newmesh = 'projection_elm_mappings.txt'
+    
+    if newmesh.endswith('.txt'):
+        with open(newmesh) as f:
+            # remove header txts
+            next(f)
+            try:
+                data = [x.strip().split() for x in f]
+            except Exception as e:
+                print(e)
+                print('Error in reading - '+newmesh)
+                os.sys.exit(-1)
+        data = np.asarray(data,float)
+        lon=data[:,0]
+        lat=data[:,1]
+        geox=data[:,2]
+        geoy=data[:,3]
+        xidx=np.asanyarray(data[:,4],int)-1  # in mappings.txt, those index are 1-based
+        yidx=np.asanyarray(data[:,5],int)-1
+        gidx=np.asanyarray(data[:,6],int)-1
+
+    # re-mesh to make lon/lat axised 
+    [jdx, j] = np.unique(yidx, return_index=True)
+    jj = np.argsort(jdx)
+    jdx = j[jj]
+    yy = geoy[jdx]
+
+    [idx, i] = np.unique(xidx, return_index=True)
+    ii = np.argsort(idx)
+    idx = i[ii]
+    xx = geox[idx]
+   
+    
+    # 
+    # Open the source domain or surface nc file
+    # 
+    # output arrays
+        
+    file_name = input_pathfile+'_remeshed'
+    print("new domain file is " + file_name)
+
+
 def domain_remeshbycentroid(input_pathfile='./share/domains/domain.clm/domain.nc', 
                      LONGXY360=False, edge_wider=1.0, out2d=False, ncwrite_coords=True):
     '''
@@ -922,7 +982,8 @@ def domain_remask(input_pathfile='./share/domains/domain.lnd.r05_RRSwISC6to18E3r
         # a new domain, may or may not same as boxed-truncked
     elif out == 'domain_ncwrite':
         file_name = input_pathfile+'_remasked'
-        print("new domain file is " + file_name)
+        print("new domain file is " + file_name)            
+                 
         domain_ncwrite(subdomain, WRITE2D=out2d, ncfile=file_name, \
                        coord_system=ncwrite_coords)
     #          
@@ -1104,7 +1165,8 @@ def ncdata_subsetbynpwhereindex(npwhere_indices, npwhere_mask=np.empty((0,0)), n
                     for i in range(len(vd)):
                         if i==0:
                             newidx = (slice(None),)
-                            if (i in ix): # and (i==ix_mask+ix[0]):
+                            if (i in ix and i==ix_mask+ix[0]) or \
+                                (i in ix and 'gridcell' in vdim):
                                 newidx = (npwhere_indices[ix_mask][npwhere_mask>0],)
                                 # for structured 2D, ix_mask will move 1 dimension 
                                 if 'nj' in vd and 'ni' in vd:
@@ -1113,7 +1175,8 @@ def ncdata_subsetbynpwhereindex(npwhere_indices, npwhere_mask=np.empty((0,0)), n
                                     if not 'gridcell' in vd or not 'n' in vd:ix_mask=ix_mask+1                          
           
                         else:
-                            if (i in ix): # and (i==ix_mask+ix[0]):
+                            if (i in ix and i==ix_mask+ix[0]) or \
+                                (i in ix and 'gridcell' in vdim):
                                 newidx = newidx+(npwhere_indices[ix_mask][npwhere_mask>0],)
                                 # for structured 2D, ix_mask will move 1 dimension 
                                 if 'nj' in vd and 'ni' in vd:
@@ -1123,7 +1186,7 @@ def ncdata_subsetbynpwhereindex(npwhere_indices, npwhere_mask=np.empty((0,0)), n
                             else:
                                 newidx = newidx+(slice(None),)
                                                
-                    varvals = src[vname][newidx]
+                    varvals = src[vname][...][newidx]
                     #
                    
                 else:
@@ -1173,7 +1236,8 @@ def main():
     output_path = args[1]
     """  
 #    input_path= './domain.lnd.pan-arctic_CAVM.1km.1d.c241018'
-    input_path= '../surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d'
+#    input_path= '../surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d'
+    input_path= '../TFSarcticpfts/surfdata'
 
     # create an unstructured domain from a raster image, e.g. CAVM image of land cover type, including veg
     #domain_unstructured_fromraster_cavm()
@@ -1188,16 +1252,16 @@ def main():
     #                 LONGXY360=False, edge_wider=1.0, out2d=False, ncwrite_coords=False)
     #return # for only do domain.nc writing
     
-    inputdomain_ncfile = '../domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
-    #inputdomain_ncfile = './domain.lnd.pan-arctic_CAVM.1km.1d.c241018.nc'
+    #inputdomain_ncfile = '../domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
+    inputdomain_ncfile = '../TFSarcticpfts/domain.lnd.pan-arctic_CAVM.1km.1d.c241018_TFSarcticpfts.nc'
     output_path = './'
     SUBDOMAIN_ONLY = False
-    SUBDOMAIN_REORDER = True  # True: masked file re-ordered by userdomain below, otherwise only mask and trunck
+    SUBDOMAIN_REORDER = False  # True: masked file re-ordered by userdomain below, otherwise only mask and trunck
     KEEP_DUPLICATED = False
     NC2D = False # for domain.nc writing only, so doesn't matter if SUBDOMAIN_ONLY is False
     
     
-    userdomain = './TFSarcticpfts/domain.lnd.pan-arctic_CAVM.1km.1d.c241018_TFSarcticpfts.nc'
+    #userdomain = './TFSarcticpfts/domain.lnd.pan-arctic_CAVM.1km.1d.c241018_TFSarcticpfts.nc'
     km2perpt = -999.99 #1.0 # user-grid area in km^2
 
     
@@ -1205,7 +1269,7 @@ def main():
     #             'atm_forcing.datm7.GSWP3.0.5d.v2.c180716_NGEE-Grid/'+ \
     #             'atm_forcing.datm7.GSWP3.0.5d.v2.c180716_ngee-TFS-Grid/info_TFS_meq2_sites.txt'
     
-    #userdomain='./cpl_bypass_TFSmeq2/info_TFS_meq2_sites.txt'
+    userdomain='./info_TFS_meq2_sites.txt'
     #userdomain = './zone_mappings.txt'
     #km2perpt = 1.0 # user-grid area in km^2
     # e.g. 
@@ -1217,7 +1281,7 @@ def main():
     #    MEQ2-ST 68.606131 -149.505794
     ''''''
     lats=[]; lons=[]
-    '''
+    ''''''
     with open(userdomain) as f:
         dtxt=f.readlines()
         
@@ -1229,7 +1293,7 @@ def main():
     f.close()
     lons = np.asarray(lons)
     lats = np.asarray(lats)
-    '''
+    ''''''
     
     '''
     userdomain = './TFSarcticpfts/graminoid_toolik.tif'

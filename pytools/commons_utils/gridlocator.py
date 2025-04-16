@@ -345,6 +345,7 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
                            np.reshape(yv2,xyid.shape), \
                            np.reshape(yv3,xyid.shape), \
                            np.reshape(yv4,xyid.shape)), axis=2)
+
     else:
     
         grid_id_arr = sub_xyid

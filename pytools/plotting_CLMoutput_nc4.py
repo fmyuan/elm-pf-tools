@@ -115,7 +115,8 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
         varname=varname+' (kgC/m2)'
         sdata = sdata/1000.0
 
-    if(varname == 'SNOW' or varname == 'RAIN'):
+    if(varname == 'SNOW' or varname == 'RAIN' or \
+       varname == 'QDRAI' or varname == 'QOVER' or varname=='QINFL'):
         varname=varname+' (mm/d)'
         sdata = sdata*86400.0
     if(varname in ['SNOW_DEPTH','SNOWDP']):
@@ -219,7 +220,7 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
 
     # x/y ticklabel properties
     ax_user=plt.gca()
-    ax_user.tick_params(axis = 'both', which = 'both', labelsize = 16)
+    ax_user.tick_params(axis = 'both', which = 'both', labelsize = 12)
     ax_user.set_xticklabels(ax_user.get_xticks(), weight='bold')
     ax_user.xaxis.set_major_formatter(FormatStrFormatter('%i'))
     ax_user.set_yticklabels(ax_user.get_yticks(), weight='bold')

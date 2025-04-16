@@ -82,13 +82,12 @@ def arctic_landunit_natpft_fromcavm_jkumaretal(cavm_domainnc='./domain.lnd.pan-a
     #
     # CAVM provides freshwater, barens fractions
     cavm_alldata = Dataset(cavm_domainnc,'r')
-    landcov = cavm_alldata['grid_code'][...]
+    landcov = cavm_alldata['landcov_code'][...]
     xc = cavm_alldata['xc'][...]
     yc = cavm_alldata['yc'][...]
     xv = cavm_alldata['xv'][...]
     yv = cavm_alldata['yv'][...]
-    area_km = cavm_alldata['area_LAEA'][...]  # appears I got something wrong in orginal data
-    area_km[...] = 1.0
+    area_km = cavm_alldata['area_LAEA'][...]
     
     cavm_alldata.close()
 
@@ -111,7 +110,7 @@ def arctic_landunit_natpft_fromcavm_jkumaretal(cavm_domainnc='./domain.lnd.pan-a
     pct_barren[np.where(landcov==4)] = pct_barren[np.where(landcov==4)]+0.50
     pct_barren[np.where(landcov==5)] = pct_barren[np.where(landcov==5)]+0.50
 
-    pct_vegedonly = np.ones_like(landcov)
+    pct_vegedonly = np.ones_like(landcov, dtype=float)
     pct_vegedonly = pct_vegedonly - pct_water - pct_glacier - pct_barren
 
     # pct_barren + pct_vegedonly, assumed to be PCT_NATVEG in surfdata
@@ -143,7 +142,7 @@ def arctic_landunit_natpft_fromcavm_jkumaretal(cavm_domainnc='./domain.lnd.pan-a
     cavm_grids['yc'] = yc
     cavm_grids['xv'] = xv
     cavm_grids['yv'] = yv
-    cavm_grids_sub, grids_uid, grids_maskptsid = grids_nearest_or_within( \
+    cavm_grids_sub, boxed_idx, grids_uid, grids_maskptsid = grids_nearest_or_within( \
                                             src_grids=cavm_grids, masked_pts=masked_pts, \
                                             remask_approach = 'within', \
                                             keep_duplicated=False)
@@ -159,7 +158,6 @@ def arctic_landunit_natpft_fromcavm_jkumaretal(cavm_domainnc='./domain.lnd.pan-a
     pct_glacier = pct_glacier.flatten()[grids_uid]
     
     pct_vegedonly = pct_vegedonly.flatten()[grids_uid]
-    indx_vegedonly = np.where(pct_vegedonly>0.0)    
     # the following are, for data above (exactly matching up with), standared PFT names and order in 14 arcticpft physiology parameters
     # a full list is: (0)not_vegetated, (1)arctic_lichen, (2)arctic_bryophyte,
     #                 (3)arctic_needleleaf_tree, (4)arctic_broadleaf_tree,
@@ -169,9 +167,9 @@ def arctic_landunit_natpft_fromcavm_jkumaretal(cavm_domainnc='./domain.lnd.pan-a
 
     pct_nat_pft = np.zeros(np.append(14, pct_natveg.shape), dtype=float)
     pct_nat_pft[0,...] = pct_barren
+    # really veged
     for iv in range(1,14):
-        pct_iv = np.zeros_like(pct_vegedonly)
-        
+        pct_iv = np.zeros_like(pct_vegedonly, dtype=float)        
         # get real veged PFT fraction from  JKumar & TQ Zhang et al.
         # vegedonly_pftdata, from JKumar and T-Q Zhang etal
         bandinfos = vegedonly_pftdata['bandinfos']
@@ -180,14 +178,23 @@ def arctic_landunit_natpft_fromcavm_jkumaretal(cavm_domainnc='./domain.lnd.pan-a
             newpftdata = newpftdata[~newpftdata.mask]
             for i in range(len(grids_uid)):
                 igrid = grids_uid[i]
-                print(i, iv) # for checking
+                #print(i, iv) # for checking
                 pct_iv[i] = np.nanmean(newpftdata[grids_maskptsid[igrid]])
             #
-            # after all grids_uid done            
-            pct_iv[indx_vegedonly] = pct_iv[indx_vegedonly]/pct_vegedonly[indx_vegedonly]
-        
-        #
         pct_nat_pft[iv,...] = pct_iv
+    #
+    #normalizing over each grid in pct_vegedonly, i.e. excluding pct_nat_pft[0,...]
+    sumallveg = np.sum(pct_nat_pft[1:,...], axis=0)
+    indx_vegedonly = np.where(sumallveg>0.0)    
+    for iv in range(1,14):
+        pft_iv = np.zeros(sumallveg.shape, dtype=float)        
+        pft_iv[indx_vegedonly] = pct_nat_pft[iv,...][indx_vegedonly]/sumallveg[indx_vegedonly]               
+        pct_nat_pft[iv,...] = pft_iv*pct_vegedonly
+    # for some reason, data from Tianqi and Jitu, all pfts frac as 0, likely open water
+    # which may cause error in ELM, because sum of pct_nat_pft[:,...] MUST be 1.0 exactly
+    # so just assign 1.0 to natpft=0
+    sumallveg = np.sum(pct_nat_pft, axis=0)
+    pct_nat_pft[0,...][np.where(sumallveg<1.0)] = 1.0 - sumallveg[np.where(sumallveg<1.0)]
     
 
     if outnc_surf!='':
@@ -199,12 +206,12 @@ def arctic_landunit_natpft_fromcavm_jkumaretal(cavm_domainnc='./domain.lnd.pan-a
         surfdata['LONGXY'] = xc
         surfdata['LATIXY'] = yc
         surfdata['AREA']   = area_km
-        surfdata['PCT_GLACIER'] = pct_glacier
-        surfdata['PCT_LAKE']    = pct_water
-        surfdata['PCT_NATVEG']  = pct_natveg
-        surfdata['PCT_NAT_PFT'] = pct_nat_pft
+        surfdata['PCT_GLACIER'] = pct_glacier*100.0
+        surfdata['PCT_LAKE']    = pct_water*100.0
+        surfdata['PCT_NATVEG']  = pct_natveg*100.0
+        surfdata['PCT_NAT_PFT'] = pct_nat_pft*100.0
         surfdata['PCT_CROP'] = np.zeros_like(pct_natveg)
-        surfdata['PCT_URBAN'] = np.zeros_like(pct_natveg)
+        surfdata['PCT_URBAN'] = np.zeros((3,)+pct_natveg.shape)
         surfdata['PCT_WETLAND'] = np.zeros_like(pct_natveg)
         
         return surfdata
@@ -248,24 +255,36 @@ def mksrfdata_updatevals(fsurfnc_in, user_srf_data={}, user_srfnc_file='', user_
         # evergreen boreal tree(2), deci boreal tree (3)
         user_pfts['pftnum'] = [0,0,12,2,3,9,9,11,11,11,11,12,12,12]
         natpft = np.asarray(range(17))
+                
     else:
         natpft = np.asarray(range(max(user_pfts['pftnum'])+1)) # this is the real arcticpft order number 
  
     #--------------------------------------
     UNSTRUCTURED = False    
-    if not user_srfnc_file !='':
+    if not user_srfnc_file !=' ':
         print('read data from: ', user_srfnc_file)
         f=Dataset(user_srfnc_file)
         if 'gridcell' in f.dimensions.items(): UNSTRUCTURED = True
     elif not len(user_srf_data)<=0:
-        if len(np.squeeze(user_srf_data['LATIXY']).shape())==1:
+        if len(user_srf_data['LATIXY'].shape)==1:
             UNSTRUCTURED = True
             
         if user_srf_vars=='':
-            user_vname = user_srf_vars.keys()
+            user_vname = user_srf_data.keys()
         else:
             user_vname = user_srf_vars.split(',')
         user_srf = user_srf_data
+    
+    if OriginPFTclass:
+        # need to aggregate PCT_NAT_PFT from new one to default ELM categories
+        if 'PCT_NAT_PFT' in user_srf.keys():
+            user_natpft = user_srf['PCT_NAT_PFT']
+            pct_natpft = np.zeros((len(natpft),)+user_natpft[0,...].shape)
+            for i in range(len(user_pfts['pftnum'])):
+                ip = user_pfts['pftnum'][i]
+                pct_natpft[ip,...] = pct_natpft[ip,...]+user_natpft[i,...]
+            #
+            user_srf['PCT_NAT_PFT'] = pct_natpft
         
     #--------------------------------------
     #                    
@@ -277,7 +296,7 @@ def mksrfdata_updatevals(fsurfnc_in, user_srf_data={}, user_srfnc_file='', user_
             if dname == 'natpft':
                 len_dimension = len(natpft)            # dim length from new data
             elif dname == 'gridcell':
-                len_dimension = user_srf['LATIXY'].flatten().size()
+                len_dimension = user_srf['LATIXY'].flatten().size
             elif dname in ['lsmlat','lat']:
                 len_dimension = user_srf['LATIXY'].shape()[0]
             elif dname in ['lsmlon', 'lon']:
@@ -306,11 +325,16 @@ def mksrfdata_updatevals(fsurfnc_in, user_srf_data={}, user_srfnc_file='', user_
             dst[vname].setncatts(src[vname].__dict__)
                   
             # values
-            src_vals = src[vname][...]
+            print(vname, vdim)
 
             # dimension length may change, so need to 
-            if vname in user_vname:
-                varvals = src[vname][...]
+            if vname=='natpft':
+                varvals = dst[vname][...]
+                varvals[...] = natpft
+            
+            elif vname in user_vname:
+                varvals = dst[vname][...]
+                varvals[...] = user_srf[vname]
                 #
             else:
                 varvals = src[vname][...]
@@ -343,11 +367,11 @@ def main():
         inputpath='/Users/f9y/Desktop/NGEE-P4_sites/ToolikFieldStation_TFS/toolik_clip_2024_11_14/')
 
     surf_fromcavm_jk = arctic_landunit_natpft_fromcavm_jkumaretal( \
-        cavm_domainnc='../domain.lnd.pan-arctic_CAVM.1km.1d.c241018.nc', \
+        cavm_domainnc='./domain.lnd.pan-arctic_CAVM.1km.1d.c241018_TFSarcticpfts.nc', \
         vegedonly_pftdata=vegedonly_pftdata_toolik, \
         outdata=True)
     
-    mksrfdata_updatevals('./surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d_TFSarcticpfts.nc', \
+    mksrfdata_updatevals('./surfdata_pan-arctic_CAVM.1km.1d_simyr1850_c240308_TOP_TFSarcticpfts-default.nc', \
                          user_srf_data=surf_fromcavm_jk, user_srf_vars='', OriginPFTclass=False)
     
       

@@ -1,24 +1,23 @@
 #!/usr/bin/env python
-import os, sys, csv, time, math
+import os, sys, math, glob
 from optparse import OptionParser
 import numpy as np
 from scipy import interpolate
 from netCDF4 import Dataset
 from cmath import nan, inf
-from pyproj import Proj
 from pyproj import Transformer
 from pyproj import CRS
 from builtins import int
-from scipy.ndimage import interpolation
-from numpy import double, float32
+from numpy import double
 from rasterio import band
-from _operator import index
-from netCDF4._netCDF4 import default_fillvals
 try:
     from mpi4py import MPI
     HAS_MPI4PY=True
 except ImportError:
     HAS_MPI4PY=False
+
+
+import pytools.commons_utils.Modules_netcdf as ncmod
 
 #---
 #---Trucating or unstructured domain_surface data for ELM
@@ -449,18 +448,18 @@ def mksrfdata_lndunit(fsurfnc_all, fmksrfnc_lndmask, redo_grid=False):
     dnames_elm=['lsmlat', 'lsmlon']
     dnames_lunit=['lat','lon']
     if (redo_grid or os.path.isfile(fsurf_lunit)==False):
-        src1=Dataset(fmksrfnc_lndbmask,'r')
+        src1=Dataset(fmksrfnc_lndmask,'r')
         lunittype = np.asarray(src1.variables['Band1']).astype('f4')
         lat = np.asarray(src1.variables['lat'])
         lon = np.asarray(src1.variables['lon'])
         src1.close()
        
-       # soil thickness land mask 
-       # lunittype: 0 -ocean, 1- upland, 2 -lowland, 3 -lake, 4 - perennial ice
-       # Here derive 2 vars for ELM: PCT_LAKE, PCT_GLACIER, i.e. type 3 and 4 respectively and over whole land (as 100%)
-       #   STEP 1: aggregating 5x5 grids, and calculating fractions for each type
-       #   STEP 2: interpolating back onto the orginal grids
-       # land (non-ocean) fraction
+        # soil thickness land mask 
+        # lunittype: 0 -ocean, 1- upland, 2 -lowland, 3 -lake, 4 - perennial ice
+        # Here derive 2 vars for ELM: PCT_LAKE, PCT_GLACIER, i.e. type 3 and 4 respectively and over whole land (as 100%)
+        #   STEP 1: aggregating 5x5 grids, and calculating fractions for each type
+        #   STEP 2: interpolating back onto the orginal grids
+        # land (non-ocean) fraction
         idx = np.where(lunittype!=0.0)
         lnd = np.copy(lunittype)
         lnd[:,:] = 0.0; lnd[idx] = 1.0
