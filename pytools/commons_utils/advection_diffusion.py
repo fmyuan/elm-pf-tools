@@ -494,62 +494,78 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
             print('checking!')
         
         if (j == 1):
+            d_m1 = 0.
             d_m1_zm1[j] = 0. 
             
             # Weights for calculating harmonic mean of diffusivity
-            w_p1 = (zsoi[j+1]-zisoi[j])/dzsoi[j+1]
+            #w_p1 = (zsoi[j+1]-zisoi[j])/dzsoi[j+1]
+            w_p1 = (zsoi[j+1] - zisoi[j]) / (zsoi[j+1]-zsoi[j])
             if (diffus[j+1] > 0. and diffus[j] > 0.):
                 #Harmonic mean of diffusivity
                 d_p1 = 1./((1.- w_p1)/diffus[j] + w_p1/diffus[j+1])                
             else:
                 d_p1 = 0.         
-            d_p1_zp1[j] = d_p1 / dzsoi[j+1]
+            #d_p1_zp1[j] = d_p1 / dzsoi[j+1]
+            d_p1_zp1[j] = d_p1 / (zsoi[j+1]-zsoi[j])
 
-            vwc_m1 = vwc[j]
+            #vwc_m1 = vwc[j]
             vwc_p1 = 1./((1.-w_p1)/vwc[j]+w_p1/vwc[j+1])
-            f_m1[j] = adv[j]/vwc_m1
+            
+            f_m1[j] = 0
             f_p1[j] = adv[j+1]/vwc_p1
             pe_m1[j] = 0. 
             pe_p1[j] = f_p1[j]/d_p1_zp1[j]
         
         elif (j == nlevbed):
             # At the bottom, assume no gradient in d_z (i.e., they're the same)            
-            w_m1 = (zisoi[j-1]-zsoi[j-1])/dzsoi[j]
+            #w_m1 = (zisoi[j-1]-zsoi[j-1])/dzsoi[j]
+            w_m1 = (zisoi[j-1] - zsoi[j-1]) / (zsoi[j]-zsoi[j-1])            
             if (diffus[j]>0.0 and diffus[j-1]>0.0):
                 d_m1 = 1./((1.-w_m1)/diffus[j]+w_m1/diffus[j-1])
             else:
                 d_m1 = 0.           
-            d_m1_zm1[j] = d_m1/dzsoi[j]
-            d_p1_zp1[j] = d_m1_zm1[j]
+            #d_m1_zm1[j] = d_m1 / dzsoi[j]
+            d_m1_zm1[j] = d_m1 / (zsoi[j]-zsoi[j-1]) 
 
-            vwc_m1 = 1./((1.-w_m1)/vwc[j-1]+w_m1/vwc[j])
-            f_m1[j] = adv[j] / vwc_m1
-            f_p1[j] = 0.  #or, f_p1[j] = adv[j+1]
+            d_p1 = 0.
+            d_p1_zp1[j] = d_m1_zm1[j] # make sure 'pe_p1[j]' below not got nan
+
+            #vwc_m1 = 1./((1.-w_m1)/vwc[j-1]+w_m1/vwc[j])
+            vwc_m1 = 1./((1.-w_m1)/vwc[j]+w_m1/vwc[j-1])
             
+            f_m1[j] = adv[j] / vwc_m1
+            f_p1[j] = 0.            
             pe_m1[j] = f_m1[j]/d_m1_zm1[j]
             pe_p1[j] = f_p1[j]/d_p1_zp1[j]
       
         else:
             
             # Use distance from j-1 node to interface with j divided by distance between nodes
-            w_m1 = (zisoi[j-1] - zsoi[j-1]) / dzsoi[j]
+            #w_m1 = (zisoi[j-1] - zsoi[j-1]) / dzsoi[j]
+            w_m1 = (zisoi[j-1] - zsoi[j-1]) / (zsoi[j]-zsoi[j-1])            
             if (diffus[j-1]>0. and diffus[j]> 0.):
                 d_m1 = 1./((1.-w_m1)/diffus[j]+w_m1/diffus[j-1])
             else:
                 d_m1 = 0. 
-            d_m1_zm1[j] = d_m1 / dzsoi[j]
+            #d_m1_zm1[j] = d_m1 / dzsoi[j]
+            d_m1_zm1[j] = d_m1 / (zsoi[j]-zsoi[j-1]) 
+
           
-            w_p1 = (zsoi[j+1] - zisoi[j]) / dzsoi[j+1]
+            #w_p1 = (zsoi[j+1] - zisoi[j]) / dzsoi[j+1]
+            w_p1 = (zsoi[j+1] - zisoi[j]) / (zsoi[j+1]-zsoi[j])
             if (diffus[j+1]>0. and diffus[j]>0.0):
                 d_p1 = 1./((1.- w_p1)/diffus[j] + w_p1/diffus[j+1])
             else:
-                d_p1 = (1.-w_p1)*diffus[j]+w_p1*diffus[j+1]          
-            d_p1_zp1[j] = d_p1 / dzsoi[j+1]
+                #d_p1 = (1.-w_p1)*diffus[j]+w_p1*diffus[j+1]    # why different from d_m1 above?      
+                d_p1 = 0.         
+            #d_p1_zp1[j] = d_p1 / dzsoi[j+1]
+            d_p1_zp1[j] = d_p1 / (zsoi[j+1]-zsoi[j])
             
-            vwc_m1 = 1./((1.-w_m1)/vwc[j-1]+w_m1/vwc[j])
-            vwc_p1 = 1./((1.-w_p1)/vwc[j]  +w_p1/vwc[j+1])
-            f_m1[j] = adv[j]   /vwc_m1
-            f_p1[j] = adv[j+1] /vwc_p1
+            #vwc_m1 = 1./((1.-w_m1)/vwc[j-1]+w_m1/vwc[j])
+            vwc_m1 = 1./((1.-w_m1)/vwc[j]+w_m1/vwc[j-1])
+            vwc_p1 = 1./((1.-w_p1)/vwc[j]+w_p1/vwc[j+1])
+            f_m1[j] = adv[j]   /vwc_m1         # adv[j] is from j-1 to j
+            f_p1[j] = adv[j+1] /vwc_p1         # adv[j+1] is from j to j+1
             
             pe_m1[j] = f_m1[j]/d_m1_zm1[j]
             pe_p1[j] = f_p1[j]/d_p1_zp1[j]
@@ -703,10 +719,11 @@ def test():
     # water flow caused transport (advection, leaching etc)
     OFF_QADV   = True
     NO_QSRC    = True
-    UNI_VWC    = True
+    UNI_VWC    = False
     
     # solute diffusion + reactions
-    UNI_CONC   = False
+    UNI_CONC   = True
+    if UNI_CONC: UNI_VWC = True   # make sure conc in pore water uniform, because conc in unit of mol/m3-soil
     ZERO_DIFUS = False
     
     NO_CONC_R  = True
@@ -720,7 +737,7 @@ def test():
     # soil water and its flow
     sat         = np.random.rand((nlevbed+1)) *0.95 + 0.05         # saturation for Volumetric soil moisture in layer (m3/m3 or m/m)
     vwc         = sat * porosity                                   # range: 0.02~0.50
-    if UNI_VWC: vwc[1:] = np.nanmean(vwc)
+    if UNI_VWC or UNI_CONC: vwc[1:] = np.nanmean(vwc)
     sat[0]      = np.nan
 
     qadv        = (np.random.rand((nlevbed+2))-0.5)*1.e-6          # (mH2O/s), vertical into layer via interface (up: positive, down: negative)
@@ -755,7 +772,7 @@ def test():
 
 
     #---- solutions
-    ''''''
+    '''
     conc_perwater = conc*vwc
     conc_next, niter = a_step_explicit(nlevbed, zsoi[1:], dzsoi[1:], zisoi[1:], \
         conc_perwater[1:], qadv[1:], vwc[1:], porosity[1:], conc_dt[1:], diffus[1:], dt)
@@ -768,7 +785,7 @@ def test():
         conc, conc_dt, qadv, diffus, \
         vwc, qsrc, conc_surf, \
         dt)
-    '''
+    ''''''
       
     # ---- mass balance checking
     dmass_error = mass_checking(nlevbed, dzsoi, vwc, \
