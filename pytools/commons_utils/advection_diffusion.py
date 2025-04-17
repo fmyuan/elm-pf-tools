@@ -51,16 +51,17 @@ def elm_soillayers(nlevgrnd=15):
 
 
 #----- 
-def a_step_explicit(nlevsoi, z, dz, zi, \
-                    c_prev, q_int, theta, watsat, sourcesink, d0, dt):
+def a_step_explicit(nlevsoi, z, dz, c_prev, \
+                    rain_conc, q_int, theta, watsat, sourcesink, d0, dt):
     """
     Author: Yaoping Wang, ESD, ORNL, 2025-04-15
     
-    c_prev - start concentration (mol/kg)
+    rain_conc - upper boundary condition (rain water chemistry) (mol/m3-water)
+    c_prev - start concentration (mol/m3-water)
     q_int - water flux at grid boundaries (m/s)
     theta - soil moisture value (m3/m3)
     watsat - porosity
-    sourcesink - source/sink strength (mol/kg/s)
+    sourcesink - source/sink strength (mol/m3-soil/s)
     d0 - diffusion coefficient in water (m2/s)
     dt - time step size (s)
 
@@ -84,6 +85,9 @@ def a_step_explicit(nlevsoi, z, dz, zi, \
     Advection to lower cell, if q_{out,i} > 0
         alow = I[q_{out,i} > 0] * q_{out,i} * C_i
 
+    Rain inflow
+        rain = I[q_{in,i} > 0] * q_{in,0} * C_{rain}
+    
     The relationship between self-change and the four outflow and internal source/sink, 
         after simplification, is
 
@@ -93,6 +97,7 @@ def a_step_explicit(nlevsoi, z, dz, zi, \
               I[q_{in,i} < 0] * abs( q_{in,i} ) + I[q_{out,i} > 0] * q_{out,i} ) * C_i
           + ( D_{eff,i} * I[C_i > C_{i-1}] \frac{C_{i-1}}{Δ x_i} )
           + ( D_{eff,i} * I[C_i > C_{i+1}] \frac{C_{i+1}}{Δ x_{i+1}} )
+          + I[q_{in,i} > 0] * q_{in,0} * C_{rain}
           + R
 
         , which is of the form dC/dt = kC + r, and the analytical solution is just
@@ -130,7 +135,7 @@ def a_step_explicit(nlevsoi, z, dz, zi, \
     def _analytical_c_int(C0, r, k, t1, t2):
         # integral of the above analytical solution of C
         # over [t1, t2]
-        c_int = (C0 + r/k)/k*(np.exp(k*t2)-np.exp(k*t1)) - r/k*(t2-t1)
+        c_int = (C0 + r/k)/k*(np.exp(k*(t2-t1))-1) - r/k*(t2-t1)
         return c_int
 
     def _analytical_dt(c1, c2, r, k):
@@ -142,11 +147,10 @@ def a_step_explicit(nlevsoi, z, dz, zi, \
     #
     zsoi = z[:nlevsoi]
     dz   = dz[:nlevsoi]
-    zisoi= zi[:nlevsoi]
         
     #
     Deff = d0 * theta**(10/3) / watsat**2
-    dx = np.append(np.insert(np.diff(zsoi), 0, 1), 1) # padding; doesn't matter
+    dx = np.append(np.insert(np.diff(zsoi), 0, 100), 21) # padding; doesn't matter, so long as >0
 
     scale = dz * theta # \Delta x * θ on the LHS
 
@@ -155,6 +159,12 @@ def a_step_explicit(nlevsoi, z, dz, zi, \
 
     dc_up = np.zeros(nlevsoi) # flow upward due to diffusion and advection
     dc_down = np.zeros(nlevsoi) # flow down due to diffusion and advection
+
+    # convert sourcesink from mol/m3-soil/s to mol/m2/s
+    sourcesink = sourcesink*dz
+
+    if q_int[0] > 0:
+        sourcesink[0] = sourcesink[0] + q_int[0]*rain_conc
 
     for i in range(nlevsoi):
 
@@ -177,12 +187,14 @@ def a_step_explicit(nlevsoi, z, dz, zi, \
         i4 = int(q_int[i+1] > 0)
 
         k = - (i1*Deff[i]/dx[i] + i2*Deff[i]/dx[i+1] + i3*abs(q_int[i]) + i4*q_int[i+1]) / scale[i]
+
         if i == 0:
             r = (Deff[i]*i2*c_prev[i+1]/dx[i+1] + sourcesink[i]) / scale[i]
         elif i < (nlevsoi-1):
-            r = (Deff[i]*i1*c_prev[i]/dx[i] + Deff[i]*i2*c_prev[i+1] + sourcesink[i]) / scale[i]
+            r = (Deff[i]*i1*c_prev[i-1]/dx[i] + Deff[i]*i2*c_prev[i+1]/dx[i+1] \
+                 + sourcesink[i]) / scale[i]
         else:
-            r = (Deff[i]*i1*c_prev[i]/dx[i] + sourcesink[i]) / scale[i]
+            r = (Deff[i]*i1*c_prev[i-1]/dx[i] + sourcesink[i]) / scale[i]
         
         # if there is no flow out of this cell, degrades to linear source
         if k == 0:
@@ -210,12 +222,11 @@ def a_step_explicit(nlevsoi, z, dz, zi, \
 
                 # use c_int to calculate the fluxes
                 dc_up[i] = i3*abs(q_int[i])*c_int
-                dc_down[i] = i2*Deff[i]/dx[i+1] / scale[i] * (c_int - c_prev[i+1]*dt) \
+                dc_down[i] = i2*Deff[i]/dx[i+1] * (c_int - c_prev[i+1]*dt) \
                                 + i4*q_int[i+1]*c_int
 
             else:
                 # step 2: piecewise integrate to cmax, then update k, r and continue
-                c_p = cmax
                 dt_p = _analytical_dt(c_prev[i], cmax, r, k)
 
                 # integration of c over [0, dt']
@@ -223,23 +234,23 @@ def a_step_explicit(nlevsoi, z, dz, zi, \
 
                 # use c_int to calculate the fluxes during [0, dt']
                 dc_up[i] = i3*abs(q_int[i])*c_int_p
-                dc_down[i] = i2*Deff[i]/dx[i+1] / scale[i] * (c_int_p - c_prev[i+1]*dt) \
+                dc_down[i] = i2*Deff[i]/dx[i+1] * (c_int_p - c_prev[i+1]*dt_p) \
                                 + i4*q_int[i+1]*c_int_p
 
                 # update k & r (no more diffusion)
                 k = - (i3*abs(q_int[i]) + i4*q_int[i+1]) / scale[i]
                 r = sourcesink[i] / scale[i]
 
-                # find final value
-                c_next[i] = _analytical_c(c_p, r, k, dt_p, dt)
-                niter[i] = 2
-
                 # itegration of c over [dt', dt]
-                c_int_pp = _analytical_c_int(c_p, r, k, dt_p, dt)
+                c_int_pp = _analytical_c_int(cmax, r, k, dt_p, dt)
 
                 # add to the fluxes
                 dc_up[i] = dc_up[i] + i3*abs(q_int[i])*c_int_pp
-                dc_down[i] = dc_down[i] - i4*q_int[i+1]*c_int_pp
+                dc_down[i] = dc_down[i] + i4*q_int[i+1]*c_int_pp
+
+                # find final value
+                c_next[i] = _analytical_c(cmax, r, k, dt_p, dt)
+                niter[i] = 2
 
         elif i < (nlevsoi-1):
 
@@ -260,13 +271,13 @@ def a_step_explicit(nlevsoi, z, dz, zi, \
             else:
                 # if there is only one side diffusion
                 if (i1 == 0):
-                    cmax = c_prev[i+1]
+                    cmax = c_prev[i+1] # diffuse down
                     cmin = 0
                     i1_keep = 0
                     i2_keep = 1
 
                 elif (i2 == 0):
-                    cmax = c_prev[i-1]
+                    cmax = c_prev[i-1] # diffuse up
                     cmin = 0
                     i1_keep = 1
                     i2_keep = 0
@@ -288,6 +299,7 @@ def a_step_explicit(nlevsoi, z, dz, zi, \
 
                 # if end of solution works
                 if c > cmax:
+
                     # final value found
                     c_next[i] = c
                     niter[i] = 1
@@ -296,84 +308,81 @@ def a_step_explicit(nlevsoi, z, dz, zi, \
                     c_int = _analytical_c_int(c_prev[i], r, k, 0, dt)
 
                     # calculate the fluxes during [0, dt] (all diffusion)
-                    dc_up[i] = i1*Deff[i]/dx[i] / scale[i] * (c_int - c_prev[i-1]*dt) \
+                    dc_up[i] = i1*Deff[i]/dx[i] * (c_int - c_prev[i-1]*dt) \
                             + i3*abs(q_int[i])*c_int
-                    dc_down[i] = i2*Deff[i]/dx[i] / scale[i] * (c_int - c_prev[i+1]*dt) \
+                    dc_down[i] = i2*Deff[i]/dx[i+1] * (c_int - c_prev[i+1]*dt) \
                             + i4*q_int[i+1]*c_int
 
                 else:
                     # step 2: piecewise integrate to cmax, then update k, r and continue
-                    c_p = cmax
                     dt_p = _analytical_dt(c_prev[i], cmax, r, k)
 
                     # integration of c over [0, dt']
-                    c_int = _analytical_c_int(c_prev[i], r, k, 0, dt_p)
+                    c_int_p = _analytical_c_int(c_prev[i], r, k, 0, dt_p)
 
                     # calculate the fluxes during [0, dt'] (all diffusion)
-                    dc_up[i] = i1*Deff[i]/dx[i] / scale[i] * (c_int - c_prev[i-1]*dt_p) \
-                            + i3*abs(q_int[i])*c_int
-                    dc_down[i] = i2*Deff[i]/dx[i] / scale[i] * (c_int - c_prev[i+1]*dt_p) \
-                            + i4*q_int[i+1]*c_int
+                    dc_up[i] = i1*Deff[i]/dx[i] * (c_int_p - c_prev[i-1]*dt_p) \
+                            + i3*abs(q_int[i])*c_int_p
+                    dc_down[i] = i2*Deff[i]/dx[i+1] * (c_int_p - c_prev[i+1]*dt_p) \
+                            + i4*q_int[i+1]*c_int_p
 
                     # update k & r (drop one side of diffusion)
                     k = - (i1_keep*i1*Deff[i]/dx[i] + i2_keep*i2*Deff[i]/dx[i+1] + \
                             i3*abs(q_int[i]) + i4*q_int[i+1]) / scale[i]
-                    r = (Deff[i]*i1_keep*i1*c_prev[i]/dx[i] + Deff[i]*i2_keep*i2*c_prev[i+1] + \
-                            sourcesink[i]) / scale[i]
+                    r = (Deff[i]*i1_keep*i1*c_prev[i-1]/dx[i] + \
+                         Deff[i]*i2_keep*i2*c_prev[i+1]/dx[i+1] + sourcesink[i]) / scale[i]
 
                     # continue to end, but we need another check
-                    c_pp = _analytical_c(c_p, r, k, dt_p, dt)
+                    c_p = _analytical_c(cmax, r, k, dt_p, dt)
 
-                    if c_pp > cmin:
-                        # final value found
-                        c_next[i] = c_pp
-                        niter[i] = 2
+                    if c_p > cmin:
 
                         # itegration of c over [dt', dt]
-                        c_int_p = _analytical_c_int(c_p, r, k, dt_p, dt)
+                        c_int_p = _analytical_c_int(cmax, r, k, dt_p, dt)
 
                         # add the fluxes during [dt', dt] (drop one side of diffusion)
                         dc_up[i] = dc_up[i] \
-                            + i1_keep*i1*Deff[i]/dx[i] / scale[i] * (c_int_p - c_prev[i-1]*(dt-dt_p)) \
+                            + i1_keep*i1*Deff[i]/dx[i] * (c_int_p - cmax*(dt-dt_p)) \
                             + i3*abs(q_int[i])*c_int_p
                         dc_down[i] = dc_down[i] \
-                            + i2_keep*i2*Deff[i]/dx[i] / scale[i] * (c_int_p - c_prev[i+1]*(dt-dt_p)) \
+                            + i2_keep*i2*Deff[i]/dx[i+1] * (c_int_p - cmax*(dt-dt_p)) \
                             + i4*q_int[i+1]*c_int_p
+
+                        # final value at dt
+                        c_next[i] = _analytical_c(cmax, r, k, dt_p, dt)
+                        niter[i] = 2
 
                     else:
                         # step 3: do another piecewise integration
 
-                        # stop point
-                        c_pp = cmin
-                        dt_pp = np.log((cmin + r/k) / (cmax + r/k)) / k
+                        # second stop point
+                        dt_pp = _analytical_dt(cmax, cmin, r, k)
 
                         # itegration of c over [dt', dt"]
-                        c_int_p = _analytical_c_int(c_p, r, k, dt_p, dt_pp)
+                        c_int_pp = _analytical_c_int(c_p, r, k, dt_p, dt_pp)
 
                         # add the fluxes during [dt', dt"] (drop one side of diffusion)
                         dc_up[i] = dc_up[i] \
-                            + i1_keep*i1*Deff[i]/dx[i] / scale[i] * (c_int_p - \
-                                                                    c_prev[i-1]*(dt_pp-dt_p)) \
-                            + i3*abs(q_int[i])*c_int_p
+                            + i1_keep*i1*Deff[i]/dx[i] * (c_int_pp - cmin*(dt_pp-dt_p)) \
+                            + i3*abs(q_int[i])*c_int_pp
                         dc_down[i] = dc_down[i] \
-                            + i2_keep*i2*Deff[i]/dx[i] / scale[i] * (c_int_p - \
-                                                                    c_prev[i+1]*(dt_pp-dt_p)) \
-                            + i4*q_int[i+1]*c_int_p
+                            + i2_keep*i2*Deff[i]/dx[i+1] * (c_int_pp - cmin*(dt_pp-dt_p)) \
+                            + i4*q_int[i+1]*c_int_pp
 
                         # update the k & r (drop all diffusion)
                         k = - (i3*abs(q_int[i]) + i4*q_int[i+1]) / scale[i]
                         r = sourcesink[i] / scale[i]
 
-                        # final value
-                        c_next[i] = (c_pp + r/k)*np.exp(k*(dt-dt_pp)) - r/k
-                        niter[i] = 3
-
                         # itegration of c over [dt", dt]
-                        c_int_pp = _analytical_c_int(c_pp, r, k, dt_pp, dt)
+                        c_int_pp = _analytical_c_int(cmin, r, k, dt_pp, dt)
 
                         # add the fluxes during [dt", dt]
                         dc_up[i] = dc_up[i] + i3*abs(q_int[i])*c_int_pp
                         dc_down[i] = dc_down[i] + i4*q_int[i+1]*c_int_pp
+
+                        # final value
+                        c_next[i] = _analytical_c(cmin, r, k, dt_pp, dt)
+                        niter[i] = 3
 
         # last soil layer
         else:
@@ -388,37 +397,36 @@ def a_step_explicit(nlevsoi, z, dz, zi, \
                 c_int = _analytical_c_int(c_prev[i], r, k, 0, dt)
 
                 # use c_int to calculate the fluxes
-                dc_up[i] = - i1*Deff[i]/dx[i] / scale[i] * (c_int - c_prev[i-1]*dt) \
+                dc_up[i] = i1*Deff[i]/dx[i] * (c_int - c_prev[i-1]*dt) \
                            + i3*abs(q_int[i])*c_int
                 dc_down[i] = i4*q_int[i+1]*c_int
 
             else:
                 # step 2: piecewise integrate to cmax, then update k, r and continue
-                c_p = cmax
-                dt_p = np.log((cmax + r/k) / (c_prev[i] + r/k)) / k
+                dt_p = _analytical_dt(c_prev[i-1], cmax, r, k)
 
                 # integration of c over [0, dt']
-                c_int = _analytical_c_int(c_prev[i], r, k, 0, dt_p)
+                c_int_p = _analytical_c_int(c_prev[i], r, k, 0, dt_p)
 
                 # calculate the fluxes during [0, dt'] (all diffusion)
-                dc_up[i] = - i1*Deff[i]/dx[i] / scale[i] * (c_int - c_prev[i-1]*dt_p) \
-                           + i3*abs(q_int[i])*c_int
-                dc_down[i] = i4*q_int[i+1]*c_int
+                dc_up[i] = i1*Deff[i]/dx[i] * (c_int_p - c_prev[i-1]*dt_p) \
+                           + i3*abs(q_int[i])*c_int_p
+                dc_down[i] = i4*q_int[i+1]*c_int_p
 
                 # update k & r (no more diffusion)
                 k = - (i3*abs(q_int[i]) + i4*q_int[i+1]) / scale[i]
                 r = sourcesink[i] / scale[i]
 
-                # find final value
-                c_next[i] = (c_p + r/k)*np.exp(k*(dt-dt_p)) - r/k
-                niter[i] = 2
-
                 # itegration of c over [dt', dt]
-                c_int_pp = _analytical_c_int(c_p, r, k, dt_p, dt)
+                c_int_pp = _analytical_c_int(cmax, r, k, dt_p, dt)
 
                 # add to the fluxes
                 dc_up[i] = dc_up[i] + i3*abs(q_int[i])*c_int_pp
                 dc_down[i] = dc_down[i] + i4*q_int[i+1]*c_int_pp
+
+                # find final value
+                c_next[i] = _analytical_c(cmax, r, k, dt_p, dt)
+                niter[i] = 2
 
     # we still need to catch the case when r is simply too negative
     # in that case, we really need to reduce r (secondary mineral
@@ -428,12 +436,12 @@ def a_step_explicit(nlevsoi, z, dz, zi, \
     # calculate the net between self-outflow and inflow fluxes
     # note the inflow fluxes need to be scaled by soil moisture
     # to get the correct concentration implications
-    c_next[:-1] = c_next[:-1] + dc_up[1:]*theta[:-1]/theta[1:]
-    c_next[1:] = c_next[1:] + dc_down[:-1]*theta[1:]/theta[:-1]
+    c_next[:-1] = c_next[:-1] + dc_up[1:]/theta[:-1]/dz[:-1]
+    c_next[1:] = c_next[1:] + dc_down[:-1]/theta[1:]/dz[1:]
 
     for i in range(nlevsoi):
         if (c_next[i] < 0):
-            print(i, c_next[i], dc_up[i+1], dc_down[i-1])
+            print(i, c_next[i], dc_up[i+1]/theta[i]/dz[i], dc_down[i-1]/theta[i]/dz[i])
 
     return c_next, niter
 
@@ -683,13 +691,13 @@ def mass_checking(nlevbed, dzsoi, vwc, \
             mass_out = mass_out + conc[j]/vwc[j]*dtime
 
     # boundary        
-    if adv[1]>0.0:
-        mass_in += adv[1]*conc_src[1]*dtime *vwc[1]      # mol/m2-soil: m/s * mol/m3 * s * m3/m3-soil
-    elif adv[1]<0.0:
-        mass_out += adv[1]*conc[1]/vwc[1]*dtime          # mol/m2-soil: m/s * (mol/m3-soil) * m-soil/m * s
+    if adv[1]<0.0: # note < 0 is downwards
+        mass_in -= adv[1]*conc_src*dtime        # mol/m2-soil: m/s * mol/m3 * s * m3/m3-soil
+    elif adv[1]>0.0:
+        mass_out += adv[1]*conc[1]*dtime        # mol/m2-soil: m/s * (mol/m3-soil) * m-soil/m * s
     
-    if adv[nlevbed+1]>0.0:
-        mass_out += adv[nlevbed]*conc[nlevbed]/vwc[nlevbed]*dtime
+    if adv[nlevbed+1]<0.0:
+        mass_out -= adv[nlevbed+1]*conc[nlevbed]*dtime    
         
     print('mass-change: ', mass_end - mass_start)
     print('mass-i/o: ', mass_in - mass_out)
@@ -772,11 +780,11 @@ def test():
 
 
     #---- solutions
-    '''
-    conc_perwater = conc*vwc
-    conc_next, niter = a_step_explicit(nlevbed, zsoi[1:], dzsoi[1:], zisoi[1:], \
-        conc_perwater[1:], qadv[1:], vwc[1:], porosity[1:], conc_dt[1:], diffus[1:], dt)
-    conc_after = conc_next/vwc[1:]
+    conc_perwater = conc/vwc # harmonize unit
+    qdarcy = -(qadv[1:] * np.insert(vwc[1:], 0, 1)) # my x is defined to be positive downwards
+    conc_next, niter = a_step_explicit(nlevbed, zsoi[1:], dzsoi[1:], conc_perwater[1:], \
+        conc_surf, qdarcy, vwc[1:], porosity[1:], conc_dt[1:], diffus[1:], dt)
+    conc_after = conc_next*vwc[1:]
     conc_after = np.insert(conc_after, 0, np.nan)
     
     
@@ -785,7 +793,7 @@ def test():
         conc, conc_dt, qadv, diffus, \
         vwc, qsrc, conc_surf, \
         dt)
-    ''''''
+    '''
       
     # ---- mass balance checking
     dmass_error = mass_checking(nlevbed, dzsoi, vwc, \
