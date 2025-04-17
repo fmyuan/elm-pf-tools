@@ -518,6 +518,7 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
 
             #vwc_m1 = vwc[j]
             vwc_p1 = 1./((1.-w_p1)/vwc[j]+w_p1/vwc[j+1])
+            #vwc_p1 = 1./((1.-w_p1)/vwc[j+1]+w_p1/vwc[j])   # appears this NOT makes large difference from above?
             
             f_m1[j] = 0
             f_p1[j] = adv[j+1]/vwc_p1
@@ -539,7 +540,7 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
             d_p1_zp1[j] = d_m1_zm1[j] # make sure 'pe_p1[j]' below not got nan
 
             #vwc_m1 = 1./((1.-w_m1)/vwc[j-1]+w_m1/vwc[j])
-            vwc_m1 = 1./((1.-w_m1)/vwc[j]+w_m1/vwc[j-1])
+            vwc_m1 = 1./((1.-w_m1)/vwc[j]+w_m1/vwc[j-1])   # appears this NOT makes large difference from above?
             
             f_m1[j] = adv[j] / vwc_m1
             f_p1[j] = 0.            
@@ -570,8 +571,10 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
             d_p1_zp1[j] = d_p1 / (zsoi[j+1]-zsoi[j])
             
             #vwc_m1 = 1./((1.-w_m1)/vwc[j-1]+w_m1/vwc[j])
-            vwc_m1 = 1./((1.-w_m1)/vwc[j]+w_m1/vwc[j-1])
+            vwc_m1 = 1./((1.-w_m1)/vwc[j]+w_m1/vwc[j-1])   # appears this NOT makes large difference from above?
             vwc_p1 = 1./((1.-w_p1)/vwc[j]+w_p1/vwc[j+1])
+            #vwc_p1 = 1./((1.-w_p1)/vwc[j+1]+w_p1/vwc[j])   # appears this NOT makes large difference from above?
+
             f_m1[j] = adv[j]   /vwc_m1         # adv[j] is from j-1 to j
             f_p1[j] = adv[j+1] /vwc_p1         # adv[j+1] is from j to j+1
             
@@ -725,14 +728,16 @@ def test():
     # insert np.nan into [0], so that indices matching with Fortran-style 
     
     # water flow caused transport (advection, leaching etc)
-    OFF_QADV   = True
+    OFF_QADV   = False
     NO_QSRC    = True
     UNI_VWC    = False
     
     # solute diffusion + reactions
-    UNI_CONC   = True
+    UNI_CONC   = False
     if UNI_CONC: UNI_VWC = True   # make sure conc in pore water uniform, because conc in unit of mol/m3-soil
-    ZERO_DIFUS = False
+    UNI_DIFUS = False
+    ZERO_DIFUS = True
+
     
     NO_CONC_R  = True
     
@@ -765,7 +770,10 @@ def test():
     conc[0]     = np.nan
     
     diffus      = np.random.rand((nlevbed+1)) *1.e-9               # diffusivity (m2/s)
-    if ZERO_DIFUS: diffus[...] = 0.  # another way of diffusion will be off 
+    if ZERO_DIFUS: 
+        diffus[...] = 0.  # another way of diffusion will be off 
+    elif UNI_DIFUS:
+        diffus[...] = 1.e-9
     diffus[0]   = np.nan
     
     conc_dt      = np.random.rand((nlevbed+1))*1.e-6             # Bulk concentration rate, e.g. reaction or other src/sink (mol/m3-soil/s)
