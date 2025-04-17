@@ -5,42 +5,51 @@ import scipy.linalg.lapack as scilapack
 
 #-----
 
-def elm_soillayers(nlevgrnd=15):
+def elm_soillayers(nlevgrnd=15, equal_thickness=False):
     #nlevgrnd = 15
-    
-    # -- standard soil layers from ELM's 10- or 15-layer column--
-    #  variable layer thickness
-    """
-    initVerticalMod.F90 --
-    do j = 1, nlevgrnd
-       zsoi(j) = scalez*(exp(0.5_r8*(j-0.5_r8))-1._r8)    !node depths
-    enddo
-    dzsoi(1) = 0.5_r8*(zsoi(1)+zsoi(2))             !thickness b/n two interfaces
-    do j = 2,nlevgrnd-1
-       dzsoi(j)= 0.5_r8*(zsoi(j+1)-zsoi(j-1))
-    enddo
-    dzsoi(nlevgrnd) = zsoi(nlevgrnd)-zsoi(nlevgrnd-1)
-    zisoi(0) = 0._r8
-    do j = 1, nlevgrnd-1
-       zisoi(j) = 0.5_r8*(zsoi(j)+zsoi(j+1))         !interface depths
-    enddo
-    zisoi(nlevgrnd) = zsoi(nlevgrnd) + 0.5_r8*dzsoi(nlevgrnd)
-    """
-    
-    jidx = np.array(range(nlevgrnd))+1 
-    zsoi = 0.025*(np.exp(0.5*(jidx-0.5))-1.0)       #ELM soil layer node depths - somewhere inside a layer but not centroid
 
-    dzsoi= np.zeros_like(zsoi)
-    dzsoi[0] = 0.5*(zsoi[0]+zsoi[1])                #thickness b/n two vertical interfaces (vertices)
-    for j in range(1,nlevgrnd-1):
-        dzsoi[j]= 0.5*(zsoi[j+1]-zsoi[j-1])
-    dzsoi[nlevgrnd-1] = zsoi[nlevgrnd-1]-zsoi[nlevgrnd-2]
+    # For testing with equally distant soil layers
+    if equal_thickness:
+        dzsoi  = np.ones((nlevgrnd), dtype=float)*0.050
+        zisoi  = np.insert(np.cumsum(dzsoi),0,0.0)
+        zsoi   = np.cumsum(dzsoi) - 0.025
 
-    zisoi= np.zeros((nlevgrnd+1), dtype=float)
-    zisoi[0] = 0.0                                  # layer interface depth
-    for j in range(1,nlevgrnd):
-        zisoi[j] = 0.5*(zsoi[j-1]+zsoi[j])
-    zisoi[nlevgrnd] = zsoi[nlevgrnd-1]+0.5*dzsoi[nlevgrnd-1]
+    else:
+        
+        # -- standard soil layers from ELM's 10- or 15-layer column--
+        #  variable layer thickness
+        """
+        initVerticalMod.F90 --
+        do j = 1, nlevgrnd
+           zsoi(j) = scalez*(exp(0.5_r8*(j-0.5_r8))-1._r8)    !node depths
+        enddo
+        dzsoi(1) = 0.5_r8*(zsoi(1)+zsoi(2))             !thickness b/n two interfaces
+        do j = 2,nlevgrnd-1
+           dzsoi(j)= 0.5_r8*(zsoi(j+1)-zsoi(j-1))
+        enddo
+        dzsoi(nlevgrnd) = zsoi(nlevgrnd)-zsoi(nlevgrnd-1)
+        zisoi(0) = 0._r8
+        do j = 1, nlevgrnd-1
+           zisoi(j) = 0.5_r8*(zsoi(j)+zsoi(j+1))         !interface depths
+        enddo
+        zisoi(nlevgrnd) = zsoi(nlevgrnd) + 0.5_r8*dzsoi(nlevgrnd)
+        """
+        
+        jidx = np.array(range(nlevgrnd))+1 
+        zsoi = 0.025*(np.exp(0.5*(jidx-0.5))-1.0)       #ELM soil layer node depths - somewhere inside a layer but not centroid
+        
+        dzsoi= np.zeros_like(zsoi)
+        dzsoi[0] = 0.5*(zsoi[0]+zsoi[1])                #thickness b/n two vertical interfaces (vertices)
+        for j in range(1,nlevgrnd-1):
+            dzsoi[j]= 0.5*(zsoi[j+1]-zsoi[j-1])
+        dzsoi[nlevgrnd-1] = zsoi[nlevgrnd-1]-zsoi[nlevgrnd-2]
+    
+        zisoi= np.zeros((nlevgrnd+1), dtype=float)
+        zisoi[0] = 0.0                                  # layer interface depth
+        for j in range(1,nlevgrnd):
+            zisoi[j] = 0.5*(zsoi[j-1]+zsoi[j])
+        zisoi[nlevgrnd] = zsoi[nlevgrnd-1]+0.5*dzsoi[nlevgrnd-1]
+
     
     # fake zsoi, dzsoi from 1:nlevgrnd+1, so matching with Fortran style
     zsoi = np.insert(zsoi,0,np.nan)
@@ -448,11 +457,13 @@ def a_step_explicit(nlevsoi, z, dz, c_prev, \
 
 
 #
-def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
+def Patankar_solute_transport(nlevbed, dzsoi, zisoi, \
                         conc=np.empty((0)), conc_rate=np.empty((0)), \
                         adv=np.empty((0)), diffus=np.empty((0)), vwc=np.empty((0)), \
                         qsrc=np.empty((0)), conc_surf=0, dtime=1800.0):
-    # From B. Sulman; edited layer depth; soil bulk concentration can use g/m3
+    
+    # soil bulk concentration, mol/m3-soil or g/m3-soil, is used, so vwc is needed to convert
+    #  otherwise, i.e. in unit of per m3 water, vwc should be set to 1.0
     # 
     # Advection and diffusion for a single tracer in one column given diffusion coefficient, flow, and source-sink terms
     # Based on SoilLittVertTranspMod, which implements S. V. Patankar, Numerical Heat Transfer and Fluid Flow, Series in Computational Methods in Mechanics and Thermal Sciences, Hemisphere Publishing Corp., 1980. Chapter 5
@@ -483,7 +494,11 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
     # pe: Peclet number (ratio of convection to diffusion)
     def aaa(pe):
         return max(0.0, (1.0 - 0.1 * abs(pe))**5)
-           
+     
+    # mid-point of zisoil
+    dzsoi[1:] = np.diff(zisoi)
+    zsoi = zisoi-dzsoi/2.0 
+          
     # Calculate the D and F terms in the Patankar algorithm
     # d: diffusivity,  m: layer above, p: layer below
     d_m1_zm1 = np.zeros((nlevbed+1),dtype=float)
@@ -511,6 +526,7 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
             if (diffus[j+1] > 0. and diffus[j] > 0.):
                 #Harmonic mean of diffusivity
                 d_p1 = 1./((1.- w_p1)/diffus[j] + w_p1/diffus[j+1])                
+                #d_p1 = 1./((1.- w_p1)/diffus[j+1] + w_p1/diffus[j])                
             else:
                 d_p1 = 0.         
             #d_p1_zp1[j] = d_p1 / dzsoi[j+1]
@@ -518,6 +534,7 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
 
             #vwc_m1 = vwc[j]
             vwc_p1 = 1./((1.-w_p1)/vwc[j]+w_p1/vwc[j+1])
+            #vwc_p1 = 1./((1.-w_p1)/vwc[j+1]+w_p1/vwc[j])   # appears this NOT makes large difference from above?
             
             f_m1[j] = 0
             f_p1[j] = adv[j+1]/vwc_p1
@@ -530,6 +547,7 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
             w_m1 = (zisoi[j-1] - zsoi[j-1]) / (zsoi[j]-zsoi[j-1])            
             if (diffus[j]>0.0 and diffus[j-1]>0.0):
                 d_m1 = 1./((1.-w_m1)/diffus[j]+w_m1/diffus[j-1])
+                #d_m1 = 1./((1.-w_m1)/diffus[j-1]+w_m1/diffus[j])
             else:
                 d_m1 = 0.           
             #d_m1_zm1[j] = d_m1 / dzsoi[j]
@@ -539,7 +557,7 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
             d_p1_zp1[j] = d_m1_zm1[j] # make sure 'pe_p1[j]' below not got nan
 
             #vwc_m1 = 1./((1.-w_m1)/vwc[j-1]+w_m1/vwc[j])
-            vwc_m1 = 1./((1.-w_m1)/vwc[j]+w_m1/vwc[j-1])
+            vwc_m1 = 1./((1.-w_m1)/vwc[j]+w_m1/vwc[j-1])   # appears this NOT makes large difference from above?
             
             f_m1[j] = adv[j] / vwc_m1
             f_p1[j] = 0.            
@@ -553,6 +571,7 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
             w_m1 = (zisoi[j-1] - zsoi[j-1]) / (zsoi[j]-zsoi[j-1])            
             if (diffus[j-1]>0. and diffus[j]> 0.):
                 d_m1 = 1./((1.-w_m1)/diffus[j]+w_m1/diffus[j-1])
+                #d_m1 = 1./((1.-w_m1)/diffus[j-1]+w_m1/diffus[j])
             else:
                 d_m1 = 0. 
             #d_m1_zm1[j] = d_m1 / dzsoi[j]
@@ -563,6 +582,7 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
             w_p1 = (zsoi[j+1] - zisoi[j]) / (zsoi[j+1]-zsoi[j])
             if (diffus[j+1]>0. and diffus[j]>0.0):
                 d_p1 = 1./((1.- w_p1)/diffus[j] + w_p1/diffus[j+1])
+                #d_p1 = 1./((1.- w_p1)/diffus[j+1] + w_p1/diffus[j])
             else:
                 #d_p1 = (1.-w_p1)*diffus[j]+w_p1*diffus[j+1]    # why different from d_m1 above?      
                 d_p1 = 0.         
@@ -570,8 +590,10 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
             d_p1_zp1[j] = d_p1 / (zsoi[j+1]-zsoi[j])
             
             #vwc_m1 = 1./((1.-w_m1)/vwc[j-1]+w_m1/vwc[j])
-            vwc_m1 = 1./((1.-w_m1)/vwc[j]+w_m1/vwc[j-1])
+            vwc_m1 = 1./((1.-w_m1)/vwc[j]+w_m1/vwc[j-1])   # appears this NOT makes large difference from above?
             vwc_p1 = 1./((1.-w_p1)/vwc[j]+w_p1/vwc[j+1])
+            #vwc_p1 = 1./((1.-w_p1)/vwc[j+1]+w_p1/vwc[j])   # appears this NOT makes large difference from above?
+
             f_m1[j] = adv[j]   /vwc_m1         # adv[j] is from j-1 to j
             f_p1[j] = adv[j+1] /vwc_p1         # adv[j+1] is from j to j+1
             
@@ -599,8 +621,8 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
     for jx in range(nlevbed+2):
 
         if (jx > 0 and jx < nlevbed+1):
-            a_p_0 =  dzsoi[jx]/dtime/vwc[jx] 
-            # Should this be multiplied by layer water content (for vwc)?
+            a_p_0 =  dzsoi[jx]/dtime/vwc[jx]   # don't adjust using 'vwc', which already in 
+            
       
 
         if (jx == 0): # top layer (atmosphere)
@@ -619,9 +641,9 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
             # r_tri[j] = source[j] * dzsoi[j] + (a_p_0 - adv[j]) * conc[j]
             r_tri[jx] = conc_rate[jx] * dzsoi[jx] + a_p_0 * conc[jx]
             if(qsrc[jx]>0): #infiltration
-                r_tri[jx] = r_tri[jx] - qsrc[jx]*conc_surf
+                r_tri[jx] = r_tri[jx] + qsrc[jx]*conc_surf
             elif(qsrc[jx]<0):         # upward flow to the surface or drainage
-                r_tri[jx] = r_tri[jx] - qsrc[jx]*conc[jx]
+                r_tri[jx] = r_tri[jx] - qsrc[jx]*conc[jx]/vwc[jx]
 
         elif (jx < nlevbed+1):
             a_tri[jx] = -(d_m1_zm1[jx] * aaa(pe_m1[jx]) + max( f_m1[jx], 0.)) # Eqn 5.47 Patankar
@@ -647,7 +669,9 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
     
     ''''''
     du2, dl2, d2, x, info = \
-        scilapack.dgtsv(c_tri[:-1], b_tri, a_tri[1:], r_tri)
+        scilapack.dgtsv(c_tri[1:-1], b_tri[1:], a_tri[2:], r_tri[1:])
+
+        #scilapack.dgtsv(c_tri[:-1], b_tri, a_tri[1:], r_tri)
         # (du, d, dl, b) - superdiagonal, main diagonal, subdiagonal, right-hand
 
     if(info < 0):
@@ -656,12 +680,11 @@ def Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
     if(info > 0):
         print('dgtsv error in adv_diff line __LINE__: singular matrix')
         exit(info)
-    '''
-    
+    '''    
     x = tridiag_naive(a_tri, b_tri, c_tri, r_tri)
     '''
     
-    conc_after = x[:-1]
+    conc_after = np.insert(x[:-1],0,np.nan)
 
     return conc_after
 
@@ -676,7 +699,7 @@ def mass_checking(nlevbed, dzsoi, vwc, \
     mass_in = 0.     # mol/m2-soil
     mass_out= 0.
 
-    for j in range(1, nlevbed):        
+    for j in range(1, nlevbed+1):        
         mass_start += conc[j]*dzsoi[j]                   
         mass_end += conc_after[j]*dzsoi[j]
         
@@ -719,7 +742,7 @@ def test():
     output_path = './'
 
     # default elm soil nodes and layers    
-    zsoi, dzsoi, zisoi = elm_soillayers(nlevgrnd=15)
+    zsoi, dzsoi, zisoi = elm_soillayers(nlevgrnd=15, equal_thickness=True)
 
     # ----- randomly generated inputs to test functions -------------------
     # insert np.nan into [0], so that indices matching with Fortran-style 
@@ -730,14 +753,16 @@ def test():
     UNI_VWC    = False
     
     # solute diffusion + reactions
-    UNI_CONC   = True
+    UNI_CONC   = False
     if UNI_CONC: UNI_VWC = True   # make sure conc in pore water uniform, because conc in unit of mol/m3-soil
+    UNI_DIFUS = False
     ZERO_DIFUS = False
+
     
     NO_CONC_R  = True
     
     #-------------------
-    nlevbed = 10
+    nlevbed = 2
  
     porosity    = np.random.rand((nlevbed+1)) *0.10 + 0.40         # range: 0.4 ~ 0.5
     porosity[0] = np.nan
@@ -764,8 +789,11 @@ def test():
     if UNI_CONC: conc[...] = 1.e-7  # diffusion will be off 
     conc[0]     = np.nan
     
-    diffus      = np.random.rand((nlevbed+1)) *1.e-9               # diffusivity (m2/s)
-    if ZERO_DIFUS: diffus[...] = 0.  # another way of diffusion will be off 
+    diffus      = np.random.rand((nlevbed+1)) *1.e-9               # diffusivity (m2-soil/s)
+    if ZERO_DIFUS: 
+        diffus[...] = 0.  # another way of diffusion will be off 
+    elif UNI_DIFUS:
+        diffus[...] = 1.e-9
     diffus[0]   = np.nan
     
     conc_dt      = np.random.rand((nlevbed+1))*1.e-6             # Bulk concentration rate, e.g. reaction or other src/sink (mol/m3-soil/s)
@@ -780,6 +808,7 @@ def test():
 
 
     #---- solutions
+    '''
     conc_perwater = conc/vwc # harmonize unit
     qdarcy = -(qadv[1:] * np.insert(vwc[1:], 0, 1)) # my x is defined to be positive downwards
     conc_next, niter = a_step_explicit(nlevbed, zsoi[1:], dzsoi[1:], conc_perwater[1:], \
@@ -788,12 +817,16 @@ def test():
     conc_after = np.insert(conc_after, 0, np.nan)
     
     
-    ''' 
-    conc_after = Patankar_solute_transport(nlevbed, zsoi, dzsoi, zisoi, \
-        conc, conc_dt, qadv, diffus, \
-        vwc, qsrc, conc_surf, \
-        dt)
     '''
+    conc_perwater = conc/vwc
+    conc_r = conc_dt/vwc
+    vwc_perwater = np.ones_like(conc_perwater)   # conc in unit of per vol. water, so no need to consider vwc
+    conc_next = Patankar_solute_transport(nlevbed, dzsoi, zisoi, \
+        conc_perwater, conc_r, qadv, diffus, \
+        vwc_perwater, qsrc, conc_surf, \
+        dt)
+    conc_after = conc_next*vwc
+    ''''''
       
     # ---- mass balance checking
     dmass_error = mass_checking(nlevbed, dzsoi, vwc, \
