@@ -21,7 +21,7 @@ def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic
 
     file=rasterfile
     bandinfos={'bands':['grid_code']}
-    allxc, allyc, crs_res, crs_wkt, alldata = geotiff2nc(file, bandinfos=bandinfos, outdata=True)
+    allxc, allyc, crs_res, crs, alldata = geotiff2nc(file, bandinfos=bandinfos, outdata=True)
     alldata = alldata[0] # only 1 banded data
 
     # truncate non-data points as much as possible
@@ -30,7 +30,7 @@ def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic
     data = np.ma.masked_equal(data,92)  # sea grids
     nondata = data.mask
     #along x-axis, checking non-data in columns
-    ny_nodata = sum(nondata,0)
+    ny_nodata = np.sum(nondata,0)
     x0=0; x1=len(allxc)-1
     for i in range(1,len(allxc)-1):
         if ny_nodata[i]<len(allyc) or ny_nodata[i-1]<len(allyc): break 
@@ -46,9 +46,14 @@ def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic
     data = data[:,x0:x1]   
     
     #along y-axis, checking non-data in rows
-    nx_nodata = sum(nondata,1)
+    y0=0; y1=len(allyc)-1
+    nx_nodata = np.sum(nondata,1)
     for i in range(1,len(allyc)-1):
-        if nx_nodata[i]<len(allxc) or nx_nodata[i-1]<len(allxc): break 
+        if nx_nodata[i]<len(allxc) or nx_nodata[i-1]<len(allxc): 
+            if crs.is_projected:
+                break
+            elif allyc[i]>=50.0: #truncating southern lat of 50 degN
+                break 
         y0 = i
     for i in range(len(allyc)-2,1,-1):
         if nx_nodata[i]<len(allxc) or nx_nodata[i+1]<len(allxc): break 
@@ -62,27 +67,24 @@ def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic
 
     XC, YC = np.meshgrid(X_axis, Y_axis)
 
-    # lon/lat from XC/YC
-    #Proj4: +proj=laea +lon_0=-180 +lat_0=90 +x_0=0 +y_0=0 +R=6370997 +f=0 +units=m +no_defs
-    geoxy_proj_str = "+proj=laea +lon_0=-180 +lat_0=90 +x_0=0 +y_0=0 +R=6370997 +f=0 +units=m +no_defs"
-    geoxyProj = CRS.from_proj4(geoxy_proj_str)
-    # EPSG: 4326
-    # Proj4: +proj=longlat +datum=WGS84 +no_defs
-    epsg_code = 4326
-    lonlatProj = CRS.from_epsg(4326) # in lon/lat coordinates
-    Txy2lonlat = Transformer.from_proj(geoxyProj, lonlatProj, always_xy=True)
-    #Tlonlat2xy = Transformer.from_proj(lonlatProj, geoxyProj, always_xy=True)
+    # lon/lat from XC/YC, if in projected coordinates
+    if crs.is_projected:    
+        #Proj4: +proj=laea +lon_0=-180 +lat_0=90 +x_0=0 +y_0=0 +R=6370997 +f=0 +units=m +no_defs
+        geoxy_proj_str = "+proj=laea +lon_0=-180 +lat_0=90 +x_0=0 +y_0=0 +R=6370997 +f=0 +units=m +no_defs"
+        geoxyProj = CRS.from_proj4(geoxy_proj_str)
+        
+        # EPSG: 4326
+        # Proj4: +proj=longlat +datum=WGS84 +no_defs
+        epsg_code = 4326
+        lonlatProj = CRS.from_epsg(4326) # in lon/lat coordinates
+        Txy2lonlat = Transformer.from_proj(geoxyProj, lonlatProj, always_xy=True)
+        #Tlonlat2xy = Transformer.from_proj(lonlatProj, geoxyProj, always_xy=True)
 
-    # note: in QGIS, CAVM raster projection above has issue to convert into WGS84
-    # we may want to do one-more conversion?
-    # Polar stereographic ellipsoidal projection with WGS-84 ellipsoid for IMS data
-    #Proj4: +proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs
-    #imsprjstr = "+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs"
-    #imsProj = CRS.from_proj4(imsprjstr)
-    #Txy2imsxy = Transformer.from_proj(geoxyProj, imsProj, always_xy=True)
-    #lon,lat = Txy2imsxy.transform(XC,YC)
-
-    lon,lat = Txy2lonlat.transform(XC,YC)
+        lon,lat = Txy2lonlat.transform(XC,YC)
+    
+    else:
+        lon = XC
+        lat = YC
 
     # add the gridcell IDs. and its x/y indices
     total_rows = len(Y_axis)
@@ -99,16 +101,25 @@ def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic
     landmask = np.where(~data.mask, 1, 0)
     landfrac = landmask.astype(float)*1.0
     
-    # area in km2 --> in arcrad2
-    area_km2 = 1.0 # this is by default
-    side_km = math.sqrt(float(area_km2))
     lat[lat==90.0]=lat[lat==90.0]-0.00001
     lat[lat==-90.0]=lat[lat==-90.0]-0.00001
     kmratio_lon2lat = np.cos(np.radians(lat))
     re_km = 6370.997
-    yscalar = side_km/(math.pi*re_km/180.0)
-    xscalar = side_km/(math.pi*re_km/180.0*kmratio_lon2lat)
-    area = xscalar*yscalar
+    area = np.empty_like(lat)
+    area_km2 = np.empty_like(kmratio_lon2lat)
+    if crs.is_projected:    
+        # area in km2 --> in arcrad2
+        area_km2[...] = crs_res[0]*crs_res[1]*1.0e-6
+        yscalar = crs_res[1]/1000.0/(math.pi*re_km/180.0)
+        xscalar = crs_res[0]/1000.0/(math.pi*re_km/180.0*kmratio_lon2lat)
+        area[...] = xscalar*yscalar
+
+    else:
+        area[...] = np.radians(crs_res[0])*np.radians(crs_res[1])
+        yscalar = crs_res[1]*(math.pi*re_km/180.0)
+        xscalar = crs_res[0]*(math.pi*re_km/180.0*kmratio_lon2lat)
+        area_km2[...] = xscalar*yscalar
+
     
     # 2d --> 1d, with masked only
     grid_id_arr = grid_ids[masked]
@@ -118,6 +129,7 @@ def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic
     landfrac_arr = landfrac[masked]
     landcov_arr = data[masked]
     area_arr = area[masked]
+    area_km2_arr = area_km2[masked]
     lat_arr = lat[masked]
     lon_arr = lon[masked]
     XC_arr = XC[masked]
@@ -136,14 +148,25 @@ def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic
     w_nc_fid.createDimension('x', total_cols)
     w_nc_fid.createDimension('y', total_rows)
     dst_var = w_nc_fid.createVariable('x', np.float32, ('x'))
-    dst_var.units = "m"
-    dst_var.long_name = "x coordinate of projection"
-    dst_var.standard_name = "projection_x_coordinate"
+    if crs.is_projected:
+        dst_var.units = "m"
+        dst_var.long_name = "x coordinate of projection"
+        dst_var.standard_name = "projection_x_coordinate"
+    else:
+        dst_var.units = 'degrees_east'
+        dst_var.long_name = 'longitude of land gridcell center (GCS_WGS_84), increasing from west to east'
+        dst_var.standard_name = "longitude"
     w_nc_fid['x'][...] = np.copy(XC[0,:])
     dst_var = w_nc_fid.createVariable('y', np.float32, ('y'))
-    dst_var.units = "m"
-    dst_var.long_name = "y coordinate of projection"
-    dst_var.standard_name = "projection_y_coordinate"
+    if crs.is_projected:
+        dst_var.units = "m"
+        dst_var.long_name = "y coordinate of projection"
+        dst_var.standard_name = "projection_y_coordinate"
+    else:
+        dst_var.units = 'degrees_north'
+        dst_var.long_name = 'latitude of land gridcell center (GCS_WGS_84), decreasing from north to south'
+        dst_var.standard_name = 'latitude'
+
     w_nc_fid['y'][...] = np.copy(YC[:,0])
     w_nc_var = w_nc_fid.createVariable('lon', np.float64, ('y','x'))
     w_nc_var.long_name = 'longitude of 2D land gridcell center (GCS_WGS_84), increasing from west(-180) to east(180)'
@@ -210,16 +233,32 @@ def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic
     w_nc_var.units = "degrees_north"
     w_nc_var.comment = 'by GCS_WGS_84, decreasing from north to south, vertices ordering anti-clock from left-low corner'
 
-    xv_arr,yv_arr = Txy2lonlat.transform(XC_arr-side_km*500.,YC_arr+side_km*500.)
+    if crs.is_projected:
+        xv_arr,yv_arr = Txy2lonlat.transform(XC_arr-crs_res[0]/2.0,YC_arr+crs_res[1]/2.0)
+    else:
+        xv_arr = XC_arr-crs_res[0]/2.0
+        yv_arr = YC_arr+crs_res[1]/2.0
     w_nc_fid.variables['xv'][...,0] = xv_arr
     w_nc_fid.variables['yv'][...,0] = yv_arr
-    xv_arr,yv_arr = Txy2lonlat.transform(XC_arr+side_km*500.,YC_arr+side_km*500.)
+    if crs.is_projected:
+        xv_arr,yv_arr = Txy2lonlat.transform(XC_arr+crs_res[0]/2.0,YC_arr+crs_res[1]/2.0)
+    else:
+        xv_arr = XC_arr+crs_res[0]/2.0
+        yv_arr = YC_arr+crs_res[1]/2.0
     w_nc_fid.variables['xv'][...,1] = xv_arr
     w_nc_fid.variables['yv'][...,1] = yv_arr
-    xv_arr,yv_arr = Txy2lonlat.transform(XC_arr+side_km*500.,YC_arr-side_km*500.)
+    if crs.is_projected:
+        xv_arr,yv_arr = Txy2lonlat.transform(XC_arr+crs_res[0]/2.0,YC_arr-crs_res[1]/2.0)
+    else:
+        xv_arr = XC_arr+crs_res[0]/2.0
+        yv_arr = YC_arr-crs_res[1]/2.0
     w_nc_fid.variables['xv'][...,2] = xv_arr
     w_nc_fid.variables['yv'][...,2] = yv_arr
-    xv_arr,yv_arr = Txy2lonlat.transform(XC_arr-side_km*500.,YC_arr-side_km*500.)
+    if crs.is_projected:
+        xv_arr,yv_arr = Txy2lonlat.transform(XC_arr-crs_res[0]/2.0,YC_arr-crs_res[1]/2.0)
+    else:
+        xv_arr = XC_arr-crs_res[0]/2.0
+        yv_arr = YC_arr-crs_res[1]/2.0
     w_nc_fid.variables['xv'][...,3] = xv_arr
     w_nc_fid.variables['yv'][...,3] = yv_arr
 
@@ -233,7 +272,7 @@ def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic
     w_nc_var.long_name = 'Area of land gridcells (Lambert Azimuthal Equal Area)'
     w_nc_var.coordinate = 'xc yc' 
     w_nc_var.units = "km^2"
-    w_nc_fid.variables['area_LAEA'][...] = area_km2
+    w_nc_fid.variables['area_LAEA'][...] = area_km2_arr
 
     w_nc_var = w_nc_fid.createVariable('landcov_code', np.int32, ('nj','ni'))
     w_nc_var.long_name = "land-unit or veg. code" ;
@@ -257,17 +296,18 @@ def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic
     w_nc_var.filter2 = "limit frac to [fminval,fmaxval]; fminval= 0.1000000E-02 fmaxval=  1.000000" ;
     w_nc_fid.variables['frac'][...] = landfrac_arr
 
-    w_nc_var = w_nc_fid.createVariable('lambert_azimuthal_equal_area', np.short)
-    w_nc_var.grid_mapping_name = "lambert_azimuthal_equal_area"
-    w_nc_var.crs_wkt = crs_wkt
-    w_nc_var.longitude_of_center = 90.
-    w_nc_var.latitude_of_center = -180.
-    w_nc_var.false_easting = 0.
-    w_nc_var.false_northing = 0.
-    w_nc_var.semi_major_axis = 6370997.
-    w_nc_var.inverse_flattening = 0.
-    w_nc_var.proj4_str = geoxy_proj_str
-    w_nc_var.epsg = epsg_code
+    if crs.is_projected:
+        w_nc_var = w_nc_fid.createVariable('lambert_azimuthal_equal_area', np.short)
+        w_nc_var.grid_mapping_name = "lambert_azimuthal_equal_area"
+        w_nc_var.crs_wkt = crs.wkt
+        w_nc_var.longitude_of_center = 90.
+        w_nc_var.latitude_of_center = -180.
+        w_nc_var.false_easting = 0.
+        w_nc_var.false_northing = 0.
+        w_nc_var.semi_major_axis = 6370997.
+        w_nc_var.inverse_flattening = 0.
+        w_nc_var.proj4_str = geoxy_proj_str
+        w_nc_var.epsg = epsg_code
 
     w_nc_fid.close()  # close the new file 
     
@@ -670,7 +710,6 @@ def domain_remeshbynewmesh(input_pathfile='./domain.nc', newmesh='', \
     '''
     
     newmesh = 'projection_elm_mappings.txt'
-    
     if newmesh.endswith('.txt'):
         with open(newmesh) as f:
             # remove header txts
@@ -1241,7 +1280,9 @@ def main():
 
     # create an unstructured domain from a raster image, e.g. CAVM image of land cover type, including veg
     #domain_unstructured_fromraster_cavm()
-    #return # for only do domain.nc writing
+    domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic_CAVM.1kmbylatlon.1d.c250618.nc', \
+                                   rasterfile='./raster_cavm_v1_latlongrided.tif')
+    return # for only do domain.nc writing
     
     # create an unstructured domain from grids of daymet tile
     #domain_unstructured_fromdaymet(tileinfo_ncfile='./daymet_tiles.nc')

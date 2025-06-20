@@ -433,14 +433,26 @@ def geotiff2nc(file, bandinfos=None, outdata=False):
         ncof.createDimension('geoy',ny)
     
         geoxo = ncof.createVariable('geox',np.double,('geox'))
-        geoxo.units = 'degrees_east (m) or lat'
-        geoxo.standard_name = 'geo-reference x coordinates'
+        if f.crs.is_projected:
+            geoxo.units = 'm'
+            geoxo.long_name = 'x coordinate of projection'
+            geoxo.standard_name = 'projection_x_coordinate'
+        else:
+            geoxo.units = 'degrees_east'
+            geoxo.long_name = 'longitude of land gridcell center (GCS_WGS_84), increasing from west to east'
+            geoxo.standard_name = "longitude"
     
         geoyo = ncof.createVariable('geoy',np.double,('geoy'))
-        geoyo.units = 'degrees_north (m) or lat'
-        geoyo.standard_name = 'geo-reference y coorindates'
+        if f.crs.is_projected:
+            geoyo.units = 'm'
+            geoyo.long_name = 'y coordinate of projection'
+            geoyo.standard_name = 'projection_y_coordinate'
+        else:
+            geoyo.units = 'degrees_north'
+            geoyo.long_name = 'latitude of land gridcell center (GCS_WGS_84), decreasing from north to south'
+            geoyo.standard_name = 'latitude'
     
-        georef = ncof.createVariable('crs','int')
+        georef = ncof.createVariable('crs_wkt','int')
         georef.CRS = f.crs.wkt
     
         bounds = ncof.createVariable('bounds','int')
@@ -471,7 +483,7 @@ def geotiff2nc(file, bandinfos=None, outdata=False):
         ncof.close()
     
     if outdata:
-        return geox,geoy,f.res,f.crs.wkt,alldata
+        return geox,geoy,f.res,f.crs,alldata
 #
 #----------------------------------------------------------------------------             
 # average specific variable(s) along named dimension and write back for all
@@ -567,7 +579,7 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 #dupexpand('landuse.timeseries_1x1pt_kougarok-NGEE_simyr1850-2015_c181015m64.nc', 'test6x1.nc', ['lsmlat','lsmlon'], [1,6])
 
 # merge 2 files along 1-only named-dimension
-#mergefilesby1dim('f1.nc', 'f2.nc', 'fout.nc', 'n')
+#mergefilesby1dim('f1.nc', 'f2.nc', 'fout.nc', 'pft')
 #fall='GSWP3_WIND_1901-2014'
 #files=['cpl_bypass_01/'+fall+'_z02.nc',
 #       'cpl_bypass_02/'+fall+'_z14.nc',
