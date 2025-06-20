@@ -1,24 +1,22 @@
 #!/usr/bin/env python
-import os, math
 import numpy as np
 
 #----- 
+def dist_to_arclength(chord_length, R=6367000.0):
+    """
+    https://en.wikipedia.org/wiki/Great-circle_distance
+    Convert Euclidean chord length to great circle arc length
+    """
+    central_angle = 2*np.arcsin(chord_length/(2.0*R)) 
+    arclength = R*central_angle
+    return arclength
+
 #----- nearest_neibour for earth surface using kdtree
 def nearest_pts_latlon_kdtree(allpoints, excl_points=0, latname='Latitude', lonname='Longitude'):
     import scipy.spatial as spatial
-    from math import radians, cos, sin, asin, sqrt
     #"Based on https://stackoverflow.com/q/43020919/190597"
     R = 6367000.0 # meters
-    def dist_to_arclength(chord_length):
-        """
-        https://en.wikipedia.org/wiki/Great-circle_distance
-        Convert Euclidean chord length to great circle arc length
-        """
-        central_angle = 2*np.arcsin(chord_length/(2.0*R)) 
-        arclength = R*central_angle
-        return arclength
-
-    def kpt_default(data, latname='Latitude', lonname='Longitude',kpt=2):
+    def kpt_default(data, latname=latname, lonname=lonname,kpt=2):
         phi = np.deg2rad(data[latname])
         theta = np.deg2rad(data[lonname])
         data['x'] = R * np.cos(phi) * np.cos(theta)
@@ -37,7 +35,7 @@ def nearest_pts_latlon_kdtree(allpoints, excl_points=0, latname='Latitude', lonn
     Kpts = 2
     idx_void = None
     while not AllNearest:
-        dist,idx=kpt_default(allpoints, latname='Latitude', lonname='Longitude',kpt=Kpts)
+        dist,idx=kpt_default(allpoints, latname=latname, lonname=lonname,kpt=Kpts)
 
         if excl_points<=1:
             AllNearest=True
@@ -88,6 +86,163 @@ def nearest_pts_geoxy_kdtree(data, xname='geox', yname='geoy',kpt=2):
     
     #return nearest points other than itself
     return distance[:, 1:], index[:,1:]
+
+
+# ------
+def grids_data_from_xrio(xrio_data, elm_domainnc, verbose=0):
+    import pandas as pd
+    import math
+    import xarray
+ 
+    try:
+        from mpi4py import MPI
+        mycomm = MPI.COMM_WORLD
+        myrank = mycomm.Get_rank()
+        mysize = mycomm.Get_size()
+    except ImportError:
+        mycomm = 0
+        myrank = 0
+        mysize = 1
+
+    #percentiles = np.asarray([10,20,30,40,50,60,70,80,85,90,95,100])
+
+    # xr_data, spatially explicit dataset
+    xr_val  = xrio_data.data    
+    xy  = np.meshgrid(xrio_data.x.data, xrio_data.y.data)
+    lon = xy[0][xr_val!=xrio_data.rio.nodata]
+    lat = xy[1][xr_val!=xrio_data.rio.nodata]
+    xr_val = xr_val[xr_val!=xrio_data.rio.nodata]
+    
+    # grided summarizing
+    grid_stats = []
+
+    #------------------------------------------------------------------------------------------------------        
+    def masked_xrval(g_mask):        
+        if sum(g_mask)<=0 or xr_val.size<=0: return
+        
+        g_fraction = sum(g_mask)/xr_val.size
+        v_mean = np.nanmean(xr_val[g_mask])                    
+        v_std = np.nanstd(xr_val[g_mask])                    
+            
+        #
+        grid_stats.append({
+                "original_pixels_mask": g_mask,
+                "g_masked_fraction": g_fraction,
+                "g_mean": v_mean,
+                "g_std": v_std,
+                })
+            
+    #------------------------------------------------------------------------------------------------------        
+    
+    # grid by grid topounit summarizing
+    if elm_domainnc=='':
+        # grouping for user-defined resolution grids within bounding box.
+        # (default: one grid within bounding box)
+        ylat = np.asarray([np.min(lat), np.max(lat)])
+        xlon = np.asarray([np.min(lon), np.max(lon)])
+        
+        grid_mesh = np.meshgrid(ylat, xlon)       
+        grid_poly = npmeshgrids_gpd(grid_mesh, xy_or_ji=1, POLYGON=True)
+        
+        #----
+        
+        yidx = grid_poly['yid']
+        xidx = grid_poly['xid']
+        yxidx= grid_poly['xyid']
+        
+        l_total = yxidx.size        
+        l_myrank = int(math.floor(l_total/mysize))
+        l_mod = int(math.fmod(l_total,mysize))
+        n_myrank = np.full([mysize], 1);n_myrank = np.cumsum(n_myrank)*l_myrank
+        x_myrank = np.full([mysize], 0);x_myrank[:l_mod] = 1
+        n_myrank = n_myrank + np.cumsum(x_myrank) - 1        # ending index, starting 0, for each rank
+        n0_myrank = np.hstack((0, n_myrank[0:mysize-1]+1))   # starting index, starting 0, for each rank
+
+        #----    
+        yxidx_myrank = yxidx[n0_myrank[myrank]:n_myrank[myrank]+1] # +1 for ending-index-inclusive        
+        for iyx in yxidx_myrank:
+            iy = yidx[iyx]
+            ix = xidx[iyx]
+            
+            g_mask = ((lat>=ylat[iy]) & (lat<=ylat[iy+1])) & \
+                        ((lon>=xlon[ix]) & (lon<=xlon[ix+1]))
+            if not any(g_mask) or sum(g_mask)/g_mask.size<0.001:
+                grid_poly = grid_poly.drop(iyx) 
+                continue #skip if none or less than 0.01%
+
+            if verbose>0:
+                print("Group-level statistics for grid -- ", 
+                      iy, ':', ylat[iy],'~~',ylat[iy+1], 
+                      ix, ':', xlon[ix],'~~',xlon[ix+1])
+            
+            masked_xrval(g_mask)
+        #         
+        grid_poly = grid_poly.join(pd.DataFrame(grid_stats))
+            
+                
+    else:
+        # from elm domain.nc
+        f = xarray.open_dataset(elm_domainnc, engine='netcdf4')
+        ylat = f['yv'].data
+        xlon = f['xv'].data
+
+        elmdomain ={}
+        elmdomain['xc'] = f['xc'].data
+        elmdomain['yc'] = f['yc'].data
+        elmdomain['xv'] = f['xv'].data
+        elmdomain['yv'] = f['yv'].data
+        
+        grid_poly = elmgrids_gpd(elmdomain)
+        
+        #----
+        
+        yidx = grid_poly['yid']
+        xidx = grid_poly['xid']
+        yxidx= grid_poly['xyid']
+        
+        l_total = yxidx.size        
+        l_myrank = int(math.floor(l_total/mysize))
+        l_mod = int(math.fmod(l_total,mysize))
+        n_myrank = np.full([mysize], 1);n_myrank = np.cumsum(n_myrank)*l_myrank
+        x_myrank = np.full([mysize], 0);x_myrank[:l_mod] = 1
+        n_myrank = n_myrank + np.cumsum(x_myrank) - 1        # ending index, starting 0, for each rank
+        n0_myrank = np.hstack((0, n_myrank[0:mysize-1]+1))   # starting index, starting 0, for each rank
+        #----    
+           
+        yxidx_myrank = yxidx[n0_myrank[myrank]:n_myrank[myrank]+1] # +1 for ending-index-inclusive
+        for iyx in yxidx_myrank:
+            if xlon.shape[0]==1 and ylat.shape[0]==1:
+                #unstructured ELM domain, nj=1
+                iy = 0
+                ix = yxidx[iyx]
+            elif xlon.shape[1]==1 and ylat.shape[1]==1:
+                #unstructured ELM domain, ni=1
+                ix = 0
+                iy = yxidx[iyx]
+            else:
+                iy = yidx[iyx]
+                ix = xidx[iyx]
+            
+            g_mask = ((lat>=np.min(ylat[iy,ix,])) & (lat<=np.max(ylat[iy,ix,]))) & \
+                     ((lon>=np.min(xlon[iy,ix,])) & (lon<=np.max(xlon[iy,ix,])))
+            if not any(g_mask) or sum(g_mask)/g_mask.size<0.001: 
+                grid_poly = grid_poly.drop(iyx) 
+                continue #skip if none or less than 0.01%
+
+            if verbose>0:
+                print("Groupped statistics for grid: ", 
+                      iy, ':', np.min(ylat[iy,ix,]),'~~',np.max(ylat[iy,ix,]), 
+                      ix, ':', np.min(xlon[iy,ix,]),'~~',np.max(xlon[iy,ix,]))
+            masked_xrval(g_mask)
+        #
+        grid_poly = grid_poly.join(pd.DataFrame(grid_stats))
+            
+    #
+    
+    return grid_poly
+
+# ---------------------------------------------------------------------
+
 
 # ------
 #
@@ -149,7 +304,7 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         src_yv = src_grids['yv']    
     
     # 
-    # 1.5 times of grid-size edges 
+    # 0.5 times of grid-size edges 
     # to allows one-grid edges of range of latitude/longitude boxes
     x_edge = 0.0; y_edge = 0.0
     if (1 in src_xc.shape):
@@ -158,50 +313,57 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
             'yv' in src_grids.keys():
             xdiff = np.squeeze(abs(src_xv[...,0]-src_xv[...,1]))
             xdiff = xdiff[np.where(xdiff<=180.0)] # removal those cross line 0/360 or -180/180
-            x_edge = np.nanmean(xdiff)*1.5
-            y_edge = np.nanmean(np.squeeze(abs(src_yv[...,0]-src_yv[...,2])))*1.5        
+            x_edge = np.nanmean(xdiff)*0.5
+            y_edge = np.nanmean(np.squeeze(abs(src_yv[...,0]-src_yv[...,2])))*0.5        
     else:
         xdiff = np.diff(src_xc[0,:])
         xdiff = xdiff[np.where(abs(xdiff)<=180.0)] # removal those cross line 0/360 or -180/180
-        x_edge = np.nanmean(xdiff)*1.5
-        y_edge = np.nanmean(np.diff(src_yc[:,0]))*1.5
+        x_edge = abs(np.nanmean(xdiff)*0.5)
+        y_edge = abs(np.nanmean(np.diff(src_yc[:,0]))*0.5)
     # [mask_xc,mask_yc] box
     x_min = min(mask_xc)-x_edge
-    if unlimit_xmin: x_min = min(src_xc[0,:])-x_edge # but may not want to do trunking
     x_max = max(mask_xc)+x_edge
-    if unlimit_xmax: x_max = max(src_xc[0,:])+x_edge
     y_min = min(mask_yc)-y_edge
-    if unlimit_ymin: y_min = min(src_yc[:,0])-y_edge
     y_max = max(mask_yc)+y_edge
-    if unlimit_ymax: y_max = max(src_yc[:,0])+y_edge
+    # but may not want to do trunking
+    if (1 in src_xc.shape):
+        if unlimit_xmin: x_min = min(src_xc[0,:])
+        if unlimit_ymin: y_min = min(src_yc[0,:])
+        if unlimit_xmax: x_max = max(src_xc[0,:])
+        if unlimit_ymax: y_max = max(src_yc[0,:])
+    else:
+        if unlimit_xmin: x_min = min(src_xc[0,:])
+        if unlimit_ymin: y_min = min(src_yc[:,0])
+        if unlimit_xmax: x_max = max(src_xc[0,:])
+        if unlimit_ymax: y_max = max(src_yc[:,0])
     
     boxed_idx = \
         np.where((src_yc>=y_min) &  \
                  (src_yc<=y_max) &  \
                  (src_xc>=x_min) &  \
                  (src_xc<=x_max))
-    xc = src_xc[boxed_idx]
-    yc = src_yc[boxed_idx]
+    boxed_xc = src_xc[boxed_idx]
+    boxed_yc = src_yc[boxed_idx]
     poly_id = np.indices(src_xc.flatten().shape)[0]
     poly_id = poly_id.reshape(src_xc.shape)[boxed_idx]
     # this is the indices of trunked but in original paired [yc,xc] of source  
 
     if 'xv' in src_grids.keys() and \
         'yv' in src_grids.keys():    
-        yv1 = src_yv[...,0]; xv1 = src_xv[...,0]
-        yv2 = src_yv[...,1]; xv2 = src_xv[...,1]
-        yv3 = src_yv[...,2]; xv3 = src_xv[...,2]
-        yv4 = src_yv[...,3]; xv4 = src_xv[...,3]        
-        yv1=yv1[boxed_idx]; xv1=xv1[boxed_idx]
-        yv2=yv2[boxed_idx]; xv2=xv2[boxed_idx]
-        yv3=yv3[boxed_idx]; xv3=xv3[boxed_idx]
-        yv4=yv4[boxed_idx]; xv4=xv4[boxed_idx]
+        boxed_yv1 = src_yv[...,0]; boxed_xv1 = src_xv[...,0]
+        boxed_yv2 = src_yv[...,1]; boxed_xv2 = src_xv[...,1]
+        boxed_yv3 = src_yv[...,2]; boxed_xv3 = src_xv[...,2]
+        boxed_yv4 = src_yv[...,3]; boxed_xv4 = src_xv[...,3]        
+        boxed_yv1=boxed_yv1[boxed_idx]; boxed_xv1=boxed_xv1[boxed_idx]
+        boxed_yv2=boxed_yv2[boxed_idx]; boxed_xv2=boxed_xv2[boxed_idx]
+        boxed_yv3=boxed_yv3[boxed_idx]; boxed_xv3=boxed_xv3[boxed_idx]
+        boxed_yv4=boxed_yv4[boxed_idx]; boxed_xv4=boxed_xv4[boxed_idx]
     
     # trunked source domain's xc,yc, i.e. centroids of xv/yv which formed polygons above, 
     # to be marked in X_axis, Y_axis, and re-indexing
     # (TIPs: this is import for visualizing data in map or transfrom btw 1D and 2D)
-    X_axis = xc
-    Y_axis = yc     
+    X_axis = boxed_xc
+    Y_axis = boxed_yc     
     [X_axis, i] = np.unique(X_axis, return_inverse=True)
     [Y_axis, j] = np.unique(Y_axis, return_inverse=True)
     YY, XX = np.meshgrid(Y_axis, X_axis, indexing='ij')
@@ -213,10 +375,18 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
     if (1 not in src_xc.shape):
         # structured grids yc[nj,ni], xc[nj,ni]
         
-        # new indices of [yc,xc] in grid-mesh YY/XX
+        # new indices of paired [yc,xc] in grid-mesh YY/XX
         # note: here don't override xc,yc, so xc=X_axis[i], yc=Y_axis[j]
-        polygonized = np.isin(XX, X_axis[i]) & np.isin(YY, Y_axis[j])
-        ji = np.nonzero(polygonized) 
+        yxc = np.asarray([(y,x) for y,x in zip(boxed_yc,boxed_xc)])
+        yxc_remeshed = np.asarray([(y,x) for y,x in zip(YY.flatten(),XX.flatten())])
+        set1 = dict((k,i) for i,k in enumerate({tuple(row) for row in yxc}))
+        set2 = dict((k,i) for i,k in enumerate({tuple(row) for row in yxc_remeshed}))
+        inter_set = set(set2).intersection(set(set1))  #set intersection NOT properly ordered
+        ji2 = [i for i,val in enumerate(set2) if val in inter_set]
+        ji1 = [i for i,val in enumerate(set1) if val in inter_set]
+        ji = np.column_stack((ji1,ji2))
+        ji = ji[ji[:,0].argsort()] #sorted indices by ji1
+        ji = np.unravel_index(ji[:,1], xyid.shape)
         sub_xid = xid[ji]     
         sub_yid = yid[ji]    
         sub_xyid= xyid[ji]  
@@ -242,7 +412,7 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
 
         # re-meshed XX/YY centroids
         grid_centroids = geopd.GeoDataFrame({'pid':poly_id,"xyid":sub_xyid,"xid":sub_xid,"yid":sub_yid, \
-                                             "xc":xc,"yc":yc})
+                                             "xc":boxed_xc,"yc":boxed_yc})
         grid_centroids['geometry'] = grid_centroids.apply(lambda p: Point(p.xc, p.yc), axis=1)
 
         pointsInGrids = sjoin_nearest(points, \
@@ -258,10 +428,10 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         print('points in polygon searching')
         
         # box trunked source domain's xv,yv to form polygons
-        vpts1=[(x,y) for x,y in zip(xv1,yv1)]
-        vpts2=[(x,y) for x,y in zip(xv2,yv2)]
-        vpts3=[(x,y) for x,y in zip(xv3,yv3)]
-        vpts4=[(x,y) for x,y in zip(xv4,yv4)]
+        vpts1=[(x,y) for x,y in zip(boxed_xv1,boxed_yv1)]
+        vpts2=[(x,y) for x,y in zip(boxed_xv2,boxed_yv2)]
+        vpts3=[(x,y) for x,y in zip(boxed_xv3,boxed_yv3)]
+        vpts4=[(x,y) for x,y in zip(boxed_xv4,boxed_yv4)]
         lines = [(vpts1[i], vpts2[i], vpts3[i], vpts4[i], vpts1[i]) for i in range(len(vpts1))]
         lines_str = [LineString(lines[i]) for i in range(len(lines))]
         polygons = list(polygonize(MultiLineString(lines_str)))
@@ -291,8 +461,12 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
     srcpolys_contained_maskid = {}
     for i in range(len(srcpolys_unique_pid)):
         # sorted unique grid id as key, for which masked_pid contained can be saved
+        if i==0:
+            startidx=0
+        else:
+            startidx = startidx + pts_count[i-1]
         srcpolys_contained_maskid[srcpolys_unique_pid[i]] = \
-            sorted_ptsingrids[pts_startidx[i]:pts_startidx[i]+pts_count[i],1]
+            sorted_ptsingrids[startidx:startidx+pts_count[i],1]
 
     # re-masking grids, which actually conaining masked_xc/_yc/_id in new XX/YY mesh
     sub_remasked = np.isin(sub_xyid, remask_xyid)
@@ -301,8 +475,8 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         
         sorted_ptsidx = remask_xyid # not really sorted here
         if keep_duplicated:
-            xc = xc[sorted_ptsidx]
-            yc = xc[sorted_ptsidx]
+            boxed_xc = boxed_xc[sorted_ptsidx]
+            boxed_yc = boxed_yc[sorted_ptsidx]
         elif reorder_src:
             # shuffle indices or data array by data order in mask
             sorted_ptsingrids = np.column_stack((remask_maskid, remask_pid, remask_xyid))
@@ -310,15 +484,15 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
             sorted_ptsidx = sorted_ptsingrids[:,2] # i.e. sorted 'remask_xyid' by 'remask_maskid'
 
             # using mask_pts x/y, but still with src_xv/yv below
-            xc = mask_xc[remask_maskid]
-            yc = mask_yc[remask_maskid]
+            boxed_xc = mask_xc[remask_maskid]
+            boxed_yc = mask_yc[remask_maskid]
                     
         if 'xv' in src_grids.keys() and \
             'yv' in src_grids.keys():    
-            yv1=yv1[sorted_ptsidx]; xv1=xv1[sorted_ptsidx]
-            yv2=yv2[sorted_ptsidx]; xv2=xv2[sorted_ptsidx]
-            yv3=yv3[sorted_ptsidx]; xv3=xv3[sorted_ptsidx]
-            yv4=yv4[sorted_ptsidx]; xv4=xv4[sorted_ptsidx]
+            boxed_yv1=boxed_yv1[sorted_ptsidx]; boxed_xv1=boxed_xv1[sorted_ptsidx]
+            boxed_yv2=boxed_yv2[sorted_ptsidx]; boxed_xv2=boxed_xv2[sorted_ptsidx]
+            boxed_yv3=boxed_yv3[sorted_ptsidx]; boxed_xv3=boxed_xv3[sorted_ptsidx]
+            boxed_yv4=boxed_yv4[sorted_ptsidx]; boxed_xv4=boxed_xv4[sorted_ptsidx]
         
         # re-do indices of [yc,xc] in [YY,XX] meshgrid
         boxed_idx = (boxed_idx[0][sorted_ptsidx], boxed_idx[1][sorted_ptsidx])
@@ -335,16 +509,16 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         grid_yid_arr = np.reshape(sub_yid,xyid.shape)
         grid_remasked_arr = np.reshape(sub_remasked,xyid.shape)
         
-        xc_arr = np.reshape(xc,xyid.shape)
-        yc_arr = np.reshape(yc,xyid.shape)
-        xv_arr = np.stack((np.reshape(xv1,xyid.shape), \
-                           np.reshape(xv2,xyid.shape), \
-                           np.reshape(xv3,xyid.shape), \
-                           np.reshape(xv4,xyid.shape)), axis=2)
-        yv_arr = np.stack((np.reshape(yv1,xyid.shape), \
-                           np.reshape(yv2,xyid.shape), \
-                           np.reshape(yv3,xyid.shape), \
-                           np.reshape(yv4,xyid.shape)), axis=2)
+        xc_arr = np.reshape(boxed_xc,xyid.shape)
+        yc_arr = np.reshape(boxed_yc,xyid.shape)
+        xv_arr = np.stack((np.reshape(boxed_xv1,xyid.shape), \
+                           np.reshape(boxed_xv2,xyid.shape), \
+                           np.reshape(boxed_xv3,xyid.shape), \
+                           np.reshape(boxed_xv4,xyid.shape)), axis=2)
+        yv_arr = np.stack((np.reshape(boxed_yv1,xyid.shape), \
+                           np.reshape(boxed_yv2,xyid.shape), \
+                           np.reshape(boxed_yv3,xyid.shape), \
+                           np.reshape(boxed_yv4,xyid.shape)), axis=2)
 
     else:
     
@@ -352,10 +526,10 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         grid_xid_arr = sub_xid
         grid_yid_arr = sub_yid
         grid_remasked_arr = sub_remasked
-        xc_arr = xc
-        yc_arr = yc
-        xv_arr = np.stack((xv1,xv2,xv3,xv4), axis=1)
-        yv_arr = np.stack((yv1,yv2,yv3,yv4), axis=1)
+        xc_arr = boxed_xc
+        yc_arr = boxed_yc
+        xv_arr = np.stack((boxed_xv1,boxed_xv2,boxed_xv3,boxed_xv4), axis=1)
+        yv_arr = np.stack((boxed_yv1,boxed_yv2,boxed_yv3,boxed_yv4), axis=1)
  
     # 
     # output arrays
@@ -376,3 +550,238 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         
     return subdomain, boxed_idx, srcpolys_unique_pid, srcpolys_contained_maskid
 #
+
+# ------
+#
+
+def elmgrids_gpd(src_grids, LONGXY360=False):
+    '''
+    ELM domain grids to geopanda's geometry (Point or polygons)
+      ndarray list or dict, either from domain.nc (xc/yc, with xv/yv), or surfdata.nc (LONGXY, LATIXY)
+    '''
+
+    import geopandas as geopd
+    from shapely.geometry import Point
+    from shapely.geometry import MultiLineString, LineString
+    from shapely.ops import polygonize
+        
+    # 
+    # Open the source domain or surface nc file, 
+    # directly from an ELM domain nc file
+    # TIP: in this case, both domain and land surface grid-systems are EXACTLY matching with each other
+    if 'xc' in src_grids.keys(): 
+        src_yc = src_grids['yc']
+        src_xc = src_grids['xc']
+    elif 'LONGXY' in src_grids.keys():
+        src_yc = src_grids['LONGXY']
+        src_xc = src_grids['LATIXY']
+    if LONGXY360: 
+        src_xc[src_xc<0.0]=360+src_xc[src_xc<0.0]
+    else:
+        src_xc[src_xc>180.0]=-360+src_xc[src_xc>180.0]
+
+    if 'xv' in src_grids.keys() \
+        and 'yv' in src_grids.keys():
+        src_xv = src_grids['xv']
+        if LONGXY360: 
+            src_xv[src_xv<0.0]=360+src_xv[src_xv<0.0]
+        else:
+            src_xv[src_xv>180.0]=-360+src_xv[src_xv>180.0]
+            # need to re-adj for cross -180/180 line's grid            
+        src_yv = src_grids['yv']    
+
+        nv = src_xv.shape[-1]
+    
+        boxed_yv1 = src_yv[...,0]; boxed_xv1 = src_xv[...,0]
+        boxed_yv2 = src_yv[...,1]; boxed_xv2 = src_xv[...,1]
+        boxed_yv3 = src_yv[...,2]; boxed_xv3 = src_xv[...,2]
+        if nv==4: boxed_yv4 = src_yv[...,3]; boxed_xv4 = src_xv[...,3]        
+    # 
+       
+    # source domain's xc,yc, i.e. centroids of xv/yv which formed polygons above, 
+    # to be marked in X_axis, Y_axis, and re-indexing
+    # (TIPs: this is import for visualizing data in map or transfrom btw 1D and 2D)
+    X_axis = src_xc
+    Y_axis = src_yc     
+    [X_axis, i] = np.unique(X_axis, return_inverse=True)
+    [Y_axis, j] = np.unique(Y_axis, return_inverse=True)
+    YY, XX = np.meshgrid(Y_axis, X_axis, indexing='ij')
+    xid = np.indices(XX.shape)[1]
+    yid = np.indices(XX.shape)[0]
+    xyid = np.indices(XX.flatten().shape)[0]
+    xyid = np.reshape(xyid, xid.shape)
+
+    if (1 not in src_xc.shape):
+        # structured grids yc[nj,ni], xc[nj,ni]
+        
+        # new indices of paired [yc,xc] in grid-mesh YY/XX
+        # note: here don't override xc,yc, so xc=X_axis[i], yc=Y_axis[j]
+        yxc = np.asarray([(y,x) for y,x in zip(src_yc, src_xc)])
+        yxc_remeshed = np.asarray([(y,x) for y,x in zip(YY.flatten(),XX.flatten())])
+        set1 = dict((k,i) for i,k in enumerate({tuple(row) for row in yxc}))
+        set2 = dict((k,i) for i,k in enumerate({tuple(row) for row in yxc_remeshed}))
+        inter_set = set(set2).intersection(set(set1))
+        ji = np.asarray([set2[yx] for yx in inter_set])
+        ji = np.unravel_index(ji, xyid.shape)
+        sub_xid = xid[ji]     
+        sub_yid = yid[ji]    
+        sub_xyid= xyid[ji]  
+
+    else:
+        # unstructured  yc[1,ni], xc[1,ni]
+        # new indices of paired [yc,xc] in grid-mesh YY/XX
+        sub_xid = xid[j,i].ravel()     
+        sub_yid = yid[j,i].ravel() 
+        sub_xyid= xyid[j,i].ravel()        
+    #
+   
+    if 'xv' in src_grids.keys() \
+        and 'yv' in src_grids.keys():
+        
+        # box trunked source domain's xv,yv to form polygons
+        vpts1=[(x,y) for x,y in zip(boxed_xv1.ravel(),boxed_yv1.ravel())]
+        vpts2=[(x,y) for x,y in zip(boxed_xv2.ravel(),boxed_yv2.ravel())]
+        vpts3=[(x,y) for x,y in zip(boxed_xv3.ravel(),boxed_yv3.ravel())]
+        lines = [(vpts1[i], vpts2[i], vpts3[i], vpts1[i]) for i in range(len(vpts1))]
+        
+        if nv==4: 
+            vpts4=[(x,y) for x,y in zip(boxed_xv4.ravel(),boxed_yv4.ravel())]
+            lines = [(vpts1[i], vpts2[i], vpts3[i], vpts4[i], vpts1[i]) for i in range(len(vpts1))]
+        
+        lines_str = [LineString(lines[i]) for i in range(len(lines))]
+        polygons = list(polygonize(MultiLineString(lines_str)))
+        poly_id = np.asarray(range(len(polygons)))
+        
+        grids = geopd.GeoDataFrame({'pid':poly_id,"xyid":sub_xyid,"xid":sub_xid,"yid":sub_yid,
+                                    "xc": src_xc.ravel(), "yc": src_yc.ravel()},
+                                    geometry=polygons,
+                                    crs="EPSG:4326")
+
+        return grids
+            
+    else:
+
+        # re-meshed XX/YY centroids, i.e. don't know vertices
+        
+        grid_centroids = geopd.GeoDataFrame({'pid':poly_id,"xyid":sub_xyid,"xid":sub_xid,"yid":sub_yid, \
+                                             "xc":src_xc.ravel(), "yc":src_yc.ravel()})
+        grid_centroids['geometry'] = grid_centroids.apply(lambda p: Point(p.xc, p.yc), axis=1)
+        
+        return grid_centroids
+
+    #
+
+# ------
+#
+
+def npmeshgrids_gpd(np_meshgrids, xy_or_ji=0, mesh_crs="EPSG:4326", POLYGON=True):
+    '''
+    ELM domain xi, yj in numpy meshed-grids to geopanda's geometry (Point or polygons) 
+    '''
+
+    import geopandas as geopd
+    from shapely.geometry import MultiLineString, LineString
+    from shapely.ops import polygonize
+
+    #
+    if xy_or_ji == 0: # Cartesian
+        xx = np_meshgrids[0]
+        yy = np_meshgrids[1]
+    else: # matrix
+        yy = np_meshgrids[0]
+        xx = np_meshgrids[1]
+    #
+    if POLYGON:
+        # mesh are nodes of grids
+        xc = (xx[:-1,:-1]+xx[1:,1:])/2.0
+        yc = (yy[:-1,:-1]+yy[1:,1:])/2.0
+        xyid = np.squeeze(np.indices((xc.ravel().shape)))
+        xid = np.indices(xc.shape)[0].ravel()
+        yid = np.indices(yc.shape)[1].ravel()
+        
+        boxed_yv1 = yy[:-1,:-1].ravel(); boxed_xv1 = xx[:-1,:-1].ravel()
+        boxed_yv2 = yy[:-1,1:].ravel();  boxed_xv2 = xx[:-1,1:].ravel()
+        boxed_yv3 = yy[1:,1:].ravel();   boxed_xv3 = xx[1:,1:].ravel()
+        boxed_yv4 = yy[1:,:-1].ravel();  boxed_xv4 = xx[1:,:-1].ravel()
+        
+        vpts1=[(x,y) for x,y in zip(boxed_xv1,boxed_yv1)]
+        vpts2=[(x,y) for x,y in zip(boxed_xv2,boxed_yv2)]
+        vpts3=[(x,y) for x,y in zip(boxed_xv3,boxed_yv3)]
+        vpts4=[(x,y) for x,y in zip(boxed_xv4,boxed_yv4)]
+        lines = [(vpts1[i], vpts2[i], vpts3[i], vpts4[i], vpts1[i]) for i in range(len(vpts1))]
+        
+        lines_str = [LineString(lines[i]) for i in range(len(lines))]
+        polygons = list(polygonize(MultiLineString(lines_str)))
+        
+        grids = geopd.GeoDataFrame({"xyid":xyid,"xid":xid,"yid":yid},
+                                   geometry= polygons,
+                                   crs = mesh_crs)
+    
+        return grids
+    
+    else:
+        # mesh are centroids of grids
+        
+        # the following are good for 2D and 1D conversion
+        xyid = np.squeeze(np.indices((xx.ravel().shape)))
+        xid = np.indices(xx.shape)[0].ravel()
+        yid = np.indices(yy.shape)[1].ravel()
+        
+        grid_centroids = geopd.GeoDataFrame({"xyid":xyid,"xid":xid,"yid":yid},
+                                             geometry = geopd.points_from_xy(xx.ravel(), yy.ravel()),
+                                             crs=mesh_crs)
+                
+        return grid_centroids
+
+            
+    #
+                
+#
+def elmdomain_xrio(fnc_grid2d):
+    '''
+    ELM domain grids to rioxarray Dataset, for easier image operations ( maybe ? - TODO: test)
+      ndarray list or dict, either from domain.nc (xc/yc, with xv/yv), or surfdata.nc (LONGXY, LATIXY)
+    '''
+
+    #import geopandas as geopd
+    #from shapely.geometry import Point
+    #from shapely.geometry import MultiLineString, LineString
+    #from shapely.ops import polygonize
+
+    import xarray
+    import rioxarray
+    import rasterio
+        
+    # 
+    # Open the source domain or surface nc file, 
+    # directly from an ELM domain nc file
+    f = xarray.open_dataset(fnc_grid2d, engine="netcdf4")  
+    lonx = f["xc"].values[0,:]
+    laty = f["yc"].values[:,0]
+    lndmask = f["mask"].values
+    lndfrac = f["frac"].values
+    lndfrac[np.where(lndmask<=0.)]=np.nan
+    
+    lnd_xr = xarray.DataArray(
+                            data=lndfrac,
+                            dims=["y","x"],
+                            coords={"y": laty, "x":lonx}
+                            )
+    
+    lnd_xr = lnd_xr.rio.write_crs("EPSG:4326", inplace=True)
+    lnd_xr = lnd_xr.rio.set_spatial_dims(x_dim="x", y_dim="y")
+    
+    min_lonx = np.min(lonx)
+    max_laty = np.max(laty)
+    res_x = np.mean(np.diff(lonx))
+    res_y = np.mean(np.diff(laty))                   
+    tfrom = rasterio.transform.from_origin(min_lonx, max_laty, res_x, res_y)
+    lnd_xr = lnd_xr.rio.write_transform(tfrom, inplace=True)
+    
+    lnd_xr = lnd_xr.rio.write_nodata(np.nan)
+    
+    
+    #
+    return lnd_xr
+
+# ------

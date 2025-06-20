@@ -8,6 +8,7 @@ from calendar import isleap
 from numpy import intersect1d
 import glob
 import dask.dataframe as dd
+from pathlib import Path
 
 from types import SimpleNamespace
 
@@ -396,7 +397,7 @@ def clm_metdata_cplbypass_read(filedir,met_type, varnames, lons=[-999], lats=[-9
         print('paired "lons=,lats=" must be in same length', len(lons), len(lats) )
         sys.exit(-1)
     #
-    if('GSWP3' in met_type or 'ESM' in met_type or 'CRUJRA' in met_type):
+    if('GSWP3' in met_type or 'ESM' in met_type or 'CRUJRA' in met_type or 'ERA5' in met_type):
         # zone_mapping.txt
         f_zoning = filedir+'/zone_mappings.txt'
         all_lons=[]
@@ -474,9 +475,9 @@ def clm_metdata_cplbypass_read(filedir,met_type, varnames, lons=[-999], lats=[-9
     for iv in range(len(varnames)):
         #if('GSWP3' in met_type or 'Site' in met_type or 'ESM' in met_type):
             v = varnames[iv]
-            varlist=['FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
+            varlist=['ZBOT','FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
             if 'Site' in met_type:
-                varlist=['FLDS','FSDS','PRECTmms','PSRF','RH','TBOT','WIND']
+                varlist=['ZBOT','FLDS','FSDS','PRECTmms','PSRF','RH','TBOT','WIND']
             if v not in varlist:
                 print('NOT found variable:  '+ v)
                 sys.exit()
@@ -496,6 +497,13 @@ def clm_metdata_cplbypass_read(filedir,met_type, varnames, lons=[-999], lats=[-9
                         file=filedir+'/ESM_daymet4_'+v+'_1980-1980_z'+str(int(iz)).zfill(2)+'.nc'
                     else:
                         file=filedir+'/ESM_'+v+'_2021-2099_z'+str(int(iz)).zfill(2)+'.nc'
+
+                elif ('ERA5' in met_type):
+                    if('daymet' in met_type.lower()):
+                        file=filedir+'/Daymet_ERA5.1km_'+v+'_1980-2023_z'+str(int(iz)).zfill(2)+'.nc'
+                    else:
+                        file=filedir+'/ERA5_'+v+'_1950-2024_z'+str(int(iz)).zfill(2)+'.nc'
+                
                 
                 elif('CRUJRA' in met_type):
                     file=filedir+'/CRUJRAV2.3.c2023.0.5x0.5_'+v+'_1901-2021_z'+str(int(iz)).zfill(2)+'.nc'
@@ -508,12 +516,21 @@ def clm_metdata_cplbypass_read(filedir,met_type, varnames, lons=[-999], lats=[-9
     
                 if ('LATIXY' not in met.keys() and iv==0):
                     met['LATIXY']=np.asarray(fnc.variables['LATIXY'])[zline[iz]-1]
+                    if ('Site' in met_type):
+                        # need to read EDGEs
+                        met['EDGEN'] = np.asarray(fnc.variables['EDGEN'])
+                        met['EDGES'] = np.asarray(fnc.variables['EDGES'])
                 elif(iv==0):
                     met['LATIXY']=np.hstack((met['LATIXY'],np.asarray(fnc.variables['LATIXY'])[zline[iz]-1]))
+
                 if ('LONGXY' not in met.keys() and iv==0):
                     met['LONGXY']=np.asarray(fnc.variables['LONGXY'])[zline[iz]-1]
+                    if ('Site' in met_type):
+                        # need to read EDGEs
+                        met['EDGEE'] = np.asarray(fnc.variables['EDGEE'])
+                        met['EDGEW'] = np.asarray(fnc.variables['EDGEW'])
                 elif(iv==0):
-                    met['LONGXY']=np.hstack((met['LONGXY'],np.asarray(fnc.variables['LONGXY'])[zline[iz]-1]))
+                    met['LONGXY']=np.hstack((met['LONGXY'],np.asarray(fnc.variables['LONGXY'])[zline[iz]-1]))                    
             
                 if ('DTIME' not in met.keys()):
                     t=np.asarray(fnc.variables['DTIME'])
@@ -554,10 +571,11 @@ def clm_metdata_cplbypass_read(filedir,met_type, varnames, lons=[-999], lats=[-9
     
                 if(v in fnc.variables.keys()): 
                     d = fnc.variables[v][zline[iz]-1,:]
-                    if (d.dtype==float or d.dtype==np.float32  or d.dtype==np.float64): 
-                        d[np.where(d.mask)] = np.nan
-                    else:
-                        d[np.where(d.mask)] = -9999
+                    if (d.mask):
+                        if (d.dtype==float or d.dtype==np.float32  or d.dtype==np.float64): 
+                            d[np.where(d.mask)] = np.nan
+                        else:
+                            d[np.where(d.mask)] = -9999
                     d=np.asarray(d)
                     if(v not in met.keys()):
                         met[v] = d # 'scale_factor' and 'add_offset' have already used when reading nc data.
@@ -1295,6 +1313,406 @@ def clm_metdata_CRUJRA(crujra_dirfilehead, template_clm_metfile=''):
     #
 #
 
+#
+# ------- ERA5 met forcing data convertion-extraction for CLM/ELM ------------------------------------
+#
+
+#
+def clm_metdata_ERA5(era5_dirfilehead, template_clm_metfile='', OUTDATA=False):
+    from pytools.metdata_processing import met_utils
+    import calendar
+    
+    # ERA5 data formats
+    #  file naming (full years of 10, hourly): 
+        # ${SITE}_ERA5-land_hourly_${YYYY}.nc
+        #  where, $SITE - user-truncated region name, $YYYY - years of data, including variables:
+        #      LON,LAT
+        #      time - unit: hours since $YYY0-01-01, date in proleptic-gregporian
+        #      temperature_2m(time, LAT, LON)
+        #      dewpoint_temperature_2m(time, LAT, LON)
+        #      surface_pressure(time, LAT, LON)
+        #      total_precipitation_hourly(time, LAT, LON)
+        #      surface_solar_radiation_downwards_hourly(time, LAT, LON)
+        #      surface_thermal_radiation_downwards_hourly(time, LAT, LON)
+        #      u_component_wind_10m(time, LAT, LON)
+        #      v_component_wind_10m(time, LAT, LON)
+        
+    # CLM/ELM data format from its ERA5, like following, BUT, not used here
+    #    e.g.  under datm7/atm_forcing.datm7.ERA.0.25d.v5.c180614
+    #             lwdn/elmforc.ERA5.c2018.0.25d.msdwlwrf.yyyy-mm.nc
+    #             pbot/elmforc.ERA5.c2018.0.25d.sp.yyyy-mm.nc
+    #             prec/elmforc.ERA5.c2018.0.25d.mcpr.yyyy-mm.nc, elmforc.ERA5.c2018.0.25d.mlspr.yyyy-mm.nc
+    #             swdn/elmforc.ERA5.c2018.0.25d.msdwswrf.yyyy-mm.nc
+    #             tbot/elmforc.ERA5.c2018.0.25d.t2m.yyyy-mm.nc
+    #             tdew/elmforc.ERA5.c2018.0.25d.d2m.yyyy-mm.nc
+    #             wind/elmforc.ERA5.c2018.0.25d.u10.yyyy-mm.nc, elmforc.ERA5.c2018.0.25d.v10.yyyy-mm.nc
+    era5_vars_file = ['msdwlwrf', 'sp', 'mcpr', 'mlspr', 'msdwswrf', 't2m','d2m','u10','v10']
+
+    # CLM/ELM data format from 'template', following CRU-NCEP format
+    #    e.g.  under datm7/atm_forcing.datm7.ERA5.0.1d.v2025/
+    #          clmforc.ERA5.c2024.0.25x0.25.Solr.yyyy-mm.nc
+    #          clmforc.ERA5.c2024.0.25x0.25.Prec.yyyy-mm.nc
+    #          clmforc.ERA5.c2024.0.25x0.25.TPQWL.yyyy-mm.nc
+    #   where,
+    #     Solr  - from 'dswrf' (FSDS)
+    #     Prec  - from 'pre' (PRECTmms) 
+    #     TPQWL - from 'tmp' (TBOT), 'pres' (PSRF), 'spfh' (QBOT), 'ugrd/vgrd' (WIND), 'dlwrf' (FLDS)
+
+    era5_vars1 = ['time','LAT','LON','surface_solar_radiation_downwards_hourly']
+    clm_vars1    = ['time','LATIXY','LONGXY','FSDS']
+
+    era5_vars2 = ['time','LAT','LON','total_precipitation_hourly']
+    clm_vars2    = ['time','LATIXY','LONGXY','PRECTmms']
+
+    era5_vars3 = ['time','LAT','LON','temperature_2m', \
+                                    'surface_pressure', \
+                                    'dewpoint_temperature_2m', \
+                                    'surface_thermal_radiation_downwards_hourly',
+                                    'u_component_wind_10m', 'v_component_wind_10m']   # don't change the order here
+    clm_vars3    = ['time','LATIXY','LONGXY','TBOT','PSRF', 'QBOT', 'FLDS', 'WIND']
+    
+
+    
+    #checking where is the original data
+    filehead = era5_dirfilehead.split('/')[-1]
+    era5dir  = era5_dirfilehead.replace(filehead, '')
+    dirfiles = sorted(Path(era5dir).glob(filehead.strip()+"*.nc"))  # maybe file pattern in 'fileheader'
+    
+    # output data
+    dst_data = {}
+
+    # We use CRU-NCEP format in ELM for convenience
+    if template_clm_metfile=='':
+        metfile_solr0 = 'clmforc.ERA5.c2024.0.25x0.25.Solr.yyyy-mm.nc'
+        metfile_prec0 = 'clmforc.ERA5.c2024.0.25x0.25.Prec.yyyy-mm.nc'
+        metfile_tpqwl0 = 'clmforc.ERA5.c2024.0.25x0.25.TPQWL.yyyy-mm.nc'
+    else:
+        metfile_new0 = template_clm_metfile
+    
+    mdays_noleap = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365]
+    mdays_leap = [0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366]
+    for file in dirfiles:
+        dirfile = file.name
+        # in metdata directory
+        if(os.path.isfile(era5dir+'/'+dirfile)): 
+            if(filehead in dirfile):
+            
+                print('\n file: '+dirfile)
+    
+                metfile = era5dir+'/'+dirfile
+                for v in era5_vars_file:
+                    if v in metfile:
+                        metvar  = dirfile.split('.')[-3] # single variable in *.var.yyyy(-mm).nc
+                    else:
+                        metvar  = '' # all variables in *.yyyy(-mm).nc
+                metyyyy = int(dirfile.split('.')[-2])
+                
+                fmetdata = Dataset(metfile,'r')
+                metdata_t= np.asarray(fmetdata.variables['time'])    # hours since metyyyy-01-01 00:00:00
+                
+                tunit = ''
+                tcald = ''
+                days0 = 0
+                if('units' in fmetdata.variables['time'].ncattrs()):
+                    if 'calendar' in fmetdata.variables['time'].ncattrs(): 
+                        tcald=fmetdata.variables['time'].getncattr('calendar')
+                    tunit=fmetdata.variables['time'].getncattr('units')
+                    tunit=tunit.lower()
+                    if ('days since' in tunit or 'hours since' in tunit):
+                        if 'days since' in tunit: 
+                            t0=str(tunit).strip('days since')
+                        if 'hours since' in tunit: 
+                            t0=str(tunit).strip('hours since')
+                            metdata_t = metdata_t/24.0     # to days             
+                        # t starting point
+                        if (t0.endswith(' 00:00')): 
+                            t0=t0+':00' # in case time written NOT exactly in 00:00:00
+                        elif (t0.endswith(' 00')): 
+                            t0=t0+':00:00'
+                        else:
+                            t0=t0+' 00:00:00'
+
+                        t0=datetime.strptime(t0,'%Y-%m-%d %X')
+                        y0=t0.year
+                        m0=t0.month
+                        d0=t0.day
+                        if calendar.isleap(y0-1) and tcald!='noleap':
+                            days0 = (y0-1)*366.0+mdays_leap[m0-1]+(d0-1)+t0.second/86400.0
+                        else:
+                            days0 = (y0-1)*365.0+mdays_noleap[m0-1]+(d0-1)+t0.second/86400.0
+                        metdata_t = metdata_t+days0
+                    
+                    else:
+                        print('TODO with date-time of metdata_t')
+                        metdata_t = (metdata_t-datetime(1,1,1,0,0)).days
+                    #
+                    
+                    # 
+                    tunit = 'days since 1901-01-01 00:00:00'
+                    if tcald=='noleap':
+                        metdata_t = metdata_t-1900*365.0
+                    else:
+                        metdata_t = metdata_t-(datetime(1901,1,1,0,0)-datetime(1,1,1,0,0)).days
+
+                if 'u10' in metfile:
+                    metfile2 = metfile.replace('u10','v10')
+                    fmetdata2 = Dataset(metfile2,'r')
+                    
+                # clm offline met filenames, if written with templates                
+                if template_clm_metfile =='':
+                    if metvar in era5_vars1: 
+                        metfile_new0 = metfile_solr0
+                        clm_vars    = clm_vars1
+                        src_vars    = era5_vars1
+                    elif metvar in era5_vars2: 
+                        metfile_new0 = metfile_prec0
+                        clm_vars    = clm_vars2
+                        src_vars    = era5_vars2
+                    elif metvar in era5_vars3: 
+                        metfile_new0 = metfile_tpqwl0
+                        clm_vars    = clm_vars3
+                        src_vars    = era5_vars3
+                    elif OUTDATA==False:
+                        OUTDATA=True
+                        metfile_new0 = None
+                        clm_vars = clm_vars1+clm_vars2+clm_vars3
+                        src_vars = era5_vars1+era5_vars2+era5_vars3
+                        
+                        clm_vars, idx = np.unique(clm_vars, return_index=True)
+                        src_vars = [src_vars[i] for i in idx]
+                                       
+                
+                if metfile_new0==None:
+                    # time
+                    if 'time' in dst_data.keys():
+                        dst_data['time'] = np.concat((dst_data['time'],metdata_t))
+                    else:
+                        dst_data['time'] = metdata_t
+                        dst_data['tunit']= tunit
+                    
+                    for v_idx in range(len(clm_vars)):
+                        v_dst = clm_vars[v_idx]
+                        if v_dst=='time': continue
+                        
+                        v_src = src_vars[v_idx]
+                        vdata = np.asarray(fmetdata[v_src])
+                        vdims = np.asarray(fmetdata.variables[v_src].dimensions)
+
+                        if v_dst == 'LATIXY' and not v_dst in dst_data.keys():
+                            dst_data[v_dst] = np.transpose(np.tile(vdata,(fmetdata.dimensions['LON'].size,1)))
+                        elif v_dst == 'LONGXY'and not v_dst in dst_data.keys():
+                            dst_data[v_dst] = np.tile(vdata,(fmetdata.dimensions['LAT'].size,1))
+                        elif 'time' in vdims and v_src in fmetdata.variables.keys():
+                            if v_dst=='WIND':
+                                vdata2= np.asarray(fmetdata[era5_vars3[-1]])
+                                vdata = np.sqrt(vdata**2.0 + vdata2**2.0)
+                            elif v_dst=='QBOT':
+                                # era5 dew point to QBOT
+                                TK_dew = vdata
+                                TK = fmetdata[era5_vars3[4]][...]
+                                pres_pa = fmetdata[era5_vars3[5]][...]
+                                es = met_utils.vpsat_pa(TK)                                    
+                                e = met_utils.vpsat_pa(TK_dew)                                   
+                                vdata = met_utils.convertHumidity(TK, pres_pa, rh_100=e/es*100.0)     
+                            elif v_dst=='PRECTmms':
+                                vdata = vdata*1000.0/3600.0  # unit: m/hr --> mm/s
+                            elif v_dst=='FLDS' or v_dst=='FSDS':
+                                vdata = vdata/3600.0  # unit: J/m2/hr --> W/m2
+                            #       
+                            if v_dst in dst_data.keys():
+                                dst_data[v_dst] = np.concat((dst_data[v_dst],vdata),axis=0)
+                            else:
+                                dst_data[v_dst] = vdata
+           
+
+                    #
+                    # skip nc writing blow, because NO templated new nc file
+                    continue
+                # end if metfile_new0==None:
+                
+                # write to standard ELM offline data formatted nc files
+                # (NOTE: time is in no-leap calendar)
+                
+                fmetdata_tmpl = Dataset(metfile_new0, 'r')
+    
+                # monthly files for clm offline met data
+                for im in range(1,13):
+                    
+                    v_ym = metfile_new0.split('.')[-3:]
+                    metfile_new = metfile_new0.replace(v_ym[0]+'.'+v_ym[1]+'.'+v_ym[2], '')
+                    metfile_new = metfile_new+v_ym[0]+'.' \
+                        +str(metyyyy)+'-'+str(im).zfill(2)+'.nc'
+
+                    #
+                    print('dirfile: '+dirfile + '  =======>  '+metfile_new)
+
+                    tindx = np.where((metdata_t>=mdays_noleap[im-1]) & (metdata_t<mdays_noleap[im]))
+
+                    if not os.path.isfile(metfile_new):
+                        dst = Dataset(metfile_new, mode='w',format=fmetdata_tmpl.file_format)
+                        # create new nc file from template
+                        # dimensions
+                        #unlimited_dim=''
+                        #unlimited_size=0
+                        for dname, dimension in fmetdata_tmpl.dimensions.items():
+                            if dname in fmetdata.dimensions:
+                                if dname=='time':
+                                    ldim = tindx[0].size
+                                else:
+                                    ldim = fmetdata.dimensions[dname].size
+                                
+                                dst.createDimension(dname, (ldim if not dimension.isunlimited() else None))
+                                # unlimited dimension name to be included dst output
+                                #if dimension.isunlimited():
+                                #    unlimited_dim = dname
+                                #    unlimited_size = ldim
+
+                        #global attributes
+                        if 'Solr' in metfile_new:
+                            dst.case_title = "offline ELM format of CRU-NCEP style, for ERA5 Hourly Atmospheric Forcing: Downward Shortwave Radiation"
+                        elif 'Prec' in metfile_new:
+                            dst.case_title = "offline ELM format of CRU-NCEP style, for ERA5 Hourly Atmospheric Forcing: Total Precipitation"
+                        elif 'TPQWL' in metfile_new:
+                            dst.case_title = "offline ELM format of CRU-NCEP style, for ERA5 Hourly Atmospheric Forcing: temperature, pressure, specific humidity, wind, downward Longwave Radiation"
+                        dst.data_source = "Data is provided from EAR5"
+                        dst.data_source_ftp = "https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels?tab=download"
+                        dst.data_source_citation = ("Copernicus Climate Change Service (C3S) Climate Data Store (CDS); "+
+                                            " Hersbach, H., Bell, B., Berrisford, P., Biavati, G., Horányi, A., Muñoz Sabater, J., Nicolas, J., Peubey, C., Radu, R., Rozum, I., Schepers, D., Simmons, A., Soci, C., Dee, D., Thépaut, J-N. (2023): " +
+                                            " ERA5 hourly data on single levels from 1940 to present. " +
+                                            " Copernicus Climate Change Service (C3S) Climate Data Store (CDS), DOI: 10.24381/cds.adbb2d47 (Accessed on 28-MAY-2024)")
+                        dst.references = "data source contact: i.harris@uea.ac.uk"
+                        dst.history = '2024-05-28: EAR5 data format covertion to offline ELM style'
+                        dst.contact = 'F.-M. Yuan, CCSI/ESD-ORNL. yuanf@ornl.gov'
+
+
+                        
+                        # variables
+                        for vname in fmetdata_tmpl.variables.keys():
+                            
+                            vdtype = fmetdata_tmpl.variables[vname].datatype
+                            vdims  = np.asarray(fmetdata_tmpl.variables[vname].dimensions)
+                            # new Filling value
+                            try:
+                                vFillvalue = fmetdata_tmpl.variables[vname]._FillValue
+                            except:
+                                vFillvalue = np.finfo(vdtype).max
+                            
+                            dst.createVariable(vname, vdtype, \
+                                        dimensions=vdims, \
+                                        zlib=True, fill_value=vFillvalue)
+                            dst[vname].setncatts(fmetdata_tmpl[vname].__dict__)
+                            if vname == 'time':
+                                dst[vname].units = "days since "+str(metyyyy)+'-'+str(im).zfill(2)+"-01 00:00:00"
+
+                            # data name/type in crujra
+                            v_idx = clm_vars.index(vname)
+                            if src_vars[v_idx] not in fmetdata.variables.keys(): continue
+                            if vname!=src_vars[v_idx]: # checking variable name in crujra data
+                                print(vname,' is in Source data file: ', dirfile, 'as: ', src_vars[v_idx])
+                            # missing/Filling in crujra dataset
+                            try:
+                                vFillMissing = fmetdata.variables[src_vars[v_idx]]._FillValue
+                            except:
+                                try:
+                                    vFillMissing = fmetdata.variables[src_vars[v_idx]].missing_value
+                                except:
+                                    vFillMissing = np.finfo(fmetdata.variables[src_vars[v_idx]].datatype).max
+
+                            # write data
+                            if vname == 'time':
+                                dst[vname][...] = metdata_t[tindx] - mdays_noleap[im-1]
+                            elif vname == 'LATIXY':
+                                dst[vname][...] = np.transpose(np.tile(np.asarray(fmetdata[src_vars[v_idx]]),(fmetdata.dimensions['lon'].size,1)))
+                            elif vname == 'LONGXY':
+                                dst[vname][...] = np.tile(np.asarray(fmetdata[src_vars[v_idx]]),(fmetdata.dimensions['lat'].size,1))
+                            elif 'time' in vdims and src_vars[v_idx] in fmetdata.variables.keys():
+                                tmp_data = np.asarray(fmetdata[src_vars[v_idx]])[tindx,]
+                                idx_err = np.where((tmp_data==vFillMissing) | (tmp_data>1.e10)) #due to data storage in nc, might has Fillvalue issue 
+                                if vname=='WIND':
+                                    tmp_data2= np.asarray(fmetdata2[src_vars[v_idx+1]])[tindx,]
+                                    idx_err = np.where((tmp_data==vFillMissing) | (tmp_data>1.e10) \
+                                                      | (tmp_data2==vFillMissing) | (tmp_data2>1.e10)) #due to data storage in nc, might has Fillvalue issue 
+                                    tmp_data = np.sqrt(tmp_data**2.0 + tmp_data2**2.0)
+                                elif vname=='QBOT':
+                                    # era5 dew point to QBOT
+                                    TK_dew = tmp_data
+                                    TK = fmetdata[era5_vars3[4]][tindx,]
+                                    pres_pa = fmetdata[era5_vars3[5]][tindx,]
+
+                                    es = met_utils.vpsat_pa(TK)                                    
+                                    e = met_utils.vpsat_pa(TK_dew)
+                                    
+                                    tmp_data = met_utils.convertHumidity(TK, pres_pa, rh_100=e/es*100.0)
+                                     
+                                elif vname=='PRECTmms':
+                                    tmp_data = tmp_data*1000.0/3600.0  # unit: m/hr --> mm/s
+                                if len(idx_err[0])>0: tmp_data[idx_err]=vFillvalue
+                                dst[vname][...] = tmp_data
+           
+                        
+                    else:
+                        print('writing data into exiting file: ', metfile_new)
+                        # TPQWL file actually combines 5 vars
+                        dst = Dataset(metfile_new, mode='a')
+                    
+                        # write met data only
+                        for vname in fmetdata_tmpl.variables.keys():
+                            if vname not in ['time','LATIXY','LONGXY']:
+                            
+                                # data name/type in ERA5 raw data
+                                v_idx = clm_vars.index(vname)
+                                if src_vars[v_idx] not in fmetdata.variables.keys(): continue
+                                # missing/Filling in crujra dataset
+                                try:
+                                    vFillMissing = fmetdata.variables[src_vars[v_idx]]._FillValue
+                                except:
+                                    try:
+                                        vFillMissing = fmetdata.variables[src_vars[v_idx]].missing_value
+                                    except:
+                                        vFillMissing = np.finfo(fmetdata.variables[src_vars[v_idx]].datatype).max
+
+                                
+                                vdtype = fmetdata_tmpl.variables[vname].datatype
+                                vdims  = np.asarray(fmetdata_tmpl.variables[vname].dimensions)
+                                # new missing/Filling
+                                try:
+                                    vFillvalue = fmetdata_tmpl.variables[vname]._FillValue
+                                except:
+                                    vFillvalue = np.finfo(vdtype).max
+                                if 'time' in vdims and src_vars[v_idx] in fmetdata.variables.keys():
+                                    if vname!=src_vars[v_idx]: # checking variable name in crujra data
+                                        print(vname,' is in Source data file: ', dirfile, 'as: ', src_vars[v_idx])
+                                    tmp_data = np.asarray(fmetdata[src_vars[v_idx]])[tindx,]
+                                    idx_err = np.where((tmp_data==vFillMissing) | (tmp_data>1.e10)) #due to data storage in nc, might has Fillvalue issue 
+                                    if vname=='WIND':
+                                        tmp_data2= np.asarray(fmetdata2[src_vars[v_idx+1]])[tindx,]
+                                        idx_err = np.where((tmp_data==vFillMissing) | (tmp_data>1.e10) \
+                                                          | (tmp_data2==vFillMissing) | (tmp_data2>1.e10)) #due to data storage in nc, might has Fillvalue issue 
+                                        tmp_data = tmp_data/2.0 + tmp_data2/2.0
+                                    elif vname=='FSDS':
+                                        tmp_data = tmp_data/6.0/3600.0  # unit: J/m2/6hr --> w/m2
+                                    elif vname=='PRECTmms':
+                                        tmp_data = tmp_data/6.0/3600.0  # unit: mm/6hr --> mm/s
+                                    if len(idx_err[0])>0: tmp_data[idx_err]=vFillvalue
+                                    dst[vname][...] = tmp_data
+                        #
+                    #monthly ending
+                    dst.close()
+                # yearly ending
+                fmetdata_tmpl.close()
+                fmetdata.close()
+            #file list checking (multiple years, with 1 file for each year)
+        #file list ending
+ 
+    #
+    if OUTDATA:
+        return dst_data
+    
+    print('DONE!')
+    #
+#
+
+
 def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', ptxyind=[], varnames=[]):
     #
     # Daymet_ERA5 or GSWP3 data formats
@@ -1508,14 +1926,24 @@ for i in range(len(vars_name)):
     if myrank == i%mysize:
         vars_rank=np.append(vars_rank, int(i))
 
+"""
 
 from pytools.metdata_processing.elm_metdata_write import elm_metdata_write
 
+metdata = clm_metdata_ERA5('./tfs_ERA5')
+write_options = SimpleNamespace( \
+            met_idir = './', \
+            nc_create = True, \
+            nc_write = False, \
+            nc_write_mettype = 'cplbypass_ERA5' )
+elm_metdata_write(write_options, metdata) 
 
 #--------------
 
 
+"""
 #--------------
+
 #tno=['11749','11750','11751','11929','11930','11931','11932','11933','11934','11935','11936','11937','11938']
 tno=['14244']
 for i in tno:

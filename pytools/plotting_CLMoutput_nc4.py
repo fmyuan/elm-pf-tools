@@ -1,19 +1,15 @@
 #!/usr/bin/env python
 
 import sys
-import glob
 import re
-import math
 from cmath import nan
 from optparse import OptionParser
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.pyplot import xlim, ylim
 from matplotlib.ticker import FormatStrFormatter
 
-from Modules_CLMoutput_nc4 import CLM_NcRead_1simulation
-from Modules_CLMoutput_nc4 import CLMvar_1Dtseries
+from pytools.Modules_CLMoutput_nc4 import CLM_NcRead_1simulation
+from pytools.Modules_CLMoutput_nc4 import CLMvar_1Dtseries
 
 
 # ---------------------------------------------------------------
@@ -26,16 +22,16 @@ def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, layer_index, sd
         sdata = -sdata
         ax.set_yscale("log")
         # the following is for plot's purpose - can be commented out
-        sdata[sdata<100] = nan
-        plt.plot([min(t),max(t)],[100,100],'k--')
-        plt.plot([min(t),max(t)],[1.0e8,1.0e8],'k--')
+        sdata[sdata<0.00001] = nan
+        #plt.plot([min(t),max(t)],[0.000001,0.000001],'k--')
+        #plt.plot([min(t),max(t)],[1.0e8,1.0e8],'k--')
     
     layertext = []
     
     # add a zero-degree-C line for 'TSOI'
-    #if(varname == 'TSOI'):
-    #    plt.plot([min(t),max(t)],[273.15,273.15],'k--')
-    #    layertext.append("0oC ")
+    if(varname == 'TSOI'):
+        plt.plot([min(t),max(t)],[273.15,273.15],'k--')
+        layertext.append("0oC ")
 
     for il in layer_index:
         #if il in [0,2,4,6,8,9]:
@@ -49,23 +45,28 @@ def SoilLayeredVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, layer_index, sd
     #if 'SOILICE' in varname: plt.ylim([0,450])
 
     #if 'TSOI' in varname: plt.legend((layertext), loc=0, ncol=2, fontsize=10)
-    plt.legend((layertext), loc=0, ncol=2, fontsize=5)
+    plt.legend((layertext), loc=0, ncol=2, fontsize=6)
     
     # appending unit
     if varname=='TSOI': varname='Soil-layer Temperature (K)'
     if varname=='SOILICE': varname='Soil-layer Ice (kg/m2)'
+    if varname=='SOILLIQ': varname='Soil-layer Liq. Water (kg/m2)'
  
  
-    plt.xlabel(t_unit, fontsize=10, fontweight='bold')
-    plt.ylabel(varname, fontsize=10, fontweight='bold')
+    plt.xlabel(t_unit, fontsize=8, fontweight='bold')
+    plt.ylabel(varname, fontsize=8, fontweight='bold')
 
     ax_user=plt.gca()
-    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 10)
+    ax_user.tick_params(axis = 'both', which = 'major', labelsize=6)
+    #ax_user.set_xticklabels(ax_user.get_xticks(), weight='bold')
+    ax_user.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+    #ax_user.set_yticklabels(ax_user.get_yticks(), weight='bold')
+    ax_user.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
 
     lx = 0.10
     ly = 0.90
     plot_title = '' #plotlabel
-    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=18, fontweight='bold')
+    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=8, fontweight='bold')
 
 # Plot PFT fractioned data with layers for ONE specific grid
 def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, pftvidx, pft_index, sdata, varname, plotlabel):
@@ -85,17 +86,21 @@ def PFTVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, pftwt, pftvidx, pft_ind
                 active_pfts.append(("PFT "+str(ip)))
                 plt.plot(t, sdata[:,ip])
     
-    if isubplot==1: plt.legend((active_pfts), loc=0, fontsize=10)
-    plt.xlabel(t_unit,  fontsize=10, fontweight='bold')
-    plt.ylabel(varname, fontsize=10, fontweight='bold')
+    if isubplot==1: plt.legend((active_pfts), loc=0, fontsize=5)
+    plt.xlabel(t_unit,  fontsize=8, fontweight='bold')
+    plt.ylabel(varname, fontsize=8, fontweight='bold')
 
     ax_user=plt.gca()
-    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 10)
+    ax_user.tick_params(axis = 'both', which = 'major', labelsize = 8)
+    #ax_user.set_xticklabels(ax_user.get_xticks(), weight='bold')
+    ax_user.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+    #ax_user.set_yticklabels(ax_user.get_yticks(), weight='bold')
+    ax_user.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
 
     lx = 0.10
     ly = 0.90
     plot_title = '' #plotlabel
-    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=18, fontweight='bold')
+    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=8, fontweight='bold')
 
 
 # Plot Grided data
@@ -116,7 +121,8 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
         sdata = sdata/1000.0
 
     if(varname == 'SNOW' or varname == 'RAIN' or \
-       varname == 'QDRAI' or varname == 'QOVER' or varname=='QINFL'):
+       varname == 'QDRAI' or varname == 'QOVER' or varname=='QINFL' \
+       'QFLX' in varname or 'QVEG' in varname or varname=='QSOIL'):
         varname=varname+' (mm/d)'
         sdata = sdata*86400.0
     if(varname in ['SNOW_DEPTH','SNOWDP']):
@@ -206,7 +212,7 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
     #if ('Snow Depth' in varname): plt.ylim([0.0,1.0])
     #if ('FSNO' in varname): plt.ylim([0.3,0.8])
 
-     # mannually edit x/y axis labels
+    # mannually edit x/y axis labels
     if varname=='TBOT': varname='Air Temperature (K)'
     if varname=='TSOI': varname='Near-surface Soil Temperature (K)'
     if varname=='TLAI': varname='Total LAI (m2/m2)'
@@ -220,10 +226,10 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
 
     # x/y ticklabel properties
     ax_user=plt.gca()
-    ax_user.tick_params(axis = 'both', which = 'both', labelsize = 12)
-    ax_user.set_xticklabels(ax_user.get_xticks(), weight='bold')
-    ax_user.xaxis.set_major_formatter(FormatStrFormatter('%i'))
-    ax_user.set_yticklabels(ax_user.get_yticks(), weight='bold')
+    ax_user.tick_params(axis = 'both', which = 'both', labelsize = 6)
+    #ax_user.set_xticklabels(ax_user.get_xticks(), weight='bold')
+    ax_user.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+    #ax_user.set_yticklabels(ax_user.get_yticks(), weight='bold')
     ax_user.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
     if ('Active Layer ' in varname): ax_user.invert_yaxis()
 
@@ -233,10 +239,10 @@ def GridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, sdata_std=Non
     #if plotlabel!='' and isubplot==2: plot_title = 'Site 7'#'Seward Peninsula, AK' #plotlabel, if any
     plt.rcParams["font.weight"] = "bold"
     plt.rcParams["axes.labelweight"] = "bold"
-    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=12, fontweight='bold')
-    if isubplot==1: plt.legend(fontsize=14)
-    plt.xlabel(t_unit, fontsize=16, fontweight='bold')
-    plt.ylabel(varname, fontsize=16, fontweight='bold')
+    plt.text(lx, ly, plot_title, transform=ax.transAxes, fontsize=6, fontweight='bold')
+    if isubplot==1: plt.legend(fontsize=5)
+    plt.xlabel(t_unit, fontsize=8, fontweight='bold')
+    plt.ylabel(varname, fontsize=8, fontweight='bold')
 
 #-------------------Parse options-----------------------------------------------
 
@@ -417,7 +423,7 @@ for var in varnames:
             break
         
     vdata = varsdata[var_h]
-    if (var=='ALT'): vdata[np.where(vdata>=3.801)]=3.801 # the 10-soil-layer bottom depth is about 3.80m, not the whole 15 layer bottom (~42m)
+    #if (var=='ALT'): vdata[np.where(vdata>=3.801)]=3.801 # the 10-soil-layer bottom depth is about 3.80m, not the whole 15 layer bottom (~42m)
     vdims = varsdims[var_h]
     
     tt = varsdata[var_t]   # time unit: days

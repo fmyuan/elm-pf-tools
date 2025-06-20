@@ -68,7 +68,11 @@ clm_metdata_CRUJRA('./rawdata/crujra.v2.3.5d')
 #multiple_cplbypass_extraction('info_PIE3sites.txt')
 
 """
-
+from pytools.metdata_processing.met_utils import elm_metdata_cplbypass_extraction
+elm_metdata_cplbypass_extraction('./', 'ATS-subdaily', \
+                                 360-76.565628351770570, 38.869281078362619, \
+                                 ncopath='/Users/f9y/micromamba/envs/watershed_workflow-master/bin/')
+ 
 #----------------------------
 """
 

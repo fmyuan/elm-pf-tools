@@ -67,7 +67,7 @@ def putvar(ncfile, varname, varvals, varatts=''):
                         # this must be done before data written, 
                         # otherwise the written would use the original add_offset and scale_factor
                         # TIP: when data written, the input valule is in unpacked and the program will do packing
-                        f.variables[v].setncattr(att,float(att_val))
+                        f.variables[v].setncattr(att,np.float64(att_val))
                     else:
                         f.variables[v].setncattr(att,att_val)
 
@@ -433,14 +433,26 @@ def geotiff2nc(file, bandinfos=None, outdata=False):
         ncof.createDimension('geoy',ny)
     
         geoxo = ncof.createVariable('geox',np.double,('geox'))
-        geoxo.units = 'degrees_east (m) or lat'
-        geoxo.standard_name = 'geo-reference x coordinates'
+        if f.crs.is_projected:
+            geoxo.units = 'm'
+            geoxo.long_name = 'x coordinate of projection'
+            geoxo.standard_name = 'projection_x_coordinate'
+        else:
+            geoxo.units = 'degrees_east'
+            geoxo.long_name = 'longitude of land gridcell center (GCS_WGS_84), increasing from west to east'
+            geoxo.standard_name = "longitude"
     
         geoyo = ncof.createVariable('geoy',np.double,('geoy'))
-        geoyo.units = 'degrees_north (m) or lat'
-        geoyo.standard_name = 'geo-reference y coorindates'
+        if f.crs.is_projected:
+            geoyo.units = 'm'
+            geoyo.long_name = 'y coordinate of projection'
+            geoyo.standard_name = 'projection_y_coordinate'
+        else:
+            geoyo.units = 'degrees_north'
+            geoyo.long_name = 'latitude of land gridcell center (GCS_WGS_84), decreasing from north to south'
+            geoyo.standard_name = 'latitude'
     
-        georef = ncof.createVariable('crs','int')
+        georef = ncof.createVariable('crs_wkt','int')
         georef.CRS = f.crs.wkt
     
         bounds = ncof.createVariable('bounds','int')
@@ -471,7 +483,7 @@ def geotiff2nc(file, bandinfos=None, outdata=False):
         ncof.close()
     
     if outdata:
-        return geox,geoy,f.res,f.crs.wkt,alldata
+        return geox,geoy,f.res,f.crs,alldata
 #
 #----------------------------------------------------------------------------             
 # average specific variable(s) along named dimension and write back for all
@@ -543,6 +555,53 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
             
     #            
     
+def nc_date_time_noleap(ncdirfile, itime='time', otunit='days since 1901-01-01 00:00:00'):
+    from datetime import datetime
+    
+    # ELM ncfile time units are usually in unit of 'days since 1901-01-01 00:00:00'
+    #  in no-leap calendar. 
+    # this is very annoying, since python datetime variance and input data  
+    
+    #vtime = 'time'
+    mdoy=[0,31,59,90,120,151,181,212,243,273,304,334]
+    #monthly starting DOY
+
+    #
+    metdata = {}
+    
+    #file        
+    fnc = Dataset(ncdirfile,'r')
+
+    if (itime in fnc.variables.keys()):
+        t=np.asarray(fnc.variables[itime])
+        
+        if('units' in fnc.variables[itime].ncattrs()):
+            tunit= fnc.variables[itime].getncattr('units')
+            tunit=tunit.lower()
+            if ('days since' in tunit or 'hours since' in tunit):
+                if 'days since' in tunit: t0=str(tunit).strip('days since')
+                if 'hours since' in tunit: t0=str(tunit).strip('hours since')
+                
+                # t starting point
+                if (t0.endswith(' 00:00')): 
+                    t0=t0+':00' # in case time written NOT exactly in 00:00:00
+                elif (t0.endswith(' 00')): 
+                    t0=t0+':00:00'
+                else:
+                    t0=t0+' 00:00:00'
+        
+        
+        t0=datetime.strptime(t0,'%Y-%m-%d %X')
+        y0=t0.year
+        m0=t0.month
+        d0=t0.day-1.0
+        days0 = (y0-1901)*365+mdoy[m0-1]+d0+t0.second/86400.0 # force days since 1901-01-01 00:00:00
+                
+        if 'days since' in tunit: t = t + days0
+        if 'hours since' in tunit: t = t/24.0 + days0
+                
+        metdata['time']=t
+        metdata['tunit']=otunit
 
 
 #####################################################################
@@ -567,7 +626,7 @@ def varmeanby1dim(ncfilein, ncfileout,dim_name,var_name='ALL',var_excl=''):
 #dupexpand('landuse.timeseries_1x1pt_kougarok-NGEE_simyr1850-2015_c181015m64.nc', 'test6x1.nc', ['lsmlat','lsmlon'], [1,6])
 
 # merge 2 files along 1-only named-dimension
-#mergefilesby1dim('f1.nc', 'f2.nc', 'fout.nc', 'n')
+#mergefilesby1dim('f1.nc', 'f2.nc', 'fout.nc', 'pft')
 #fall='GSWP3_WIND_1901-2014'
 #files=['cpl_bypass_01/'+fall+'_z02.nc',
 #       'cpl_bypass_02/'+fall+'_z14.nc',

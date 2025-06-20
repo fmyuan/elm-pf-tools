@@ -1,0 +1,701 @@
+#!/usr/bin/env python3
+"""
+Jitendra Kumar (kumarj@ornl.gov) 
+
+Elevation percentile based topounits:
+ - Area-weighted fractions
+ - Recursive grouping of consecutive bins using area-weighted mean
+ - Group-level mean and std
+
+This follows the topunit scheme from: 
+Tesfa, T. K., Leung, L. R., Thornton, P. E., Brunke, 
+M. A., & Duan, Z. (2024). Impacts of Topography‐Based 
+Subgrid Scheme and Downscaling of Atmospheric Forcing 
+on Modeling Land Surface Processes in the Conterminous US. 
+Journal of Advances in Modeling Earth Systems, 16(8). 
+https://doi.org/10.1029/2023ms004064
+
+Fengming Yuan (yuanf@ornl.gov)
+Land surface properties assigned into ELevation percetile based topounits:
+ - slope, aspect, skyview factor
+
+"""
+
+import argparse
+import numpy as np
+import xarray
+import pandas as pd
+import math
+import os
+
+import pytools.commons_utils.gridlocator as gridlocator
+
+# ---------------------------------------------------------------------
+# topographic features: slope, aspect, skyview factor
+# ---------------------------------------------------------------------
+def read_dem_aoi_xrio(dem_file, bbox_lb_ru, bbox_crs="EPSG:4326", bbox_outfile=''):
+    from rasterio.warp import transform_bounds
+    import rioxarray
+    from rvt import vis as rvtvis
+    
+    # rio reading dem
+    with rioxarray.open_rasterio(dem_file) as src:
+    
+        if bbox_crs != src.rio.crs:
+            bounds = transform_bounds(bbox_crs, src.rio.crs, *bbox_lb_ru)
+        else:
+            bounds = bbox_lb_ru
+        elv_xr = src.rio.clip_box(bounds[0],bounds[1],bounds[2],bounds[3])
+        rio_nodata = src.rio.nodata
+        rio_res = np.asarray(src.rio.resolution())    
+    del src
+    
+    # slope, aspect, and sky view factor (svf) derived from dem
+    elev = elv_xr[0].data
+    dem_mask = (elev==rio_nodata)        
+    sa = rvtvis.slope_aspect(elev, output_units="degree", no_data=rio_nodata)
+    slope = np.ma.array(sa['slope'], mask=dem_mask)
+    aspect = np.ma.array(sa['aspect'], mask=dem_mask)
+    svf = rvtvis.sky_view_factor(elev, resolution=abs(rio_res[0]), no_data=rio_nodata)
+    svf = np.ma.array(svf['svf'], mask=dem_mask)
+    
+    # multi-banded rioxarray
+    topo_xr = xarray.concat([elv_xr, elv_xr, elv_xr, elv_xr],
+                            dim='band')
+    topo_xr = topo_xr.assign_coords(band=[1,2,3,4])
+    topo_xr.loc[dict(band=2)] = slope
+    topo_xr.loc[dict(band=3)] = aspect
+    topo_xr.loc[dict(band=4)] = svf
+    #topo_xr.attrs['long_name']=['elevation','slope','aspect','svf']
+    
+    
+    # output raster
+    if bbox_outfile != '':
+        # the following will only save elevation data to raster. 
+        # there is an issue of converting all other data into integer, which not right in raster image.
+        topo_xr.loc[dict(band=1)].rio.to_raster(bbox_outfile, dtype=topo_xr.dtype, nodata=float('nan'))
+                         
+    return topo_xr
+
+
+# ---------------------------------------------------------------------
+# Percentile (thresholds) binning
+# ---------------------------------------------------------------------
+def percentile_bins(topo_element, xlon, ylat, percentiles):
+    assert topo_element.shape == xlon.shape == ylat.shape
+    thresholds = np.percentile(topo_element, percentiles)    
+    return thresholds_bins(topo_element, xlon, ylat, thresholds, percentiles)
+
+def thresholds_bins(topo_element, xlon, ylat, thresholds_element, thresholds_label):    
+    assert topo_element.shape == xlon.shape == ylat.shape
+    assert thresholds_element.shape == thresholds_label.shape
+    
+    bins_indx = np.digitize(topo_element, thresholds_element, right=True)
+    bins = {}
+    for ip in range(thresholds_label.size):
+        m = (bins_indx==ip)
+        bins[thresholds_label[ip]] = {"masked": m, 
+                                      "topo_element": topo_element[m], 
+                                      "lon":xlon[m] ,"lat": ylat[m]}
+        
+    return bins
+
+# ---------------------------------------------------------------------
+# GeoArea-weighted bin statistics
+# ---------------------------------------------------------------------
+def summarize_bins_area_weighted(bins, topo="elev"):
+    records = []
+    total_weight = sum(np.cos(np.deg2rad(b["lat"])).sum() for b in bins.values())
+    for p, b in bins.items():
+        elev = b[topo]
+        lat = b["lat"]
+        if elev.size == 0:
+            records.append({
+                "Percentile_bin": f"≤{p}",
+                "Mean_"+topo: np.nan,
+                "Std_"+topo: np.nan,
+                "Area_fraction": 0.0
+            })
+            continue
+        weight = np.cos(np.deg2rad(lat))
+        mean_elev = np.sum(elev * weight) / np.sum(weight)
+        std_elev = np.sqrt(np.sum(weight * (elev - mean_elev)**2) / np.sum(weight))
+        area_frac = np.sum(weight) / total_weight
+        records.append({
+            "Percentile_bin": f"≤{p}",
+            "Mean_"+topo: mean_elev,
+            "Std_"+topo: std_elev,
+            "Area_fraction": area_frac
+        })
+    return pd.DataFrame(records)
+
+# ---------------------------------------------------------------------
+# Recursive grouping with area-weighted mean
+# ---------------------------------------------------------------------
+def recursive_group_bins_area_weighted(df, delta_elev):
+    group_ids = np.zeros(len(df), dtype=int)
+    current_group = 1
+    start_idx = 0
+
+    #print(df)
+    # initialize first bin
+    merged_mean = df["Mean_elev"].iloc[0]
+    merged_area = df["Area_fraction"].iloc[0]
+
+    for i in range(1, len(df)):
+        # weighted mean including current bin
+        w1 = merged_area
+        w2 = df["Area_fraction"].iloc[i]
+        candidate_mean = (merged_mean * w1 + df["Mean_elev"].iloc[i] * w2) / (w1 + w2)
+        #print(f'{i}: df {df["Mean_elev"].iloc[i]} cand {candidate_mean} merged_mean {merged_mean}')
+
+        #if abs(candidate_mean - merged_mean) <= delta_elev:
+        if abs(candidate_mean - df["Mean_elev"].iloc[i]) <= delta_elev:
+            merged_mean = candidate_mean
+            merged_area += w2
+        else:
+            group_ids[start_idx:i] = current_group
+            current_group += 1
+            start_idx = i
+            merged_mean = df["Mean_elev"].iloc[i]
+            merged_area = df["Area_fraction"].iloc[i]
+
+    group_ids[start_idx:] = current_group
+    df["Group_ID"] = group_ids
+
+    # Generate group tuples for plotting
+    groups = []
+    for gid in range(1, current_group + 1):
+        idxs = np.where(group_ids == gid)[0]
+        groups.append((gid, idxs[0], idxs[-1]))
+
+    # Compute group-level mean, std, area_fraction
+    group_stats = []
+    for gid, start, end in groups:
+        bins_in_group = df.iloc[start:end+1]
+        # area-weighted mean
+        weights = bins_in_group["Area_fraction"].values
+        if np.sum(weights)<=0: continue
+        
+        means = bins_in_group["Mean_elev"].values
+        stds = bins_in_group["Std_elev"].values
+        group_mean = np.sum(weights * means) / np.sum(weights)
+        # area-weighted std including within-bin variance
+        group_std = np.sqrt(np.sum(weights * (stds**2 + (means - group_mean)**2)) / np.sum(weights))
+        group_area = np.sum(weights)
+                
+        group_stats.append({
+            "Group_ID": gid,
+            "Group_Mean": group_mean,
+            "Group_Std": group_std,
+            "Group_Area_fraction": group_area            
+        })
+    group_stats_df = pd.DataFrame(group_stats)
+    return df, groups, group_stats_df
+
+
+# ---------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------
+def grid_stats_topounits(args, 
+                     percentiles = np.asarray([10,20,30,40,50,60,70,80,85,90,95,100]), 
+                     verbose=0, 
+                     elm_domainnc=''):
+ 
+    try:
+        from mpi4py import MPI
+        mycomm = MPI.COMM_WORLD
+        myrank = mycomm.Get_rank()
+        mysize = mycomm.Get_size()
+    except ImportError:
+        mycomm = 0
+        myrank = 0
+        mysize = 1
+
+    #percentiles = np.asarray([10,20,30,40,50,60,70,80,85,90,95,100])
+
+    # boxed boundary from domain.nc
+    if not elm_domainnc=='':
+        domain_xr = xarray.open_dataset(elm_domainnc, engine='netcdf4')
+        xlmt = domain_xr['xv'].to_numpy()
+        ylmt = domain_xr['yv'].to_numpy()
+        args.bbox = [np.nanmin(xlmt),np.nanmin(ylmt),np.nanmax(xlmt),np.nanmax(ylmt)]
+        
+    
+    # by rioxarray to read/truncate a geotiff of DEM
+    xrio_topo = read_dem_aoi_xrio(args.dem, tuple(args.bbox), bbox_outfile=args.bbox_outfile)
+    elv  = xrio_topo[0].data
+    slp  = xrio_topo[1].data
+    asp  = xrio_topo[2].data
+    svf  = xrio_topo[3].data
+    
+    xy  = np.meshgrid(xrio_topo.x.data, xrio_topo.y.data)
+    nanmask = elv!=xrio_topo.rio.nodata
+    lon = xy[0][nanmask]
+    lat = xy[1][nanmask]
+    elv = elv[nanmask]
+    slp = slp[nanmask]
+    asp = asp[nanmask]
+    svf = svf[nanmask]
+    
+    # contour-binning for whole bounding-box
+    contour_bins = percentile_bins(elv, lon, lat, percentiles)
+
+    # grided summarizing
+    grid_stats = []
+
+    #------------------------------------------------------------------------------------------------------        
+    def masked_topounits(g_mask):        
+        bins_masked = []
+        bins = {}
+        for p in contour_bins.keys():
+            contour_mask = contour_bins[p]['masked']
+            assert g_mask.shape == contour_mask.shape
+            m = (g_mask & contour_mask)
+            bins_masked.append(m)
+            bins[p]={'elev': elv[m],'lat': lat[m], 'lon':lon[m]}        
+        df = summarize_bins_area_weighted(bins)
+        df, groups, group_stats_df = recursive_group_bins_area_weighted(df, args.group_delta_elev)
+            
+        # need to merge bins' pixel mask after grouping
+        # NOTE: this logical mask is useful to retrieve pixel position of group contained. 
+        #       e.g. for each group, we could get its pixel location by lat[m]/lon[m] pairs
+        bins_masked = np.asarray(bins_masked)
+        group_pixels_masked_idx = {}
+        group_bins_elv = {}
+        group_bins_slp = {}
+        group_bins_asp = {}
+        group_bins_svf = {}
+        for i in range(df.index.size):
+            # initializing all coutours to nan for easier writing to surfdata.nc, in which data are in full multiple-dimensional
+            group_bins_elv[i]={'elv': np.empty(0), 'lat': np.empty(0), 'lon': np.empty(0)}
+            group_bins_slp[i]={'slp': np.empty(0), 'lat': np.empty(0), 'lon': np.empty(0)}
+            group_bins_asp[i]={'asp': np.empty(0), 'lat': np.empty(0), 'lon': np.empty(0)}
+            group_bins_svf[i]={'svf': np.empty(0), 'lat': np.empty(0), 'lon': np.empty(0)}
+        grpid0 = group_stats_df['Group_ID'][0]
+        for grpid, start, end in groups:
+            pmasked = np.any(bins_masked[start:end+1,:], axis=0)
+            if np.any(pmasked): 
+                group_pixels_masked_idx[grpid] = np.where(pmasked)
+                # in case bins may not by elevation or alone, redo elevation bins
+                group_bins_elv[grpid-grpid0]={'elv': elv[pmasked], 'lat': lat[pmasked], 'lon':lon[pmasked]} 
+                group_bins_slp[grpid-grpid0]={'slp': slp[pmasked], 'lat': lat[pmasked], 'lon':lon[pmasked]}
+                group_bins_asp[grpid-grpid0]={'asp': asp[pmasked], 'lat': lat[pmasked], 'lon':lon[pmasked]}
+                group_bins_svf[grpid-grpid0]={'svf': svf[pmasked], 'lat': lat[pmasked], 'lon':lon[pmasked]}
+                
+        df_elv = summarize_bins_area_weighted(group_bins_elv, topo='elv')                    
+        df_slp = summarize_bins_area_weighted(group_bins_slp, topo='slp')                    
+        df_asp = summarize_bins_area_weighted(group_bins_asp, topo='asp')                    
+        df_svf = summarize_bins_area_weighted(group_bins_svf, topo='svf')
+            
+        #
+        grid_stats.append({
+                "Topounit_original_pixels_mask": group_pixels_masked_idx,
+                "Topounit_id": group_stats_df['Group_ID'],
+                "Topounit_area_fraction": df_elv['Area_fraction'],
+                "Topounit_elevation": df_elv['Mean_elv'],
+                "Topounit_elevation_std": df_elv['Std_elv'],
+                "Topounit_slope": df_slp['Mean_slp'],
+                "Topounit_slope_std": df_slp['Std_slp'],
+                "Topounit_aspect": df_asp['Mean_asp'],
+                "Topounit_aspect_std": df_asp['Std_asp'],
+                "Topounit_skyview": df_svf['Mean_svf'],
+                "Topounit_skyview_std": df_svf['Std_svf'],
+                })
+            
+        # Print group stats
+        if verbose>1:
+            print(df_elv, '\n', df_slp, '\n', df_asp,'\n', df_svf,'\n')
+    #------------------------------------------------------------------------------------------------------        
+    
+    # grid by grid topounit summarizing
+    if elm_domainnc=='':
+        # grouping for user-defined resolution grids within bounding box.
+        # (default: one grid within bounding box)
+        ylat = np.asarray([np.min(lat), np.max(lat)])
+        xlon = np.asarray([np.min(lon), np.max(lon)])
+        if args.lonlat_res!=None:
+            dy = tuple(args.lonlat_res)[1]
+            ny = math.ceil((np.max(lat)-np.min(lat))/dy)  # math.ceil() will be over bbox, but this what we want.
+            ylat = np.min(lat)+np.asarray(range(ny+1))*dy
+    
+            dx = tuple(args.lonlat_res)[0]
+            nx = math.ceil((np.max(lon)-np.min(lon))/dx)
+            xlon = np.min(lon)+np.asarray(range(nx+1))*dx
+        
+        grid_mesh = np.meshgrid(ylat, xlon)       
+        grid_poly = gridlocator.npmeshgrids_gpd(grid_mesh, xy_or_ji=1, POLYGON=True)
+        
+        #----
+        
+        yidx = grid_poly['yid']
+        xidx = grid_poly['xid']
+        yxidx= grid_poly['xyid']
+        
+        l_total = yxidx.size        
+        l_myrank = int(math.floor(l_total/mysize))
+        l_mod = int(math.fmod(l_total,mysize))
+        n_myrank = np.full([mysize], 1);n_myrank = np.cumsum(n_myrank)*l_myrank
+        x_myrank = np.full([mysize], 0);x_myrank[:l_mod] = 1
+        n_myrank = n_myrank + np.cumsum(x_myrank) - 1        # ending index, starting 0, for each rank
+        n0_myrank = np.hstack((0, n_myrank[0:mysize-1]+1))   # starting index, starting 0, for each rank
+
+        #----    
+        yxidx_myrank = yxidx[n0_myrank[myrank]:n_myrank[myrank]+1] # +1 for ending-index-inclusive        
+        for iyx in yxidx_myrank:
+            iy = yidx[iyx]
+            ix = xidx[iyx]
+            
+            g_mask = ((lat>=ylat[iy]) & (lat<=ylat[iy+1])) & \
+                        ((lon>=xlon[ix]) & (lon<=xlon[ix+1]))
+            if not any(g_mask) or sum(g_mask)/g_mask.size<0.001:
+                grid_poly = grid_poly.drop(iyx) 
+                continue #skip if none or less than 0.01%
+            
+            if verbose>1:
+                print("Group-level statistics for grid -- ", 
+                    iy, ':', ylat[iy],'~~',ylat[iy+1], 
+                    ix, ':', xlon[ix],'~~',xlon[ix+1])
+            elif verbose==1:
+                print("Group-level statistics for grid -- ", 
+                    'iy: ',iy, ' ix: ', ix)
+            
+            masked_topounits(g_mask)
+        #         
+        grid_poly = grid_poly.join(pd.DataFrame(grid_stats))
+            
+                
+    else:
+        # from elm domain.nc, alreadt opened
+        #f = xarray.open_dataset(elm_domainnc, engine='netcdf4')
+        ylat = domain_xr['yv'].data
+        xlon = domain_xr['xv'].data
+        elmdomain ={}
+        elmdomain['xc'] = domain_xr['xc'].data
+        elmdomain['yc'] = domain_xr['yc'].data
+        elmdomain['xv'] = domain_xr['xv'].data
+        elmdomain['yv'] = domain_xr['yv'].data
+        domain_xr.close()
+        
+        grid_poly = gridlocator.elmgrids_gpd(elmdomain)
+        
+        #----
+        
+        yidx = grid_poly['yid']
+        xidx = grid_poly['xid']
+        yxidx= grid_poly['xyid']
+        pidx = grid_poly['pid']
+
+        l_total = pidx.size        
+        l_myrank = int(math.floor(l_total/mysize))
+        l_mod = int(math.fmod(l_total,mysize))
+        n_myrank = np.full([mysize], 1);n_myrank = np.cumsum(n_myrank)*l_myrank
+        x_myrank = np.full([mysize], 0);x_myrank[:l_mod] = 1
+        n_myrank = n_myrank + np.cumsum(x_myrank) - 1        # ending index, starting 0, for each rank
+        n0_myrank = np.hstack((0, n_myrank[0:mysize-1]+1))   # starting index, starting 0, for each rank
+        #----    
+           
+        pidx_myrank = pidx[n0_myrank[myrank]:n_myrank[myrank]+1] # +1 for ending-index-inclusive
+        for ip in pidx_myrank:
+            if xlon.shape[0]==1 and ylat.shape[0]==1:
+                #unstructured ELM domain, nj=1
+                iy = 0
+                ix = pidx[ip]
+            elif xlon.shape[1]==1 and ylat.shape[1]==1:
+                #unstructured ELM domain, ni=1
+                ix = 0
+                iy = pidx[ip]
+            else:
+                iy = yidx[ip]
+                ix = xidx[ip]
+            
+            g_mask = ((lat>=np.min(ylat[iy,ix,])) & (lat<=np.max(ylat[iy,ix,]))) & \
+                     ((lon>=np.min(xlon[iy,ix,])) & (lon<=np.max(xlon[iy,ix,])))
+            if not any(g_mask): 
+                grid_poly = grid_poly.drop(ip) 
+                continue #skip if none
+
+            if verbose>1:
+                print("Group-level statistics for grid: ", 
+                      iy, ':', np.min(ylat[iy,ix,]),'~~',np.max(ylat[iy,ix,]), 
+                      ix, ':', np.min(xlon[iy,ix,]),'~~',np.max(xlon[iy,ix,]))
+            elif verbose==1:
+                print("Group-level statistics for grid -- ", 
+                    'iy: ',iy, ' ix: ', ix)
+
+            masked_topounits(g_mask)
+        #
+        grid_poly = grid_poly.join(pd.DataFrame(grid_stats))
+            
+    #
+    
+    return xrio_topo, grid_poly
+
+# ---------------------------------------------------------------------
+
+def srf_topo_from_gridstats(geopd_topo_data,
+                            TOPOUNIT = False, outdata=True, outnc_surf=''):
+    
+    #from pytools.commons_utils.gridlocator import grids_nearest_or_within
+    import pytools.pan_arctic.arctic_domain as elm_domain
+    from cmath import pi
+    
+    # directly from grided topo feature dataset    
+    srf_grids_sub = geopd_topo_data
+            
+    xc = srf_grids_sub.centroid.x.values
+    yc = srf_grids_sub.centroid.y.values
+    if srf_grids_sub.area.size>1:
+        area_rad2 = srf_grids_sub.area.values/180/180*pi*pi
+        area_km2 = elm_domain.elm_km2_from_arcradians2(area_rad2, latitude=yc)
+        area_rad2 = elm_domain.elm_arcradians2_from_km2(area_km2)
+    else:
+        area_km2 = None
+          
+    grd_size = xc.size
+    topounit_id   = [srf_grids_sub["Topounit_id"][i].values.astype(int) for i in range(grd_size)]
+    area_fraction = [srf_grids_sub["Topounit_area_fraction"][i].values.astype(float) for i in range(grd_size)]  # to np float datatype for convenience
+    elevation     = [srf_grids_sub["Topounit_elevation"][i].values.astype(float) for i in range(grd_size)]    
+    elevation_std = [srf_grids_sub["Topounit_elevation_std"][i].values.astype(float) for i in range(grd_size)]
+    slope         = [srf_grids_sub["Topounit_slope"][i].values.astype(float) for i in range(grd_size)]
+    aspect        = [srf_grids_sub["Topounit_aspect"][i].values.astype(float) for i in range(grd_size)]
+    sky_view      = [srf_grids_sub["Topounit_skyview"][i].values.astype(float) for i in range(grd_size)]               
+    # swap to dim(topounit,gridcell) (also converting list to ndarray)
+    area_fraction = np.transpose(area_fraction)
+    elevation     = np.transpose(elevation)
+    elevation_std = np.transpose(elevation_std)
+    slope         = np.transpose(slope)
+    aspect        = np.transpose(aspect)
+    sky_view      = np.transpose(sky_view)
+
+        
+    #--------------------------------------------------------------------------------------------------------
+    # standardard surfdata relevant to topo-features or topounits
+    # note: dim 'gridcell', unstructed, can be 2D-meshed as '(lsmlat,lsmlon)'
+    
+    # by default, the following are included in surfdata, although not really used. 'STD_ELEV' may be named as 'STDEV_ELEV'
+    '''
+    double SLOPE(gridcell) ;
+        SLOPE:_FillValue = NaN ;
+        SLOPE:long_name = "mean topographic slope" ;
+        SLOPE:units = "degrees" ;
+    double STD_ELEV(gridcell) ;
+        STD_ELEV:_FillValue = NaN ;
+        STD_ELEV:long_name = "standard deviation of elevation" ;
+        STD_ELEV:units = "m" ;  
+    double TOPO(gridcell) ;
+        TOPO:_FillValue = NaN ;
+        TOPO:long_name = "mean elevation on land" ;
+        TOPO:units = "m" ;
+    '''
+    
+    # topounit on dim 0, averaged for grid-level
+    topo1     = np.nanmean(elevation, axis=0, keepdims=True)
+    slope1    = np.nanmean(slope, axis=0, keepdims=True)
+    topo1_std = np.nanmean(elevation_std, axis=0, keepdims=True)
+    aspect1   = np.nanmean(aspect, axis=0, keepdims=True)
+    sky_view1 = np.nanmean(sky_view, axis=0, keepdims=True)
+        
+        
+    
+    #------------------
+    # the following is for downscaling solar radiation 
+    '''    
+    double SINSL_COSAS(topounit, gridcell) ;
+        SINSL_COSAS:_FillValue = NaN ;
+        SINSL_COSAS:long_name = "sin(slope) * cos(aspect)" ;
+        SINSL_COSAS:units = "unitless" ;
+    double SINSL_SINAS(topounit, gridcell) ;
+        SINSL_SINAS:_FillValue = NaN ;
+        SINSL_SINAS:long_name = "sin(slope) * sin(aspect)" ;
+        SINSL_SINAS:units = "unitless" ;
+    double SKY_VIEW(topounit, gridcell) ;
+        SKY_VIEW:_FillValue = NaN ;
+        SKY_VIEW:long_name = "sky view factor" ;
+        SKY_VIEW:units = "unitless" ;
+    double TERRAIN_CONFIG(topounit, gridcell) ;
+        TERRAIN_CONFIG:_FillValue = NaN ;
+        TERRAIN_CONFIG:long_name = "terrain configuration factor" ;
+        TERRAIN_CONFIG:units = "unitless" ;
+    '''
+
+    if TOPOUNIT:
+        sinsl_cosas = np.sin(slope)*np.cos(aspect)
+        sinsl_sinas = np.sin(slope)*np.sin(aspect)
+        # (1+cos(slope))/2-SKYVIEW
+        terrain_config = (1.0+np.cos(slope))/2.0 - sky_view
+
+    else:
+        sinsl_cosas = np.sin(slope1)*np.cos(aspect1)
+        sinsl_sinas = np.sin(slope1)*np.sin(aspect1)
+
+        #TERRAIN_CONFIG: may be estimated, according to Lee et al. (2011) (Eq. (4)), as following: 
+        # (1+cos(slope))/2-SKYVIEW
+        # Wei-Liang Lee, K.N. Liou, and Alex Hall, 2011. Parameterization of solar fluxes over mountain surfaces for application to climate models. JGR,116, D01101
+        terrain_config = (1.0+np.cos(slope1))/2.0 - sky_view1
+    
+    #------------------
+    # the following is for topounit greater than 1.
+    # NOTE: all variables are in (topounit, gridcell) or (topounit, lsmlat, lsmlon),
+    #       except for 'AREA', 'LATIXY', 'LONGXY', 'TOPO', 'SLOPE', 'STD_ELEV' (or 'STDEV_ELEV'), scalars,
+    #                and of course 'MaxTopounitElv', 'TOPO2', 'topoPerGrid'
+    '''
+    dimensions:
+        topounit = 12 ;
+    variables:
+        float MaxTopounitElv(gridcell) ;
+            MaxTopounitElv:_FillValue = NaNf ;
+            MaxTopounitElv:descriptions = "Maximum topounits elevation in a gridcell" ;
+        float TOPO2(gridcell) ;
+            TOPO2:_FillValue = NaNf ;
+            TOPO2:descriptions = "Weighted average of topounits elevation in a gridcell" ;
+        double TopounitAveElv(topounit, gridcell) ;
+            TopounitAveElv:_FillValue = -999. ;
+            TopounitAveElv:descriptions = "Average elevation of subgrid" ;
+            TopounitAveElv:units = "meters asl" ;
+        double TopounitFracArea(topounit, gridcell) ;
+            TopounitFracArea:_FillValue = -999. ;
+            TopounitFracArea:descriptions = "Fractional area of the subgrid of the land fraction of grid" ;
+        int topoPerGrid(gridcell) ;
+            topoPerGrid:descriptions = "Number of topounit for each grid" ;    
+    '''
+    if TOPOUNIT:
+        topounit_elev = elevation
+        topounit_frac = area_fraction
+        
+        topo2     = np.nansum(elevation*area_fraction, axis=0)
+        topo2_max = np.nanmax(elevation, axis=0)
+        topo2_n   = [topounit_id[i].size for i in range(len(topounit_id))]  #topounit_id still a list, with varying id length
+        topo2_n0  = [topounit_id[i][0] for i in range(len(topounit_id))]
+        
+        
+    #--------------------------------------------------------------------------------------------------------
+
+    if outnc_surf!='':
+        
+        print('write to topounits and/or topo-features to surfdata: ', outnc_surf)
+        print('TODO!')
+        
+
+    if outdata:
+        surfdata = {}
+        surfdata['LONGXY']   = xc
+        surfdata['LATIXY']   = yc
+        if not area_km2 is None: 
+            surfdata['AREA'] = area_km2
+        surfdata['TOPO']     = topo1
+        surfdata['STD_ELEV'] = topo1_std
+        surfdata['SLOPE']    = slope1
+        
+        surfdata['SINSL_COSAS']    = sinsl_cosas
+        surfdata['SINSL_SINAS']    = sinsl_sinas
+        surfdata['SKY_VIEW']       = sky_view1
+        surfdata['TERRAIN_CONFIG'] = terrain_config
+        
+        if TOPOUNIT:
+            surfdata['MaxTopounitElv']    = topo2_max
+            surfdata['TOPO2']             = topo2
+            surfdata['TopounitAveElv']    = topounit_elev
+            surfdata['TopounitFracArea']  = topounit_frac
+            surfdata['topoPerGrid']       = topo2_n
+            surfdata['topounit0PerGrid']  = topo2_n0 # this is useful to allow lateral connection
+        
+        
+        return surfdata
+            
+    #
+#
+# ---------------------------------------------------------------------
+
+def test():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dem", default="global_dem_3s.vrt")
+    parser.add_argument("--bbox", nargs=4, type=float, required=True,
+                        help="left bottom right top bounding box")
+    parser.add_argument("--lonlat_res", nargs=2, type=float, default=None,
+                        help="resoultion along longitude and latitude axis within bounding box, if resampling needed")
+    parser.add_argument("--sitename", required=True)
+    parser.add_argument("--group-delta-elev", type=float, default=100.0,
+                        help="Max area-weighted mean elevation difference for recursive grouping")
+    parser.add_argument("--outdir", default=".")
+    parser.add_argument("--bbox_outfile", default="")
+    
+    args = parser.parse_args()
+
+
+    #------------------------------------------------------------------------------------    
+    IFTGU=True
+    
+    # STEP 1: topographic units from DEM geotiff 
+ 
+    if not IFTGU:
+        # if don't do topounit dividing    
+        xrio, gridded_stats = grid_stats_topounits(args, percentiles=np.asarray([100]), verbose=0, 
+                        elm_domainnc='domain_test.nc')
+    else:
+        xrio, gridded_stats = grid_stats_topounits(args, verbose=1, 
+                        elm_domainnc='domain_test.nc')
+                        #elm_domainnc='domain.lnd.r0125_IcoswISC30E3r5.250918_cavm1d.nc')
+                        #elm_domainnc='domain.lnd.r05_RRSwISC6to18E3r5.240328_AnakRBurns.nc')
+    
+    
+    #------------------------------------------------------------------------------------
+    # STEP 2: write surfdata with TOPO features 
+    import pytools.pan_arctic.arctic_domain as elm_domain
+    import pytools.pan_arctic.mksrfdata_updatevals as srfupdate
+
+    elm_domain.set_e3sm_input('/Users/f9y/project_e3sm/e3sm_inputdata')
+ 
+    
+    # example 1: generating template domain and surfdata, from DEM only, and then filling in new TOPO
+    surfdata_topo = srf_topo_from_gridstats(gridded_stats, TOPOUNIT=IFTGU)
+    
+    
+    xdomain = {}
+    xdomain['xc'] = surfdata_topo['LONGXY']
+    xdomain['yc'] = surfdata_topo['LATIXY']
+    bxy = gridded_stats.bounds.values
+    xdomain['xv'] = np.stack([bxy[:,0],bxy[:,2], bxy[:,2], bxy[:,0]],axis=1)
+    xdomain['yv'] = np.stack([bxy[:,1],bxy[:,1], bxy[:,3], bxy[:,3]],axis=1)
+    xdomain['frac'] = np.ones_like(xdomain['xc'])
+    xdomain['mask'] = np.ones_like(xdomain['xc'])
+    if 'AREA' in surfdata_topo.keys():
+        xdomain['area_km2'] = surfdata_topo['AREA']
+        xdomain['area'] = elm_domain.elm_arcradians2_from_km2(xdomain['area_km2'])                               
+    elm_domain.domain_ncwrite(xdomain, WRITE2D=False, ncfile='domain.nc', coord_system=False)
+    
+    
+    if IFTGU:
+        allout = elm_domain.refine_surfdata( \
+                lnd_domain_file=elm_domain.DIN_LOC_ROOT+'/share/domains/domain.clm/domain.lnd.r05_RRSwISC6to18E3r5_N45.240328.nc', \
+                fsurdat=elm_domain.DIN_LOC_ROOT+'/lnd/clm2/surfdata_map/topounit_surfdata_0.5x0.5_simyr1850_N45.c20220204_TOP.nc', \
+                flanduse_timeseries=None, \
+                userdomain='domain.nc', \
+                SUBDOMAIN_REORDER=True, KEEP_DUPLICATED=True, \
+                domain_included=False)
+    else:
+        allout = elm_domain.refine_surfdata( \
+                lnd_domain_file=elm_domain.DIN_LOC_ROOT+'/share/domains/domain.clm/domain.lnd.r0125_IcoswISC30E3r5.250918.nc', \
+                fsurdat=elm_domain.DIN_LOC_ROOT+'/lnd/clm2/surfdata_map/surfdata_0.125x0.125_simyr1850_c250910_TOP.nc', \
+                flanduse_timeseries=None, \
+                userdomain='domain.nc', \
+                SUBDOMAIN_REORDER=True, KEEP_DUPLICATED=True, \
+                domain_included=False)
+
+    
+    # the surfdata is named as 'topounit_surfdata_0.5x0.5_simyr1850.c20220204_cavm1d_subset.nc' from above
+    os.system('mv '+allout[0]+' surfdata.nc')
+   
+    
+    srf_topo_vars = ['TOPO','STD_ELEV','SLOPE', 'TOPO2','MaxTopounitElv', 'TopounitAveElv','TopounitFracArea','topoPerGrid', \
+                     'SINSL_COSAS', 'SINSL_SINAS', 'SKY_VIEW', 'TERRAIN_CONFIG' ]
+    srfupdate.updatevals('surfdata.nc', \
+                        user_srf_data=surfdata_topo, user_srf_vars=srf_topo_vars)
+    
+    print('DONE!')
+    
+    
+   
+if __name__ == "__main__":
+    test()
+

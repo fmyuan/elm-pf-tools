@@ -210,12 +210,19 @@ def elm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0
                 elif('trendy_2024' in met_type2):
                     file=met_type.strip()+'_'+v+'_1901-2023_z'+str(int(zone)).zfill(2)+'.nc'
                     file_new=met_type.strip()+'_'+v+'_1901-2023_z'+str(int(zone_new)).zfill(2)+'.nc'
+                elif('trendy_2025' in met_type2):
+                    file='elmforc.TRENDY.c2025_0.5x0.5_'+v+'_1901-2024_z'+str(int(zone)).zfill(2)+'.nc'
+                    file_new='elmforc.TRENDY.c2025_0.5x0.5_'+v+'_1901-2024_z'+str(int(zone_new)).zfill(2)+'.nc'
 
             elif('era5' in met_type2):
                 if('daymet' in met_type2):
                     file=met_type.strip()+'_'+v+'_1980-2023_z'+str(int(zone)).zfill(2)+'.nc'
                     file_new=met_type.strip()+'_'+v+'_1980-2023_z'+str(int(zone_new)).zfill(2)+'.nc'
-            
+
+            elif 'ATS-subdaily' in met_type:                
+                file=met_type.strip()+'_'+v+'_z'+str(int(zone)).zfill(2)+'.nc'
+                file_new=met_type.strip()+'_'+v+'_z'+str(int(zone_new)).zfill(2)+'.nc'
+           
             elif('site' in met_type2):
                 file='./all_hourly.nc'
                 file_new='./all_hourly.nc'
@@ -414,7 +421,7 @@ def elm_metdata_extraction(metdomainfile, metfiles, sites, ncopath=''):
 # -------multiple sites cplbypass data extraction ----------------
 #
 
-def multiple_cplbypass_extraction(fsites):
+def multiple_cplbypass_extraction(filedir, met_type, fsites, ncopath=''):
     #fsites = 'README' (txt file includes: site_name lat lon)
     lats=[]; lons=[]
     with open(fsites) as f:
@@ -431,15 +438,18 @@ def multiple_cplbypass_extraction(fsites):
     lons = np.asarray(lons)
     lats = np.asarray(lats)
     for i in range(len(lats)):
-        #elm_metdata_cplbypass_extraction('/Users/f9y/mygithub/pt-e3sm-inputdata/atm/datm7/atm_forcing.datm7.GSWP3.0.5d.v2.c180716/cpl_bypass_full/', \
+        
+        '''
         elm_metdata_cplbypass_extraction('./TILE14236/cpl_bypass_full/', \
                                           'GSWP3_daymet4', \
                                           lons[i], lats[i], \
                                           ncopath='/sw/baseline/spack-envs/base/opt/linux-rhel8-x86_64/gcc-8.5.0/nco-5.1.5-scmfzcuxfmldbn3lwwcjuesd22eumhwk/bin/', z=1, l=i+1)
-        #elm_metdata_cplbypass_extraction('/home/fmyuan/mydata/unstructured_permafrost/', \
-        #                                  'domain', \
-        #                                  lons[i], lats[i], \
-        #                                  ncopath='/usr/bin/', z=1, l=i+1)
+        '''
+        
+        elm_metdata_cplbypass_extraction(filedir+'/cpl_bypass_full/', \
+                                          met_type, \
+                                          lons[i], lats[i], \
+                                          ncopath=ncopath, z=1, l=i+1)
         subfnc = glob.glob("%s*.%s" % ('./subset/', 'nc'))
         for ifile in subfnc:
             ncoutfile = ifile.split('/')[-1]
@@ -474,7 +484,16 @@ def multiple_cplbypass_extraction(fsites):
 #
 ##################################################################################
 
-#clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', 203.1241, 70.5725,ncopath='/usr/local/nco/bin/') #BEO
-#clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', -157.4089, 70.4696,ncopath='/usr/local/nco/bin/')  #ATQ
-##clm_metdata_cplbypass_extraction('./', 'CRUJRAV2.3.c2023.0.5x0.5', -97.0287, 27.9798, ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/')  #test
-##multiple_cplbypass_extraction('info_14sites.txt')
+#elm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', 203.1241, 70.5725,ncopath='/usr/local/nco/bin/') #BEO
+#elm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', -157.4089, 70.4696,ncopath='/usr/local/nco/bin/')  #ATQ
+#elm_metdata_cplbypass_extraction('./', 'CRUJRAV2.3.c2023.0.5x0.5', -97.0287, 27.9798, ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/')  #test
+#multiple_cplbypass_extraction('./','crujra_trendy_2025','info_13sites-Grids.txt',ncopath='/usr/local/gcc-x/nco_pacakge/nco-5.2.x/bin/')
+
+# BNZ-LTER -148.3537914 ~ -148.1468545, 64.76810641 ~ 64.67834557
+    #    (1) US-xBN (Caribou Creek):  65.12346, -147.4873
+    #    (2) US-BZS (BZ Creek:        64.75226, -148.2766
+    #    (3) US-Prr (Poker Flats):    65.1237,  -147.4876
+    #    (4) US-Uaf ( U of A Fairbanks): 64.8663, -147.8555
+    #    (5) US-xDJ (Delta Junction): 63.8811, -145.7514
+#elm_metdata_cplbypass_extraction('./', 'crujra_trendy_2025', -148.25029, 64.7192,ncopath='/usr/local/gcc-x/nco_pacakge/nco-5.2.x/bin/')  #BnzCEF
+elm_metdata_cplbypass_extraction('./cpl_bypass_full', 'crujra_trendy_2025', -145.7514, 63.8811,ncopath='/usr/local/gcc-x/nco_pacakge/nco-5.2.x/bin/')  #BnzCEF

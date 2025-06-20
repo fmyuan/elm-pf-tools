@@ -1,25 +1,21 @@
 #!/usr/bin/env python
 
-## Modules/Functions to Process CLM Netcdf output Files
+## Modules/Functions to Process ELM Netcdf output Files
 ## Author: Fengming YUAN, CCSI/ESD-ORNL, Oak Ridge, TN
 ## Date: 2017-March 
 
 import os, sys
 import glob
 import math
-from optparse import OptionParser
 import numpy as np
-import bisect
 from netCDF4 import Dataset
 from _bisect import bisect_right, bisect_left
 
 # ---------------------------------------------------------------
 # commonly used for all
 
-# CLM pft names
-pfts_user=["not_vegetated", 
-      "arctic_lichen", 
-      "arctic_bryophyte",
+# ELM pft names by default
+pfts_elm=["not_vegetated", 
       "needleleaf_evergreen_temperate_tree",
       "needleleaf_evergreen_boreal_tree",
       "needleleaf_deciduous_boreal_tree",
@@ -31,10 +27,6 @@ pfts_user=["not_vegetated",
       "broadleaf_evergreen_shrub",
       "broadleaf_deciduous_temperate_shrub",
       "broadleaf_deciduous_boreal_shrub",
-      "evergreen_arctic_shrub",
-      "deciduous_arctic_shrub",
-      "c3_arctic_sedge",
-      "c3_arctic_forb",
       "c3_arctic_grass",
       "c3_non-arctic_grass",
       "c4_grass",
@@ -49,7 +41,7 @@ pfts_user=["not_vegetated",
       "soybean",
       "irrigated_soybean"]
 
-# some needed variables NOT output from CLM outputs, but can sum-up from others
+# some needed variables NOT output from ELM outputs, but can sum-up from others
 totsomc_vr = ['SOIL1C_vr', 'SOIL2C_vr', 'SOIL3C_vr', 'SOIL4C_vr']
 totsomn_vr = ['SOIL1N_vr', 'SOIL2N_vr', 'SOIL3N_vr', 'SOIL4N_vr']
 totlitc_vr = ['LITR1C_vr', 'LITR2C_vr', 'LITR3C_vr']
@@ -60,9 +52,9 @@ ad_factor =[1,1,10,100]
 
 # -------------------------------------------------------------------
 #
-# Read variable(s) from 1 CLM nc file into chunk
+# Read variable(s) from 1 ELM nc file into chunk
 #
-def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
+def ELM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
                      startdays, enddays, adspinup, vars_all):
     odata  = {}
     odata_dims = {}
@@ -118,7 +110,7 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
 
         if('time' not in odata_dims[key]): continue  #cycle the loop, if not time-series dataset       
         # timing option - we do checking thereafter
-        # because we want to have those CONSTANTs read-out, some of which ONLY available in the first CLM nc file.
+        # because we want to have those CONSTANTs read-out, some of which ONLY available in the first ELM nc file.
         tt   = np.asarray(f.variables['time'])# days since model simulation starting time
         if(odata_tunits==''): odata_tunits = f.variables['time'].units
         tdays1 = min(tt)
@@ -259,37 +251,33 @@ def CLM_NcRead_1file(ncfile, varnames_print, keep_vars, chunk_keys, \
 
 # -------------------------------------------------------------------
 #
-# Read variable(s) from multiple CLM nc files in 1 simulation
+# Read variable(s) from multiple ELM nc files in 1 simulation
 #
-def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
-                           vars, \
+def ELM_NcRead_1simulation(elm_odir, ncfileheader, ncfincl, varnames_print, \
+                           varlist, \
                            startdays, enddays, \
                            adspinup):
 
 #--------------------------------------------------------------------------------------
-    cwdir = os.getcwd()
-    
-# INPUTS
+    # INPUTS
     #
-    clmhead = clm_odir+'/'+ ncfileheader
-    print('nc file set : '+ clmhead + '.*.nc')
+    elmhead = elm_odir+'/'+ ncfileheader
+    print('nc file set : '+ elmhead + '.*.nc')
 
     VARS_ALL = False
-    nvars   = 0    
-    if (len(vars) <= 0):
+    if (len(varlist) <= 0):
         print('No variable name by " --varname=??? "; So print out ALL variable names ONLY')
         varnames = []
         varnames_print = True
     elif(varnames_print):
         print('Print out ALL variable names ONLY')
         varnames = []
-    elif(vars[0] == 'ALL'):
+    elif(varlist[0] == 'ALL'):
         VARS_ALL = True
         varnames = []
         print ('Extract ALL variables from simulation')
     else:
-        varnames = vars
-        nvars = len(varnames)
+        varnames = varlist
 
     try:
         startdays = float(startdays)
@@ -341,28 +329,28 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
     # variables name dictionary
     keep = keep_const
     keep.append("nstep")         # need this for time step numbers
-    keep.append("time")          # need this for clm timing
+    keep.append("time")          # need this for elm timing
     keep.extend(varnames)
 
-    # for some variables, they are requiring a group of variables in CLM output to sum up
+    # for some variables, they are requiring a group of variables in ELM output to sum up
     if 'TOTSOMC_vr' in varnames or VARS_ALL:
         if VARS_ALL and 'TOTSOMC_vr' not in keep: keep.append('TOTSOMC_vr') 
-        indx_totsomc_vr = keep.index('TOTSOMC_vr')
+        #indx_totsomc_vr = keep.index('TOTSOMC_vr')
         keep.extend(totsomc_vr)
 
     if 'TOTSOMN_vr' in varnames or VARS_ALL:
         if VARS_ALL and 'TOTSOMN_vr' not in keep: keep.append('TOTSOMN_vr') 
-        indx_totsomn_vr = keep.index('TOTSOMN_vr')
+        #indx_totsomn_vr = keep.index('TOTSOMN_vr')
         keep.extend(totsomn_vr)
 
     if 'TOTLITC_vr' in varnames or VARS_ALL:
         if VARS_ALL and 'TOTLITC_vr' not in keep: keep.append('TOTLITC_vr') 
-        indx_totlitc_vr = keep.index('TOTLITC_vr')
+        #indx_totlitc_vr = keep.index('TOTLITC_vr')
         keep.extend(totlitc_vr)
 
     if 'TOTLITN_vr' in varnames or VARS_ALL:
         if VARS_ALL and 'TOTLITN_vr' not in keep: keep.append('TOTLITN_vr') 
-        indx_totlitn_vr = keep.index('TOTLITN_vr')
+        #indx_totlitn_vr = keep.index('TOTLITN_vr')
         keep.extend(totlitn_vr)
         
     #
@@ -379,22 +367,22 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
         keep.append('total_SOILICE') 
 
     # build all nc files into one or two arrays
-    allfile = glob.glob("%s.h*.*.nc" % clmhead)
+    allfile = glob.glob("%s.h*.*.nc" % elmhead)
     fincludes = [ncfincl]#['h0','h1','h2','h3','h4','h5']
     if(len(allfile)<=0):
-        sys.exit("No nc file exists - %s.h*.*.nc in: %s" %(clmhead, cwdir))
+        sys.exit("No nc file exists - %s.h*.*.nc in: %s" %(elmhead, elm_odir))
     else:
         allfile = sorted(allfile)
         print('Total Files: '+str(len(allfile)))    
     
     fchunks  = []
-    styr = -999
-    endyr= -999
+    styr = -9999
+    endyr= -9999
     if(startdays>=0): styr = math.floor(startdays/365.0)
     if(enddays>=0): endyr= math.ceil(enddays/365.0)
     for filename in allfile:
         filename = filename.split(".")
-        filetime = filename[-2]                 # clm nc filename format for 'timing', separated by '-'
+        filetime = filename[-2]                 # elm nc filename format for 'timing', separated by '-'
         #fileyyyy = filetime.split("-")[0]       # the first part is yyyy
         if fchunks.count(filename[-2]) == 0:
             #if (   (int(fileyyyy)>= styr or styr <0) \
@@ -416,7 +404,7 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
 
     hinc_done_print = []
     
-    # process CLM files
+    # process ELM files
     for chunk in fchunks:  # actually one time-series in a file
 
         chunkdata      = {}
@@ -427,7 +415,7 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
         for finc in fincludes:        
 
             # file name in full
-            filename = "%s.%s.%s.nc" % (clmhead,finc,chunk)
+            filename = "%s.%s.%s.nc" % (elmhead,finc,chunk)
             if (not os.path.isfile(filename)): continue
 
             # need only to print ONCE for each of h0-h5
@@ -447,7 +435,7 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
         
             print ('Processing - ', filename)
             chunkdatai,chunkdatai_dims, vars_tunits = \
-                CLM_NcRead_1file(filename, varnames_print, keep, chunkdata[finc].keys(), \
+                ELM_NcRead_1file(filename, varnames_print, keep, chunkdata[finc].keys(), \
                                  startdays, enddays, adspinup, VARS_ALL)
             
             # the following are constant and shall be same for all files (i.e. only need once)
@@ -573,13 +561,13 @@ def CLM_NcRead_1simulation(clm_odir, ncfileheader, ncfincl, varnames_print, \
             
 
     #--------------------------------------------------------------------------------------
-#   
+   
     # data-sets output
     return nx, ny, nlgrnd, nldcmp, ncol, npft, varsdata, varsdims, vars_tunits
 
 #----------------------------------------------------------------
-# processing originally-readin CLM data (1,2,3D) into t-series 1D collpased dataset
-def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
+# processing originally-readin ELM data (1,2,3D) into t-series 1D collpased dataset
+def ELMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
                     izp=-1, icol=-1, annually=False, seasonally=False):
 
     t  = sorted(tt)
@@ -627,7 +615,7 @@ def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
                 pft1active = pft1active.reshape(nxy,npft)
                 pdim_indx = pdim_indx + 1 # 
             
-            if(izp[0]<0):
+            if(izp<0):
                 # when NOT output specific PFT(s) for all grid, sum all pfts
                 if(ix<0 and iy<0):
                     vdata = np.sum(vdata*pwt1cell,axis=pdim_indx)
