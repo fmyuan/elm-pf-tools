@@ -5,7 +5,6 @@
 import os
 import math
 import netCDF4 as nc
-import xarray as xr
 import numpy as np
 from pyproj import Transformer
 from pyproj import CRS
@@ -328,7 +327,7 @@ def domain_unstructured_fromdaymet(output_pathfile='./domain.lnd.Daymet4.1km.1d.
     epsg_code = 4326
     lonlatProj = CRS.from_epsg(4326) # in lon/lat coordinates
     Txy2lonlat = Transformer.from_proj(geoxyProj, lonlatProj, always_xy=True)
-    Tlonlat2xy = Transformer.from_proj(lonlatProj, geoxyProj, always_xy=True)
+    #Tlonlat2xy = Transformer.from_proj(lonlatProj, geoxyProj, always_xy=True)
 
     # centroids from input
     if tileinfo_ncfile!='':
@@ -337,9 +336,9 @@ def domain_unstructured_fromdaymet(output_pathfile='./domain.lnd.Daymet4.1km.1d.
         lat = ncf.variables['lat'][...]
         geox = ncf.variables['geox'][...]
         geoy = ncf.variables['geoy'][...]
-        gidx = ncf.variables['gindx'][...]
-        xidx = ncf.variables['xindx'][...]
-        yidx = ncf.variables['yindx'][...]
+        #gidx = ncf.variables['gindx'][...]
+        #xidx = ncf.variables['xindx'][...]
+        #yidx = ncf.variables['yindx'][...]
         
         
     else:
@@ -966,7 +965,14 @@ def domain_remask(input_pathfile='./share/domains/domain.lnd.r05_RRSwISC6to18E3r
                     unlimit_xmin=unlimit_xmin, unlimit_xmax=unlimit_xmax, \
                     unlimit_ymin=unlimit_ymin, unlimit_ymax=unlimit_ymax,\
                     out2d=out2d, reorder_src=reorder_src, keep_duplicated=keep_duplicated)
-      
+     
+    if reorder_src and keep_duplicated:
+        # in this case, sub-domain's xc/yc pair should be using those of masked_pts rather than of src_grids
+        if 'xc' in masked_pts.keys(): subdomain['xc'] = masked_pts['xc']
+        if 'yc' in masked_pts.keys():subdomain['yc'] = masked_pts['yc']
+        if 'xv' in masked_pts.keys():subdomain['xv'] = masked_pts['xv']
+        if 'yv' in masked_pts.keys():subdomain['yv'] = masked_pts['yv']
+                
 
     # re-do frac of landed mask, if option ON, i.e. pts in a source grid are km2 of land
     landfrac = srcnc['frac'][...]
@@ -1274,15 +1280,16 @@ def main():
     input_path = args[0]
     output_path = args[1]
     """  
-#    input_path= './domain.lnd.pan-arctic_CAVM.1km.1d.c241018'
-#    input_path= '../surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d'
-    input_path= '../TFSarcticpfts/surfdata'
+    input_path= '../../surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d'
+    #input_path= './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623'
 
     # create an unstructured domain from a raster image, e.g. CAVM image of land cover type, including veg
     #domain_unstructured_fromraster_cavm()
-    domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic_CAVM.1kmbylatlon.1d.c250618.nc', \
-                                   rasterfile='./raster_cavm_v1_latlongrided.tif')
-    return # for only do domain.nc writing
+    #domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623.nc', \
+    #                               rasterfile='./raster_cavm_v1_01d.tif')
+    #domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.original.1D.c250624_TFSarcticpfts.nc', \
+    #                               rasterfile='./deciduous_shrub_toolik.tif')
+    #return # for only do domain.nc writing
     
     # create an unstructured domain from grids of daymet tile
     #domain_unstructured_fromdaymet(tileinfo_ncfile='./daymet_tiles.nc')
@@ -1293,19 +1300,26 @@ def main():
     #                 LONGXY360=False, edge_wider=1.0, out2d=False, ncwrite_coords=False)
     #return # for only do domain.nc writing
     
-    #inputdomain_ncfile = '../domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
-    inputdomain_ncfile = '../TFSarcticpfts/domain.lnd.pan-arctic_CAVM.1km.1d.c241018_TFSarcticpfts.nc'
+    
+    #-------------
+    # within input_path, directory and/or file header, dataset's domain file to extract subset of data
+    inputdomain_ncfile = '../../domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
+    #inputdomain_ncfile= './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623.nc'
+    #inputdomain_ncfile = './TFSarcticpfts/domain.lnd.pan-arctic_CAVM.1km.1D.c241018_TFSarcticpfts.nc'
     output_path = './'
     SUBDOMAIN_ONLY = False
-    SUBDOMAIN_REORDER = False  # True: masked file re-ordered by userdomain below, otherwise only mask and trunck
-    KEEP_DUPLICATED = False
+    SUBDOMAIN_REORDER = True  # True: masked file re-ordered by userdomain below, otherwise only mask and trunck
+    KEEP_DUPLICATED = True
     NC2D = False # for domain.nc writing only, so doesn't matter if SUBDOMAIN_ONLY is False
     
     
-    #userdomain = './TFSarcticpfts/domain.lnd.pan-arctic_CAVM.1km.1d.c241018_TFSarcticpfts.nc'
+    # -----------
+    # user-provided  lat/lon of domain or sites or geotiff  to extract subset data for
+    #userdomain = './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623.nc'
+    userdomain = './domain.lnd.0.01deg.1D.c250708_TFSarcticpfts.nc'
     km2perpt = -999.99 #1.0 # user-grid area in km^2
 
-    
+    '''
     #userdomain = '/Users/f9y/mygithub/E3SM_REPOS/pt-e3sm-inputdata/atm/datm7/'+ \
     #             'atm_forcing.datm7.GSWP3.0.5d.v2.c180716_NGEE-Grid/'+ \
     #             'atm_forcing.datm7.GSWP3.0.5d.v2.c180716_ngee-TFS-Grid/info_TFS_meq2_sites.txt'
@@ -1320,9 +1334,9 @@ def main():
     #    MEQ2-DAT 68.607947 -149.401596
     #    MEQ2-PF 68.579315 -149.442279
     #    MEQ2-ST 68.606131 -149.505794
-    ''''''
+    '''
     lats=[]; lons=[]
-    ''''''
+    '''
     with open(userdomain) as f:
         dtxt=f.readlines()
         
@@ -1334,10 +1348,10 @@ def main():
     f.close()
     lons = np.asarray(lons)
     lats = np.asarray(lats)
-    ''''''
+    '''
     
     '''
-    userdomain = './TFSarcticpfts/graminoid_toolik.tif'
+    userdomain = './TFSarcticpfts/graminoid_toolik_extent.tif'
     xx, yy, crs_res, crs_wkt, alldata = geotiff2nc(userdomain, outdata=True)
     allyc, allxc = np.meshgrid(yy,xx,indexing='ij')
     lons = allxc[~alldata[0].mask]
