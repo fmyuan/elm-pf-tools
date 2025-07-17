@@ -1280,8 +1280,9 @@ def main():
     input_path = args[0]
     output_path = args[1]
     """  
-    input_path= '../../surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d'
+    #input_path= '../../surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d'
     #input_path= './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623'
+    input_path= './domain.lnd.original.1D.c250624_TFSarcticpfts'
 
     # create an unstructured domain from a raster image, e.g. CAVM image of land cover type, including veg
     #domain_unstructured_fromraster_cavm()
@@ -1303,28 +1304,28 @@ def main():
     
     #-------------
     # within input_path, directory and/or file header, dataset's domain file to extract subset of data
-    inputdomain_ncfile = '../../domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
+    #inputdomain_ncfile = '../../domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
     #inputdomain_ncfile= './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623.nc'
-    #inputdomain_ncfile = './TFSarcticpfts/domain.lnd.pan-arctic_CAVM.1km.1D.c241018_TFSarcticpfts.nc'
+    inputdomain_ncfile = './domain.lnd.original.1D.c250624_TFSarcticpfts.nc'
     output_path = './'
-    SUBDOMAIN_ONLY = False
+    SUBDOMAIN_ONLY = True
     SUBDOMAIN_REORDER = True  # True: masked file re-ordered by userdomain below, otherwise only mask and trunck
-    KEEP_DUPLICATED = True
-    NC2D = False # for domain.nc writing only, so doesn't matter if SUBDOMAIN_ONLY is False
-    
+    KEEP_DUPLICATED = False
+    NC2D = True
     
     # -----------
     # user-provided  lat/lon of domain or sites or geotiff  to extract subset data for
     #userdomain = './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623.nc'
-    userdomain = './domain.lnd.0.01deg.1D.c250708_TFSarcticpfts.nc'
+    #userdomain = './domain.lnd.0.01deg.1D.c250708_TFSarcticpfts.nc'
+    #userdomain = './domain.lnd.original.1D.c250624_TFSarcticpfts.nc'
     km2perpt = -999.99 #1.0 # user-grid area in km^2
 
-    '''
+    ''''''
     #userdomain = '/Users/f9y/mygithub/E3SM_REPOS/pt-e3sm-inputdata/atm/datm7/'+ \
     #             'atm_forcing.datm7.GSWP3.0.5d.v2.c180716_NGEE-Grid/'+ \
     #             'atm_forcing.datm7.GSWP3.0.5d.v2.c180716_ngee-TFS-Grid/info_TFS_meq2_sites.txt'
     
-    userdomain='./info_TFS_meq2_sites.txt'
+    userdomain='./info_TFS_meq2_MAT.txt'
     #userdomain = './zone_mappings.txt'
     #km2perpt = 1.0 # user-grid area in km^2
     # e.g. 
@@ -1334,9 +1335,9 @@ def main():
     #    MEQ2-DAT 68.607947 -149.401596
     #    MEQ2-PF 68.579315 -149.442279
     #    MEQ2-ST 68.606131 -149.505794
-    '''
+    ''''''
     lats=[]; lons=[]
-    '''
+    ''''''
     with open(userdomain) as f:
         dtxt=f.readlines()
         
@@ -1348,7 +1349,7 @@ def main():
     f.close()
     lons = np.asarray(lons)
     lats = np.asarray(lats)
-    '''
+    ''''''
     
     '''
     userdomain = './TFSarcticpfts/graminoid_toolik_extent.tif'
