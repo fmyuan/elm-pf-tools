@@ -731,14 +731,18 @@ def elmdata_g2xy(workdir='./', ncfileheader='', \
 #-------------------------------------------------------------------------
 if __name__ == '__main__':
     #
-    '''
-    elmdata_g2xy('./', ncfileheader='domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts', \
+    ''''''
+    #elmdata_g2xy('./', ncfileheader='domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts', \
+    elmdata_g2xy('./', ncfileheader='surfdata_0.0025deg.1D_simyr1850_c240308_TOP_TFSarcticpfts', \
                  g2xy_mapfile='domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc', \
                  proj_name='', proj_crs='', nc_varname='ALL', mapfile_offsetxy=[0,0])
     '''
     
-    elmdata_g2xy('./', ncfileheader='surfdata_original.1D_simyr1850_c240308_TOP_TFSarcticpfts-newfrac', \
+#    elmdata_g2xy('./', ncfileheader='domain.lnd.original.1D.c250624_TFSarcticpfts', \
+#                 g2xy_mapfile='domain.lnd.original.1D.c250624_TFSarcticpfts.nc', \
+#                 proj_name='', proj_crs='', nc_varname='ALL', mapfile_offsetxy=[0,0])
+    elmdata_g2xy('./', ncfileheader='surfdata_original.1D_simyr1850_c240308_TOP_TFSarcticpfts', \
                  g2xy_mapfile='domain.lnd.original.1D.c250624_TFSarcticpfts.nc', \
-                 proj_name='', proj_crs='', nc_varname='PCT_NAT_PFT,LATIXY,LONGXY', mapfile_offsetxy=[0,0])
-
+                 proj_name='', proj_crs='', nc_varname='ALL', mapfile_offsetxy=[0,0])
+    '''
 #------------------------------------------------------------------------------------------------

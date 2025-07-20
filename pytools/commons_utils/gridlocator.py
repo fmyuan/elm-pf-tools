@@ -163,8 +163,8 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
     else:
         xdiff = np.diff(src_xc[0,:])
         xdiff = xdiff[np.where(abs(xdiff)<=180.0)] # removal those cross line 0/360 or -180/180
-        x_edge = np.nanmean(xdiff)*1.5
-        y_edge = np.nanmean(np.diff(src_yc[:,0]))*1.5
+        x_edge = abs(np.nanmean(xdiff)*1.5)
+        y_edge = abs(np.nanmean(np.diff(src_yc[:,0]))*1.5)
     # [mask_xc,mask_yc] box
     x_min = min(mask_xc)-x_edge
     if unlimit_xmin: x_min = min(src_xc[0,:])-x_edge # but may not want to do trunking
@@ -180,28 +180,28 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
                  (src_yc<=y_max) &  \
                  (src_xc>=x_min) &  \
                  (src_xc<=x_max))
-    xc = src_xc[boxed_idx]
-    yc = src_yc[boxed_idx]
+    boxed_xc = src_xc[boxed_idx]
+    boxed_yc = src_yc[boxed_idx]
     poly_id = np.indices(src_xc.flatten().shape)[0]
     poly_id = poly_id.reshape(src_xc.shape)[boxed_idx]
     # this is the indices of trunked but in original paired [yc,xc] of source  
 
     if 'xv' in src_grids.keys() and \
         'yv' in src_grids.keys():    
-        yv1 = src_yv[...,0]; xv1 = src_xv[...,0]
-        yv2 = src_yv[...,1]; xv2 = src_xv[...,1]
-        yv3 = src_yv[...,2]; xv3 = src_xv[...,2]
-        yv4 = src_yv[...,3]; xv4 = src_xv[...,3]        
-        yv1=yv1[boxed_idx]; xv1=xv1[boxed_idx]
-        yv2=yv2[boxed_idx]; xv2=xv2[boxed_idx]
-        yv3=yv3[boxed_idx]; xv3=xv3[boxed_idx]
-        yv4=yv4[boxed_idx]; xv4=xv4[boxed_idx]
+        boxed_yv1 = src_yv[...,0]; boxed_xv1 = src_xv[...,0]
+        boxed_yv2 = src_yv[...,1]; boxed_xv2 = src_xv[...,1]
+        boxed_yv3 = src_yv[...,2]; boxed_xv3 = src_xv[...,2]
+        boxed_yv4 = src_yv[...,3]; boxed_xv4 = src_xv[...,3]        
+        boxed_yv1=boxed_yv1[boxed_idx]; boxed_xv1=boxed_xv1[boxed_idx]
+        boxed_yv2=boxed_yv2[boxed_idx]; boxed_xv2=boxed_xv2[boxed_idx]
+        boxed_yv3=boxed_yv3[boxed_idx]; boxed_xv3=boxed_xv3[boxed_idx]
+        boxed_yv4=boxed_yv4[boxed_idx]; boxed_xv4=boxed_xv4[boxed_idx]
     
     # trunked source domain's xc,yc, i.e. centroids of xv/yv which formed polygons above, 
     # to be marked in X_axis, Y_axis, and re-indexing
     # (TIPs: this is import for visualizing data in map or transfrom btw 1D and 2D)
-    X_axis = xc
-    Y_axis = yc     
+    X_axis = boxed_xc
+    Y_axis = boxed_yc     
     [X_axis, i] = np.unique(X_axis, return_inverse=True)
     [Y_axis, j] = np.unique(Y_axis, return_inverse=True)
     YY, XX = np.meshgrid(Y_axis, X_axis, indexing='ij')
@@ -213,10 +213,15 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
     if (1 not in src_xc.shape):
         # structured grids yc[nj,ni], xc[nj,ni]
         
-        # new indices of [yc,xc] in grid-mesh YY/XX
+        # new indices of paired [yc,xc] in grid-mesh YY/XX
         # note: here don't override xc,yc, so xc=X_axis[i], yc=Y_axis[j]
-        polygonized = np.isin(XX, X_axis[i]) & np.isin(YY, Y_axis[j])
-        ji = np.nonzero(polygonized) 
+        yxc = np.asarray([(y,x) for y,x in zip(boxed_yc,boxed_xc)])
+        yxc_remeshed = np.asarray([(y,x) for y,x in zip(YY.flatten(),XX.flatten())])
+        set1 = dict((k,i) for i,k in enumerate({tuple(row) for row in yxc}))
+        set2 = dict((k,i) for i,k in enumerate({tuple(row) for row in yxc_remeshed}))
+        inter_set = set(set2).intersection(set(set1))
+        ji = np.asarray([set2[yx] for yx in inter_set])
+        ji = np.unravel_index(ji, xyid.shape)
         sub_xid = xid[ji]     
         sub_yid = yid[ji]    
         sub_xyid= xyid[ji]  
@@ -242,7 +247,7 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
 
         # re-meshed XX/YY centroids
         grid_centroids = geopd.GeoDataFrame({'pid':poly_id,"xyid":sub_xyid,"xid":sub_xid,"yid":sub_yid, \
-                                             "xc":xc,"yc":yc})
+                                             "xc":boxed_xc,"yc":boxed_yc})
         grid_centroids['geometry'] = grid_centroids.apply(lambda p: Point(p.xc, p.yc), axis=1)
 
         pointsInGrids = sjoin_nearest(points, \
@@ -258,10 +263,10 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         print('points in polygon searching')
         
         # box trunked source domain's xv,yv to form polygons
-        vpts1=[(x,y) for x,y in zip(xv1,yv1)]
-        vpts2=[(x,y) for x,y in zip(xv2,yv2)]
-        vpts3=[(x,y) for x,y in zip(xv3,yv3)]
-        vpts4=[(x,y) for x,y in zip(xv4,yv4)]
+        vpts1=[(x,y) for x,y in zip(boxed_xv1,boxed_yv1)]
+        vpts2=[(x,y) for x,y in zip(boxed_xv2,boxed_yv2)]
+        vpts3=[(x,y) for x,y in zip(boxed_xv3,boxed_yv3)]
+        vpts4=[(x,y) for x,y in zip(boxed_xv4,boxed_yv4)]
         lines = [(vpts1[i], vpts2[i], vpts3[i], vpts4[i], vpts1[i]) for i in range(len(vpts1))]
         lines_str = [LineString(lines[i]) for i in range(len(lines))]
         polygons = list(polygonize(MultiLineString(lines_str)))
@@ -301,8 +306,8 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         
         sorted_ptsidx = remask_xyid # not really sorted here
         if keep_duplicated:
-            xc = xc[sorted_ptsidx]
-            yc = xc[sorted_ptsidx]
+            boxed_xc = boxed_xc[sorted_ptsidx]
+            boxed_yc = boxed_yc[sorted_ptsidx]
         elif reorder_src:
             # shuffle indices or data array by data order in mask
             sorted_ptsingrids = np.column_stack((remask_maskid, remask_pid, remask_xyid))
@@ -310,15 +315,15 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
             sorted_ptsidx = sorted_ptsingrids[:,2] # i.e. sorted 'remask_xyid' by 'remask_maskid'
 
             # using mask_pts x/y, but still with src_xv/yv below
-            xc = mask_xc[remask_maskid]
-            yc = mask_yc[remask_maskid]
+            boxed_xc = mask_xc[remask_maskid]
+            boxed_yc = mask_yc[remask_maskid]
                     
         if 'xv' in src_grids.keys() and \
             'yv' in src_grids.keys():    
-            yv1=yv1[sorted_ptsidx]; xv1=xv1[sorted_ptsidx]
-            yv2=yv2[sorted_ptsidx]; xv2=xv2[sorted_ptsidx]
-            yv3=yv3[sorted_ptsidx]; xv3=xv3[sorted_ptsidx]
-            yv4=yv4[sorted_ptsidx]; xv4=xv4[sorted_ptsidx]
+            boxed_yv1=boxed_yv1[sorted_ptsidx]; boxed_xv1=boxed_xv1[sorted_ptsidx]
+            boxed_yv2=boxed_yv2[sorted_ptsidx]; boxed_xv2=boxed_xv2[sorted_ptsidx]
+            boxed_yv3=boxed_yv3[sorted_ptsidx]; boxed_xv3=boxed_xv3[sorted_ptsidx]
+            boxed_yv4=boxed_yv4[sorted_ptsidx]; boxed_xv4=boxed_xv4[sorted_ptsidx]
         
         # re-do indices of [yc,xc] in [YY,XX] meshgrid
         boxed_idx = (boxed_idx[0][sorted_ptsidx], boxed_idx[1][sorted_ptsidx])
@@ -335,16 +340,16 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         grid_yid_arr = np.reshape(sub_yid,xyid.shape)
         grid_remasked_arr = np.reshape(sub_remasked,xyid.shape)
         
-        xc_arr = np.reshape(xc,xyid.shape)
-        yc_arr = np.reshape(yc,xyid.shape)
-        xv_arr = np.stack((np.reshape(xv1,xyid.shape), \
-                           np.reshape(xv2,xyid.shape), \
-                           np.reshape(xv3,xyid.shape), \
-                           np.reshape(xv4,xyid.shape)), axis=2)
-        yv_arr = np.stack((np.reshape(yv1,xyid.shape), \
-                           np.reshape(yv2,xyid.shape), \
-                           np.reshape(yv3,xyid.shape), \
-                           np.reshape(yv4,xyid.shape)), axis=2)
+        xc_arr = np.reshape(boxed_xc,xyid.shape)
+        yc_arr = np.reshape(boxed_yc,xyid.shape)
+        xv_arr = np.stack((np.reshape(boxed_xv1,xyid.shape), \
+                           np.reshape(boxed_xv2,xyid.shape), \
+                           np.reshape(boxed_xv3,xyid.shape), \
+                           np.reshape(boxed_xv4,xyid.shape)), axis=2)
+        yv_arr = np.stack((np.reshape(boxed_yv1,xyid.shape), \
+                           np.reshape(boxed_yv2,xyid.shape), \
+                           np.reshape(boxed_yv3,xyid.shape), \
+                           np.reshape(boxed_yv4,xyid.shape)), axis=2)
 
     else:
     
@@ -352,10 +357,10 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         grid_xid_arr = sub_xid
         grid_yid_arr = sub_yid
         grid_remasked_arr = sub_remasked
-        xc_arr = xc
-        yc_arr = yc
-        xv_arr = np.stack((xv1,xv2,xv3,xv4), axis=1)
-        yv_arr = np.stack((yv1,yv2,yv3,yv4), axis=1)
+        xc_arr = boxed_xc
+        yc_arr = boxed_yc
+        xv_arr = np.stack((boxed_xv1,boxed_xv2,boxed_xv3,boxed_xv4), axis=1)
+        yv_arr = np.stack((boxed_yv1,boxed_yv2,boxed_yv3,boxed_yv4), axis=1)
  
     # 
     # output arrays

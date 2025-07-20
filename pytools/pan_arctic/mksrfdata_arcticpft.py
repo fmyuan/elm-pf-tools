@@ -418,15 +418,16 @@ def main():
 
     # read-in geotiff data from Zhang and Jitu etal
     vegedonly_pftdata_toolik=arctic_veged_fromraster_jkumaretal(\
-        inputpath='/Users/f9y/Desktop/NGEE-P4_sites/ToolikFieldStation_TFS/toolik_clip_2024_11_14/')
+        inputpath='/Users/f9y/Desktop/NGEE-P4_sites/ToolikFieldStation_TFS/toolik_clip_2024_11_14/res0025deg/')
+        #inputpath='/Users/f9y/Desktop/NGEE-P4_sites/ToolikFieldStation_TFS/toolik_clip_2024_11_14/')
 
     surf_fromcavm_jk = arctic_landunit_natpft_fromcavm_jkumaretal( \
-        nonveged_domainnc='./domain.lnd.original.1D.c250624_TFSarcticpfts.nc', \
+        nonveged_domainnc='./domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc', \
         vegedonly_pftdata=vegedonly_pftdata_toolik, \
         outdata=True)
     
-    mksrfdata_updatevals('./surfdata_original.1D_simyr1850_c240308_TOP_TFSarcticpfts-default.nc', \
-                         user_srf_data=surf_fromcavm_jk, user_srf_vars='', OriginPFTclass=True)
+    mksrfdata_updatevals('./surfdata_0.0025deg.1D_simyr1850_c240308_TOP_TFSarcticpfts-default.nc', \
+                         user_srf_data=surf_fromcavm_jk, user_srf_vars='', OriginPFTclass=False)
     
       
 if __name__ == '__main__':
