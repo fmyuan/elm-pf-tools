@@ -627,7 +627,7 @@ def CLMvar_1Dtseries(tt, vdims, vdata, constdata, nx, ny, ix, iy, if2dgrid, \
                 pft1active = pft1active.reshape(nxy,npft)
                 pdim_indx = pdim_indx + 1 # 
             
-            if(izp<0):
+            if(izp[0]<0):
                 # when NOT output specific PFT(s) for all grid, sum all pfts
                 if(ix<0 and iy<0):
                     vdata = np.sum(vdata*pwt1cell,axis=pdim_indx)

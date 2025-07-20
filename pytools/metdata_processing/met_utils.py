@@ -210,12 +210,19 @@ def elm_metdata_cplbypass_extraction(filedir,met_type, lon, lat, ncopath='', z=0
                 elif('trendy_2024' in met_type2):
                     file=met_type.strip()+'_'+v+'_1901-2023_z'+str(int(zone)).zfill(2)+'.nc'
                     file_new=met_type.strip()+'_'+v+'_1901-2023_z'+str(int(zone_new)).zfill(2)+'.nc'
+                elif('trendy_2025' in met_type2):
+                    file=met_type.strip()+'_'+v+'_1901-2024_z'+str(int(zone)).zfill(2)+'.nc'
+                    file_new=met_type.strip()+'_'+v+'_1901-2024_z'+str(int(zone_new)).zfill(2)+'.nc'
 
             elif('era5' in met_type2):
                 if('daymet' in met_type2):
                     file=met_type.strip()+'_'+v+'_1980-2023_z'+str(int(zone)).zfill(2)+'.nc'
                     file_new=met_type.strip()+'_'+v+'_1980-2023_z'+str(int(zone_new)).zfill(2)+'.nc'
-            
+
+            elif 'ATS-subdaily' in met_type:                
+                file=met_type.strip()+'_'+v+'_z'+str(int(zone)).zfill(2)+'.nc'
+                file_new=met_type.strip()+'_'+v+'_z'+str(int(zone_new)).zfill(2)+'.nc'
+           
             elif('site' in met_type2):
                 file='./all_hourly.nc'
                 file_new='./all_hourly.nc'
@@ -474,7 +481,7 @@ def multiple_cplbypass_extraction(fsites):
 #
 ##################################################################################
 
-#clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', 203.1241, 70.5725,ncopath='/usr/local/nco/bin/') #BEO
-#clm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', -157.4089, 70.4696,ncopath='/usr/local/nco/bin/')  #ATQ
-##clm_metdata_cplbypass_extraction('./', 'CRUJRAV2.3.c2023.0.5x0.5', -97.0287, 27.9798, ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/')  #test
+#elm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', 203.1241, 70.5725,ncopath='/usr/local/nco/bin/') #BEO
+#elm_metdata_cplbypass_extraction('./', 'GSWP3_daymet4', -157.4089, 70.4696,ncopath='/usr/local/nco/bin/')  #ATQ
+##elm_metdata_cplbypass_extraction('./', 'CRUJRAV2.3.c2023.0.5x0.5', -97.0287, 27.9798, ncopath='/software/user_tools/current/cades-ccsi/nco/nco-5.1/bin/')  #test
 ##multiple_cplbypass_extraction('info_14sites.txt')
