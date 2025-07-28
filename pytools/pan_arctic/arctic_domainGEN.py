@@ -30,7 +30,7 @@ def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic
     nondata = data.mask
     #along x-axis, checking non-data in columns
     ny_nodata = np.sum(nondata,0)
-    x0=0; x1=len(allxc)-1
+    x0=0; x1=len(allxc)
     for i in range(1,len(allxc)-1):
         if ny_nodata[i]<len(allyc) or ny_nodata[i-1]<len(allyc): break 
         x0 = i
@@ -39,28 +39,28 @@ def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic
         x1 = i
     # note: column x0/x1 shall be all non-data, but x0+1/x1-1 not
     # since the projection is centered in northern pole, better to make truncated x still centered at pole
-    X_cut = min(x0, len(allxc)-1-x1)
-    x0 = X_cut; x1 = len(allxc)-1-X_cut
+    X_cut = min(x0, len(allxc)-x1)
+    x0 = X_cut; x1 = len(allxc)-X_cut
     X_axis = allxc[x0:x1]
     data = data[:,x0:x1]   
     
     #along y-axis, checking non-data in rows
-    y0=0; y1=len(allyc)-1
+    y0=0; y1=len(allyc)
     nx_nodata = np.sum(nondata,1)
     for i in range(1,len(allyc)-1):
         if nx_nodata[i]<len(allxc) or nx_nodata[i-1]<len(allxc): 
             if crs.is_projected:
                 break
-            elif allyc[i]>=50.0: #truncating southern lat of 50 degN
-                break 
+            #elif allyc[i]>=50.0: #truncating southern lat of 50 degN
+            #    break 
         y0 = i
     for i in range(len(allyc)-2,1,-1):
         if nx_nodata[i]<len(allxc) or nx_nodata[i+1]<len(allxc): break 
         y1 = i
     # note: row y0/y1 shall be all non-data, but y0+1/y1-1 not
     # since the projection is centered in northern pole, better to make truncated y still centered at pole
-    Y_cut = min(y0, len(allyc)-1-y1)
-    y0 = Y_cut; y1 = len(allyc)-1-Y_cut
+    Y_cut = min(y0, len(allyc)-y1)
+    y0 = Y_cut; y1 = len(allyc)-Y_cut
     Y_axis = allyc[y0:y1]      
     data = data[y0:y1,:]   
 
@@ -142,6 +142,8 @@ def domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic
     # 'NETCDF3_CLASSIC', 'NETCDF3_64BIT', 'NETCDF4_CLASSIC', and 'NETCDF4'
     w_nc_fid = nc.Dataset(file_name, 'w', format='NETCDF4')
     w_nc_fid.title = '1D domain file for pan arctic region, based on CAVM vegetation map'
+    # explicitly add a global attr for visualizing in gis tools
+    w_nc_fid.Conventions = "CF-1.0"
 
     # Create new dimensions of new coordinate system
     w_nc_fid.createDimension('x', total_cols)
@@ -575,6 +577,10 @@ def domain_ncwrite(elmdomain_data, WRITE2D=True, ncfile='domain.nc', coord_syste
     area_arr = elmdomain_data['area']
     mask_arr = elmdomain_data['mask']
     landfrac_arr = elmdomain_data['frac']
+    
+    # area in km2
+    if 'area_km2' in elmdomain_data.keys():
+        area_km2_arr = elmdomain_data['area_km2']
   
     # write to nc file
     file_name = ncfile
@@ -680,6 +686,13 @@ def domain_ncwrite(elmdomain_data, WRITE2D=True, ncfile='domain.nc', coord_syste
     w_nc_var.coordinates = "xc yc" ;
     w_nc_var.units = "radian2" ;
     w_nc_fid.variables['area'][...] = area_arr
+
+    if 'area_km2' in elmdomain_data.keys():
+        w_nc_var = w_nc_fid.createVariable('area_km2', np.float64, ('nj','ni'))
+        w_nc_var.long_name = "area of grid cell in km squared" ;
+        w_nc_var.coordinates = "xc yc" ;
+        w_nc_var.units = "km^2" ;
+        w_nc_fid.variables['area_km2'][...] = area_km2_arr
 
     w_nc_var = w_nc_fid.createVariable('mask', np.int32, ('nj','ni'))
     w_nc_var.long_name = "domain mask" ;
@@ -969,9 +982,13 @@ def domain_remask(input_pathfile='./share/domains/domain.lnd.r05_RRSwISC6to18E3r
     if reorder_src and keep_duplicated:
         # in this case, sub-domain's xc/yc pair should be using those of masked_pts rather than of src_grids
         if 'xc' in masked_pts.keys(): subdomain['xc'] = masked_pts['xc']
-        if 'yc' in masked_pts.keys():subdomain['yc'] = masked_pts['yc']
-        if 'xv' in masked_pts.keys():subdomain['xv'] = masked_pts['xv']
-        if 'yv' in masked_pts.keys():subdomain['yv'] = masked_pts['yv']
+        if 'yc' in masked_pts.keys(): subdomain['yc'] = masked_pts['yc']
+        if 'xv' in masked_pts.keys(): subdomain['xv'] = masked_pts['xv']
+        if 'yv' in masked_pts.keys(): subdomain['yv'] = masked_pts['yv']
+        if 'km2perpt' in masked_pts.keys(): 
+            subdomain['area_km2']=masked_pts['km2perpt']
+        else:
+            subdomain['area_km2']=np.empty_like(subdomain['xc'])  
                 
 
     # re-do frac of landed mask, if option ON, i.e. pts in a source grid are km2 of land
@@ -995,6 +1012,7 @@ def domain_remask(input_pathfile='./share/domains/domain.lnd.r05_RRSwISC6to18E3r
             igrid = grids_uid[i]
             pts_counts = len(grids_maskptsid[igrid])
             frac[igrid] = pts_counts*km2perpt/area_km2[igrid]
+        landarea_km2=area_km2.reshape(landfrac.shape)
         landfrac = frac.reshape(landfrac.shape)
         landfrac[np.where(landfrac>1.0)]=1.0
     
@@ -1008,25 +1026,30 @@ def domain_remask(input_pathfile='./share/domains/domain.lnd.r05_RRSwISC6to18E3r
     # but not do so on 'area' which are for a whole grid
     landfrac[landmask==0] = 0.0
     
-    landarea=srcnc['area'][...][boxed_idx]  
+    landarea=srcnc['area'][...][boxed_idx]
+    if 'area_km2' in srcnc.variables.keys(): landarea_km2=srcnc['area_km2'][...][boxed_idx]
+    if 'area_LAEA' in srcnc.variables.keys(): landarea_km2=srcnc['area_LAEA'][...][boxed_idx]
+    if 'area_LCC' in srcnc.variables.keys(): landarea_km2=srcnc['area_LCC'][...][boxed_idx]
+     
     srcnc.close()
     
-    # trunked domain with updated land mask and land fraction only
-    # and exit
-    if out == 'mask':
-        return boxed_idx, landmask, landfrac, subdomain['xc'], subdomain['yc']
-
     # 
     # additional subdomain variables
     subdomain['area'] = landarea
     subdomain['mask'] = landmask
     subdomain['frac'] = landfrac
+    subdomain['area_km2'] = landarea_km2
+
+    if out == 'mask':
+        return boxed_idx, landmask, landfrac, subdomain['xc'], subdomain['yc'], subdomain['area_km2']
+        # trunked domain with updated land mask and land fraction only
         
-    if out == 'subdomain':
+    elif out == 'subdomain':
         return subdomain
         # a new domain, may or may not same as boxed-truncked
+    
     elif out == 'domain_ncwrite':
-        file_name = input_pathfile+'_remasked'
+        file_name = input_pathfile.split('/')[-1]+'_remasked'
         print("new domain file is " + file_name)            
                  
         domain_ncwrite(subdomain, WRITE2D=out2d, ncfile=file_name, \
@@ -1040,7 +1063,7 @@ def domain_remask(input_pathfile='./share/domains/domain.lnd.r05_RRSwISC6to18E3r
 
 def domain_subsetbymaskncf(srcdomain_pathfile='./share/domains/domain.lnd.r05_RRSwISC6to18E3r5.240328.nc', \
                         maskncf='./share/domains/domain.clm/domain.lnd.pan-arctic_CAVM.1km.1d.c241018.nc', \
-                        maskncv='mask', masknc_area=-999.99, reorder_src=False, keep_duplicated=False, \
+                        maskncv='mask', masknc_area=np.empty((0,0)), reorder_src=False, keep_duplicated=False, \
                         unlimit_xmin=False, unlimit_xmax=False, unlimit_ymin=False, unlimit_ymax=False,\
                         out2D=True, out_type='subdomain'):
     
@@ -1055,9 +1078,20 @@ def domain_subsetbymaskncf(srcdomain_pathfile='./share/domains/domain.lnd.r05_RR
     mask_new['xc']= mask_f['xc'][...][mask_checked] # this will flatten xc/yc, if in 2D
     mask_new['yc']= mask_f['yc'][...][mask_checked]
     mask_new['mask']= mask_v[mask_checked]
-    if masknc_area != -999.99: 
+    if 'area_LAEA' in mask_f.variables.keys():
         # if need to convert new masked grid land area or fraction
-        # the unit is km^2 per points included in the source domain
+        # the unit is km^2 per points included in the source domain 
+        mask_new['area_LAEA'] = mask_f['area_LAEA'][...][mask_checked]
+    elif 'area_LCC' in mask_f.variables.keys():
+        # if need to convert new masked grid land area or fraction
+        # the unit is km^2 per points included in the source domain 
+        mask_new['area_LCC'] = mask_f['area_LCC'][...][mask_checked]
+    elif 'area_km2' in mask_f.variables.keys():
+        # if need to convert new masked grid land area or fraction
+        # the unit is km^2 per points included in the source domain 
+        mask_new['area_km2'] = mask_f['area_km2'][...][mask_checked]
+    elif not np.array_equal(masknc_area,np.empty((0,0))) : 
+        # if user provided
         mask_new['km2perpt'] = masknc_area
     
     #
@@ -1169,7 +1203,7 @@ def domain_subsetbyBox(srcdomain_pathfile='./share/domains/domain.lnd.r05_RRSwIS
 #--------------------------------------------------------------------------------------------------------
 
 def ncdata_subsetbynpwhereindex(npwhere_indices, npwhere_mask=np.empty((0,0)), npwhere_frac=np.empty((0,0)), \
-                        newxc_box=np.empty((0,0)), newyc_box=np.empty((0,0)), reordered_box=False, \
+                        newxc_box=np.empty((0,0)), newyc_box=np.empty((0,0)), newkm2_box=np.empty((0,0)), reordered_box=False, \
                         srcnc_pathfile='./lnd/clm2/surfdata_map/surfdata_0.5x0.5_simyr1850_c240308_TOP.nc', \
                         indx_dim=['lsmlat','lsmlon'], indx_dim_flatten=''):
     '''
@@ -1190,6 +1224,9 @@ def ncdata_subsetbynpwhereindex(npwhere_indices, npwhere_mask=np.empty((0,0)), n
         with nc.Dataset(ncfilein,'r') as src, nc.Dataset(ncfileout, "w") as dst:
             # copy global attributes all at once via dictionary
             dst.setncatts(src.__dict__)
+            # explicitly add a global attr for visualizing in gis tools
+            dst.Conventions = "CF-1.0"
+
             # dimensions for dst
             for dname, dimension in src.dimensions.items():
                 len_dimension = len(dimension)
@@ -1290,9 +1327,9 @@ def ncdata_subsetbynpwhereindex(npwhere_indices, npwhere_mask=np.empty((0,0)), n
                     if not np.array_equal(newyc_box,np.empty((0,0))) \
                         and (vname=='LATIXY' or vname=='yc'): 
                         varvals[...] = newyc_box
-                    # the following is hard-weired now - TODO from inputs 
-                    if 'AREA' in vname:
-                        varvals[...] = 1.0 # 1km^2 
+                    if not np.array_equal(newkm2_box,np.empty((0,0))) \
+                        and 'AREA' in vname:
+                        varvals[...] = newkm2_box # km^2 
                 
                 #                            
                 dst[vname][...] = varvals
@@ -1325,16 +1362,13 @@ def main():
     input_path = args[0]
     output_path = args[1]
     """  
-    input_path= '../../surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d'
-    #input_path= './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623'
-    #input_path= './domain.lnd.original.1D.c250624_TFSarcticpfts'
 
     # create an unstructured domain from a raster image, e.g. CAVM image of land cover type, including veg
     #domain_unstructured_fromraster_cavm()
     #domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623.nc', \
     #                               rasterfile='./raster_cavm_v1_01d.tif')
-    #domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.original.1D.c250624_TFSarcticpfts.nc', \
-    #                               rasterfile='./deciduous_shrub_toolik.tif')
+    #domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc', \
+    #                               rasterfile='./deciduous_shrub_toolik_extent_0025deg.tif')
     #return # for only do domain.nc writing
     
     # create an unstructured domain from grids of daymet tile
@@ -1348,23 +1382,30 @@ def main():
     
     
     #-------------
+    #input_path= '../../surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d'
+    input_path= '../TFSarcticpfts/res0025deg/surfdata_0.0025deg.1D_simyr1850_c240308_TOP_TFSarcticpfts'
+    #input_path= './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623'
+    #input_path= './domain.lnd.original.1D.c250624_TFSarcticpfts'
+
+    
     # within input_path, directory and/or file header, dataset's domain file to extract subset of data
-    inputdomain_ncfile = '../../domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
+    #inputdomain_ncfile = '../../../domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
+    inputdomain_ncfile = '../TFSarcticpfts/res0025deg/domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc'
     #inputdomain_ncfile= './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623.nc'
     #inputdomain_ncfile = './domain.lnd.original.1D.c250624_TFSarcticpfts.nc'
     output_path = './'
     SUBDOMAIN_ONLY = False
-    SUBDOMAIN_REORDER = True  # True: masked file re-ordered by userdomain below, otherwise only mask and trunck
-    KEEP_DUPLICATED = True
+    SUBDOMAIN_REORDER = False  # True: masked file re-ordered by userdomain below, otherwise only mask and trunck
+    KEEP_DUPLICATED = False
     NC2D = False
     
     # -----------
     # user-provided  lat/lon of domain or sites or geotiff  to extract subset data for
     #userdomain = './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623.nc'
-    userdomain = './domain.lnd.0.01deg.1D.c250708_TFSarcticpfts.nc'
+    userdomain = './domain.lnd.0.0025deg.1D.c250624_TFSmeq2-PF.nc'
     #userdomain = './domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc'
     #userdomain = './domain.lnd.original.1D.c250624_TFSarcticpfts.nc'
-    km2perpt = -999.99 #1.0 # user-grid area in km^2
+    km2perpt = np.empty((0,0)) #[1.0] # user-grid area in km^2
 
     '''
     #userdomain = '/Users/f9y/mygithub/E3SM_REPOS/pt-e3sm-inputdata/atm/datm7/'+ \
@@ -1426,7 +1467,7 @@ def main():
 
     # continue for subsetting, if option is ON
     if userdomain.endswith('.nc'):
-        idx_box, newmask_box, newfrac_box, newxc_box, newyc_box = \
+        idx_box, newmask_box, newfrac_box, newxc_box, newyc_box, newkm2_box = \
             domain_subsetbymaskncf( \
             srcdomain_pathfile=inputdomain_ncfile, \
             maskncf=userdomain, masknc_area=km2perpt, reorder_src=SUBDOMAIN_REORDER, \
@@ -1500,7 +1541,8 @@ def main():
             return
 
         ncdata_subsetbynpwhereindex(idx_box, npwhere_mask=newmask_box, npwhere_frac=newfrac_box, \
-                                    newxc_box=newxc_box, newyc_box=newyc_box, reordered_box=SUBDOMAIN_REORDER, \
+                                    newxc_box=newxc_box, newyc_box=newyc_box, newkm2_box=newkm2_box, \
+                                    reordered_box=SUBDOMAIN_REORDER, \
                                     srcnc_pathfile=ncfile, \
                                     indx_dim=ncfile_dims, indx_dim_flatten=dims_new)
 
@@ -1508,7 +1550,7 @@ def main():
 
     
 if __name__ == '__main__':
-    
+    ''''''
     main()
     
     '''
@@ -1519,7 +1561,10 @@ if __name__ == '__main__':
     #    MEQ2-DAT 68.607947 -149.401596
     #    MEQ2-PF 68.579315 -149.442279
     #    MEQ2-ST 68.606131 -149.505794
-    domain_subsetbyBox(srcdomain_pathfile='./domain.lnd.original.1D.c250624_TFSarcticpfts.nc', \
+    domain_subsetbyBox(srcdomain_pathfile='../TFSarcticpfts/res0025deg/domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc', \
+                          #latlons=np.asarray([[68.6511,68.6711], [-149.3805,-149.3605]]), \
+                          #latlons=np.asarray([[68.597947,68.617947], [-149.411596,-149.391596]]), \
+                          #latlons=np.asarray([[68.569315,68.589315], [-149.452279,-149.432279]]), \
                           latlons=np.asarray([[68.596131,68.616131], [-149.515794,-149.495794]]), \
-                          out2D=True, out_type='domain_ncwrite')
+                          out2D=False, out_type='domain_ncwrite')
     '''

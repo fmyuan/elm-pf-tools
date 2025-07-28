@@ -344,6 +344,10 @@ def mksrfdata_updatevals(fsurfnc_in, user_srf_data={}, user_srfnc_file='', user_
     #                    
     # write into nc file
     with Dataset(fsurfnc_in,'r') as src, Dataset(fsurfnc_out, "w") as dst:
+        # copy global attributes all at once via dictionary
+        dst.setncatts(src.__dict__)
+        # explicitly add a global attr for visualizing in gis tools
+        dst.Conventions = "CF-1.0"
             
         # new surfdata dimensions
         for dname, dimension in src.dimensions.items():
@@ -427,7 +431,8 @@ def main():
         outdata=True)
     
     mksrfdata_updatevals('./surfdata_0.0025deg.1D_simyr1850_c240308_TOP_TFSarcticpfts-default.nc', \
-                         user_srf_data=surf_fromcavm_jk, user_srf_vars='', OriginPFTclass=False)
+                        #user_srf_data=surf_fromcavm_jk, user_srf_vars='', OriginPFTclass=True)
+                        user_srf_data=surf_fromcavm_jk, user_srf_vars='', OriginPFTclass=False)
     
       
 if __name__ == '__main__':

@@ -439,11 +439,13 @@ def elmdata_g2xy(workdir='./', ncfileheader='', \
                     ncfile_out = 'projection-'+ncfile.split('/')[-1]
                 else:
                     ncfile_out = '2d-'+ncfile.split('/')[-1]
-            dst = Dataset(ncfile_out, mode='w',format=ncformat)
+            dst = Dataset(ncfile_out, mode='w')
     
             print ('Processing - ', ncfile, '==> ', ncfile_out)
             
             #
+            # explicitly add a global attr for visualizing in gis tools
+            dst.Conventions = "CF-1"
             # copy global attributes all at once via dictionary
             dst.setncatts(src.__dict__)
         
@@ -495,14 +497,14 @@ def elmdata_g2xy(workdir='./', ncfileheader='', \
                 dst.createDimension('lat',  len(yy))
                 
                 vgeox = dst.createVariable('lon', np.float32, ('lon',))
-                vgeox.units = 'degree'
-                vgeox.long_name = 'longitude'
+                vgeox.units = 'degrees_east'
+                vgeox.long_name = 'longitude of axis'
                 vgeox.standard_name = "longitude"
                 vgeox[:] = xx
                     
                 vgeoy = dst.createVariable('lat', np.float32, ('lat',))
-                vgeoy.units = 'degree'
-                vgeoy.long_name = 'latitude'
+                vgeoy.units = 'degrees_north'
+                vgeoy.long_name = 'latitude of axis'
                 vgeoy.standard_name = "latitude"
                 vgeoy[:] = yy
                 
@@ -733,7 +735,7 @@ if __name__ == '__main__':
     #
     ''''''
     #elmdata_g2xy('./', ncfileheader='domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts', \
-    elmdata_g2xy('./', ncfileheader='surfdata_0.0025deg.1D_simyr1850_c240308_TOP_TFSarcticpfts', \
+    elmdata_g2xy('./', ncfileheader='surfdata_0.0025deg.1D_simyr1850_c240308_TOP', \
                  g2xy_mapfile='domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc', \
                  proj_name='', proj_crs='', nc_varname='ALL', mapfile_offsetxy=[0,0])
     '''
