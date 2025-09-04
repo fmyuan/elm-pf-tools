@@ -67,7 +67,7 @@ def putvar(ncfile, varname, varvals, varatts=''):
                         # this must be done before data written, 
                         # otherwise the written would use the original add_offset and scale_factor
                         # TIP: when data written, the input valule is in unpacked and the program will do packing
-                        f.variables[v].setncattr(att,float(att_val))
+                        f.variables[v].setncattr(att,np.float64(att_val))
                     else:
                         f.variables[v].setncattr(att,att_val)
 

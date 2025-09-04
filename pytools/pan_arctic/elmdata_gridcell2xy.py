@@ -735,8 +735,8 @@ if __name__ == '__main__':
     #
     ''''''
     #elmdata_g2xy('./', ncfileheader='domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts', \
-    elmdata_g2xy('./', ncfileheader='surfdata_0.0025deg.1D_simyr1850_c240308_TOP', \
-                 g2xy_mapfile='domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc', \
+    elmdata_g2xy('./', ncfileheader='surfdata_0.0025deg.1D_simyr1850_c240308_TOP_TFSmeq2-MAT', \
+                 g2xy_mapfile='domain.lnd.0.0025deg.1D.c250624_TFSmeq2-MAT.nc', \
                  proj_name='', proj_crs='', nc_varname='ALL', mapfile_offsetxy=[0,0])
     '''
     

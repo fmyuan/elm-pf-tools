@@ -346,7 +346,7 @@ def elm_metdata_write(options, metdata, time_dim=0):
                                             
                     # scaling data as initeger
                     if (varname=='PRECTmms'):
-                        data_ranges = [0.0, 0.08]
+                        data_ranges = [0.0, 0.08000]
                     elif (varname=='FSDS'):
                         data_ranges = [0.0, 2000.0]
                     elif (varname=='TBOT'):
@@ -366,6 +366,11 @@ def elm_metdata_write(options, metdata, time_dim=0):
                     
                     add_offset = (data_ranges[1]+data_ranges[0])/2.0
                     scale_factor = (data_ranges[1]-data_ranges[0])*1.1/(2**15)
+                    
+                    # need to adjust offset to make sure short integer zero is zero absolutely
+                    zeroint = np.int32(-add_offset/scale_factor)
+                    zerotiny = add_offset+scale_factor*float(zeroint)
+                    add_offset = add_offset - zerotiny 
                     
                     # TIP: when data written, the input valule is in unpacked and the python nc4 program will do packing
                     # the following line IS WRONG

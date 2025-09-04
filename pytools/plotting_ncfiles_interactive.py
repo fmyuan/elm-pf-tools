@@ -178,7 +178,8 @@ parser.add_option("--workdir", dest="workdir", default="./", \
 (options, args) = parser.parse_args()
 
 
-ncfile = options.workdir+'./CRUJRAV2.3.c2023_daymet4_FSDS_1980-2021_z03.nc'
+#ncfile = options.workdir+'./CRUJRAV2.3.c2023_daymet4_FSDS_1980-2021_z03.nc'
+ncfile = options.workdir+'./all_hourly.nc'
 
 
 #--------------------------------------------------------------------------------------
@@ -188,7 +189,7 @@ try:
 except:
     print('nc file NOT exists: ' + ncfile)
 
-vname = 'FSDS'
+vname = 'PRECTmms'
 gdata = f.variables[vname][...]  
 gdata2 = []
 datalabel = ''

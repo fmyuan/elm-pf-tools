@@ -1038,7 +1038,10 @@ def domain_remask(input_pathfile='./share/domains/domain.lnd.r05_RRSwISC6to18E3r
     subdomain['area'] = landarea
     subdomain['mask'] = landmask
     subdomain['frac'] = landfrac
-    subdomain['area_km2'] = landarea_km2
+    if 'landarea_km2' in locals():
+        subdomain['area_km2'] = landarea_km2
+    else:
+        subdomain['area_km2'] = np.empty_like(landarea)
 
     if out == 'mask':
         return boxed_idx, landmask, landfrac, subdomain['xc'], subdomain['yc'], subdomain['area_km2']
@@ -1231,11 +1234,15 @@ def ncdata_subsetbynpwhereindex(npwhere_indices, npwhere_mask=np.empty((0,0)), n
             for dname, dimension in src.dimensions.items():
                 len_dimension = len(dimension)
                 if dname in indx_dim:
-                    # indx_dim are multiple-D, needs to flatten, i.e. forcing to be length of 1 
-                    # because input-indices are for points rather than block
-                    dim_len=1
-                    if indx_dim.index(dname)==len(indx_dim)-1: 
-                        dim_len = sum(npwhere_mask>0)
+                    if indx_dim_flatten!='':
+                        # indx_dim are multiple-D, needs to flatten, i.e. forcing to be length of 1 
+                        if indx_dim.index(dname)==len(indx_dim)-1: 
+                            dim_len = sum(npwhere_mask>0)
+                        else: 
+                            continue
+                    else:
+                        dim_len = npwhere_indices[indx_dim.index(dname)].max() - \
+                                  npwhere_indices[indx_dim.index(dname)].min() + 1
                     
                     if (dim_len>0):
                         len_dimension = dim_len
@@ -1258,6 +1265,7 @@ def ncdata_subsetbynpwhereindex(npwhere_indices, npwhere_mask=np.empty((0,0)), n
             # all variables data
             for vname, variable in src.variables.items():
 
+                # create dim for dst.variable
                 if all(d in variable.dimensions for d in indx_dim):
                     vdim = np.array(variable.dimensions)
                     if indx_dim_flatten!='':
@@ -1278,38 +1286,50 @@ def ncdata_subsetbynpwhereindex(npwhere_indices, npwhere_mask=np.empty((0,0)), n
 
                 # dimensional slicing to extract data and fill into dst
                 if all(d in variable.dimensions for d in indx_dim):
-                    vd = variable.dimensions
-                    ix = range(vd.index(indx_dim[0]),
-                               vd.index(indx_dim[-1])+1) # position of dims in 'indx_dim'
+                    src_vdim = variable.dimensions
+                    ix = range(src_vdim.index(indx_dim[0]),
+                               src_vdim.index(indx_dim[-1])+1) # position of dims in 'indx_dim'
                     
                     # build a tuple of indices, with masked only in indx_dim
                     ix_mask = 0
                     # for unstructured surfdata, ix_mask will be fixed
-                    if 'nj' in vd and 'ni' in vd:
+                    if 'nj' in src_vdim and 'ni' in src_vdim:
                         if src.dimensions['nj'].size == 1: ix_mask = 1
                     elif len(npwhere_indices)>1:
-                        if 'gridcell' in vdim or 'n' in vdim: ix_mask = 1
-                    for i in range(len(vd)):
+                        if 'gridcell' in src_vdim or 'n' in src_vdim: ix_mask = 1
+                    for i in range(len(src_vdim)):
                         if i==0:
                             newidx = (slice(None),)
                             if (i in ix and i==ix_mask+ix[0]) or \
-                                (i in ix and 'gridcell' in vdim):
-                                newidx = (npwhere_indices[ix_mask][npwhere_mask>0],)
-                                # for structured 2D, ix_mask will move 1 dimension 
-                                if 'nj' in vd and 'ni' in vd:
-                                    if src.dimensions['nj'].size != 1: ix_mask = ix_mask+1
+                                (i in ix and 'gridcell' in src_vdim):
+                                if indx_dim_flatten!='':
+                                    newidx = (npwhere_indices[ix_mask][npwhere_mask>0],)
                                 else:
-                                    if not 'gridcell' in vd or not 'n' in vd:ix_mask=ix_mask+1                          
+                                    newidx = (npwhere_indices[ix_mask],)
+                                    
+                                # for structured 2D, ix_mask will move 1 dimension 
+                                if 'nj' in src_vdim and 'ni' in src_vdim:
+                                    if src.dimensions['nj'].size != 1: 
+                                        ix_mask = ix_mask+1
+                                else:
+                                    if not 'gridcell' in src_vdim or not 'n' in src_vdim:
+                                        ix_mask = ix_mask+1                          
           
                         else:
                             if (i in ix and i==ix_mask+ix[0]) or \
-                                (i in ix and 'gridcell' in vdim):
-                                newidx = newidx+(npwhere_indices[ix_mask][npwhere_mask>0],)
-                                # for structured 2D, ix_mask will move 1 dimension 
-                                if 'nj' in vd and 'ni' in vd:
-                                    if src.dimensions['nj'].size != 1: ix_mask = ix_mask+1
+                                (i in ix and 'gridcell' in src_vdim):
+                                if indx_dim_flatten!='':
+                                    newidx = newidx+(npwhere_indices[ix_mask][npwhere_mask>0],)
                                 else:
-                                    if not 'gridcell' in vd or not 'n' in vd:ix_mask=ix_mask+1
+                                    newidx = newidx+(npwhere_indices[ix_mask],)
+
+                                
+                                # for structured 2D, ix_mask will move 1 dimension 
+                                if 'nj' in src_vdim and 'ni' in src_vdim:
+                                    if src.dimensions['nj'].size != 1: 
+                                        ix_mask = ix_mask+1
+                                elif not 'gridcell' in src_vdim or not 'n' in src_vdim:
+                                        ix_mask = ix_mask+1
                             else:
                                 newidx = newidx+(slice(None),)
                                                
@@ -1382,15 +1402,17 @@ def main():
     
     
     #-------------
+    input_path= './topounit_surfdata_0.5x0.5_simyr1850_N45.c20220204'
     #input_path= '../../surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d'
-    input_path= '../TFSarcticpfts/res0025deg/surfdata_0.0025deg.1D_simyr1850_c240308_TOP_TFSarcticpfts'
+    #input_path= '../TFSarcticpfts/surfdata_original.1D_simyr1850_c240308_TOP_TFSarcticpfts'
     #input_path= './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623'
     #input_path= './domain.lnd.original.1D.c250624_TFSarcticpfts'
 
     
     # within input_path, directory and/or file header, dataset's domain file to extract subset of data
+    inputdomain_ncfile = '../../../share/domains/domain.clm/domain.lnd.r05_RRSwISC6to18E3r5_N45.240328.nc'
     #inputdomain_ncfile = '../../../domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
-    inputdomain_ncfile = '../TFSarcticpfts/res0025deg/domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc'
+    #inputdomain_ncfile = '../TFSarcticpfts/domain.lnd.original.1D.c250624_TFSarcticpfts.nc'
     #inputdomain_ncfile= './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623.nc'
     #inputdomain_ncfile = './domain.lnd.original.1D.c250624_TFSarcticpfts.nc'
     output_path = './'
@@ -1401,8 +1423,8 @@ def main():
     
     # -----------
     # user-provided  lat/lon of domain or sites or geotiff  to extract subset data for
-    #userdomain = './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623.nc'
-    userdomain = './domain.lnd.0.0025deg.1D.c250624_TFSmeq2-PF.nc'
+    userdomain = '../../../share/domains/domain.clm/domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
+    #userdomain = './domain.lnd.original.1D.c250624_TFSmeq2-ST.nc'
     #userdomain = './domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc'
     #userdomain = './domain.lnd.original.1D.c250624_TFSarcticpfts.nc'
     km2perpt = np.empty((0,0)) #[1.0] # user-grid area in km^2
@@ -1518,11 +1540,13 @@ def main():
     for ncfile in allncfiles_byrank:
         ncfile_dims = ['lsmlat', 'lsmlon']
         dims_new =''
-
+        
+        srfnc = nc.Dataset(ncfile)
         if 'surfdata' in ncfile or 'landuse' in ncfile:
             # the following is for surfdata, standard grid dims are ['lsmlat', 'lsmlon'], 
             # while unstructured dim name is 'gridcell'
-            ncfile_dims = ['gridcell']#['lsmlat', 'lsmlon']
+            if 'gridcell' in srfnc.dimensions.keys():
+                ncfile_dims = ['gridcell']#['lsmlat', 'lsmlon']
             dims_new= 'gridcell' # if want to reduce dimensions to single and given a new dimension
         
         elif 'domain' in ncfile: 
@@ -1539,6 +1563,7 @@ def main():
         else:
             print('NO subsetting done for surfdata, domain, or forcing data - file NOT exists')
             return
+        srfnc.close()
 
         ncdata_subsetbynpwhereindex(idx_box, npwhere_mask=newmask_box, npwhere_frac=newfrac_box, \
                                     newxc_box=newxc_box, newyc_box=newyc_box, newkm2_box=newkm2_box, \
