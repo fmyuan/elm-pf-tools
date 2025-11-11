@@ -1,10 +1,6 @@
 #!/usr/bin/env python
-import os
 import numpy as np
 from netCDF4 import Dataset
-from cmath import nan, inf
-from pyproj import Transformer
-from pyproj import CRS
 
 from pytools.commons_utils.gridlocator import grids_nearest_or_within
 
@@ -264,7 +260,7 @@ def arctic_landunit_natpft_fromcavm_jkumaretal(nonveged_domainnc='./domain.lnd.p
     
 
 # 
-def mksrfdata_updatevals(fsurfnc_in, user_srf_data={}, user_srfnc_file='', user_srf_vars='', OriginPFTclass=True):
+def mksrfdata_updatepftvals(fsurfnc_in, user_srf_data={}, user_srfnc_file='', user_srf_vars='', OriginPFTclass=True):
     
     print('#--------------------------------------------------#')
     print("Replacing values in surface data by merging user-provided dataset")
@@ -410,7 +406,7 @@ def mksrfdata_updatevals(fsurfnc_in, user_srf_data={}, user_srfnc_file='', user_
 #
 
 #--------------------------------------------------------------------
-def main():
+def test():
 
     """
     args = sys.argv[1:]
@@ -430,13 +426,13 @@ def main():
         vegedonly_pftdata=vegedonly_pftdata_toolik, \
         outdata=True)
     
-    mksrfdata_updatevals('./surfdata_0.0025deg.1D_simyr1850_c240308_TOP_TFSarcticpfts-default.nc', \
+    mksrfdata_updatepftvals('./surfdata_0.0025deg.1D_simyr1850_c240308_TOP_TFSarcticpfts-default.nc', \
                         #user_srf_data=surf_fromcavm_jk, user_srf_vars='', OriginPFTclass=True)
                         user_srf_data=surf_fromcavm_jk, user_srf_vars='', OriginPFTclass=False)
     
       
 if __name__ == '__main__':
-    main()
+    test()
 
 
 

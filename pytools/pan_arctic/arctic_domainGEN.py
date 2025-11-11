@@ -1040,11 +1040,12 @@ def domain_remask(input_pathfile='./share/domains/domain.lnd.r05_RRSwISC6to18E3r
     subdomain['frac'] = landfrac
     if 'landarea_km2' in locals():
         subdomain['area_km2'] = landarea_km2
-    else:
-        subdomain['area_km2'] = np.empty_like(landarea)
 
     if out == 'mask':
-        return boxed_idx, landmask, landfrac, subdomain['xc'], subdomain['yc'], subdomain['area_km2']
+        if 'landarea_km2' in locals():
+            return boxed_idx, landmask, landfrac, subdomain['xc'], subdomain['yc'], subdomain['area_km2']
+        else:
+            return boxed_idx, landmask, landfrac, subdomain['xc'], subdomain['yc']
         # trunked domain with updated land mask and land fraction only
         
     elif out == 'subdomain':
@@ -1387,8 +1388,8 @@ def main():
     #domain_unstructured_fromraster_cavm()
     #domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623.nc', \
     #                               rasterfile='./raster_cavm_v1_01d.tif')
-    #domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc', \
-    #                               rasterfile='./deciduous_shrub_toolik_extent_0025deg.tif')
+    #domain_unstructured_fromraster_cavm(output_pathfile='./domain.lnd.0.001deg.1D.c250918_TVCwatershed.nc', \
+    #                               rasterfile='./TVC_LC08_Landcover_30m_27072019.0.001deg.tif')
     #return # for only do domain.nc writing
     
     # create an unstructured domain from grids of daymet tile
@@ -1402,40 +1403,48 @@ def main():
     
     
     #-------------
-    input_path= './topounit_surfdata_0.5x0.5_simyr1850_N45.c20220204'
-    #input_path= '../../surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d'
+    #input_path= './topounit_surfdata_0.5x0.5_simyr1850_N45.c20220204'
+    #input_path= '../topounit_surfdata_0.5x0.5_simyr1850.c20220204_cavm1d'
+    #input_path = './domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d'
+    #input_path = '../../../../share/domains/domain.clm/domain.lnd.r05_RRSwISC6to18E3r5_N45.240328.nc'
+
+
+    #input_path= '../../surfdata_0.5x0.5_simyr1850_N45_c240308_TOP'
+    input_path= '../../topounit_surfdata_0.5x0.5_simyr1850_N45.c20220204'
+    #input_path= '../../landuse.timeseries_0.5x0.5_hist_simyr1850-2015_N45_c240308'
     #input_path= '../TFSarcticpfts/surfdata_original.1D_simyr1850_c240308_TOP_TFSarcticpfts'
     #input_path= './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623'
     #input_path= './domain.lnd.original.1D.c250624_TFSarcticpfts'
 
     
     # within input_path, directory and/or file header, dataset's domain file to extract subset of data
-    inputdomain_ncfile = '../../../share/domains/domain.clm/domain.lnd.r05_RRSwISC6to18E3r5_N45.240328.nc'
-    #inputdomain_ncfile = '../../../domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
+    inputdomain_ncfile = '../../../../../share/domains/domain.clm/domain.lnd.r05_RRSwISC6to18E3r5_N45.240328.nc'
+    #inputdomain_ncfile = './domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
     #inputdomain_ncfile = '../TFSarcticpfts/domain.lnd.original.1D.c250624_TFSarcticpfts.nc'
     #inputdomain_ncfile= './domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623.nc'
     #inputdomain_ncfile = './domain.lnd.original.1D.c250624_TFSarcticpfts.nc'
     output_path = './'
     SUBDOMAIN_ONLY = False
-    SUBDOMAIN_REORDER = False  # True: masked file re-ordered by userdomain below, otherwise only mask and trunck
-    KEEP_DUPLICATED = False
+    SUBDOMAIN_REORDER = True  # True: masked file re-ordered by userdomain below, otherwise only mask and trunck
+    KEEP_DUPLICATED = True
     NC2D = False
     
     # -----------
     # user-provided  lat/lon of domain or sites or geotiff  to extract subset data for
-    userdomain = '../../../share/domains/domain.clm/domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
+    #userdomain = '../../../share/domains/domain.clm/domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
+    #userdomain = '../../../share/domains/domain.clm/TILE14236/TFSmeq2/domain.lnd.r05_RRSwISC6to18E3r5.240328_meq2.nc'
     #userdomain = './domain.lnd.original.1D.c250624_TFSmeq2-ST.nc'
-    #userdomain = './domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc'
+    #userdomain = './domain.lnd.r05_RRSwISC6to18E3r5.240328_TVC-Grid.nc'
     #userdomain = './domain.lnd.original.1D.c250624_TFSarcticpfts.nc'
     km2perpt = np.empty((0,0)) #[1.0] # user-grid area in km^2
 
-    '''
+    
     #userdomain = '/Users/f9y/mygithub/E3SM_REPOS/pt-e3sm-inputdata/atm/datm7/'+ \
     #             'atm_forcing.datm7.GSWP3.0.5d.v2.c180716_NGEE-Grid/'+ \
     #             'atm_forcing.datm7.GSWP3.0.5d.v2.c180716_ngee-TFS-Grid/info_TFS_meq2_sites.txt'
     
-    userdomain='./info_TFS_meq2_MAT.txt'
-    #userdomain = './zone_mappings.txt'
+    #userdomain='./info_TFS_meq2_MAT.txt'
+    userdomain='./info_13sites-Grids.txt'
     #km2perpt = 1.0 # user-grid area in km^2
     # e.g. 
     #  [f9y@baseline-login3 atm_forcing.datm7.GSWP3.0.5d.v2.c180716_ngee4]$ cat info_TFS_meq2_sites.txt 
@@ -1444,9 +1453,9 @@ def main():
     #    MEQ2-DAT 68.607947 -149.401596
     #    MEQ2-PF 68.579315 -149.442279
     #    MEQ2-ST 68.606131 -149.505794
-    '''
+    ''''''
     lats=[]; lons=[]
-    '''
+    ''''''
     with open(userdomain) as f:
         dtxt=f.readlines()
         
@@ -1460,7 +1469,7 @@ def main():
     lats = np.asarray(lats)
     ''''''
     
-    ''''''
+    '''
     userdomain = './TFSarcticpfts/graminoid_toolik_extent.tif'
     xx, yy, crs_res, crs_wkt, alldata = geotiff2nc(userdomain, outdata=True)
     allyc, allxc = np.meshgrid(yy,xx,indexing='ij')
@@ -1504,6 +1513,8 @@ def main():
             latlons=np.asarray([lats, lons]), reorder_src=SUBDOMAIN_REORDER, \
             keep_duplicated=KEEP_DUPLICATED, \
             out2D=NC2D, out_type='mask')
+        
+        newkm2_box = np.empty((0,0))
 
     # run with srun
 
@@ -1586,10 +1597,10 @@ if __name__ == '__main__':
     #    MEQ2-DAT 68.607947 -149.401596
     #    MEQ2-PF 68.579315 -149.442279
     #    MEQ2-ST 68.606131 -149.505794
-    domain_subsetbyBox(srcdomain_pathfile='../TFSarcticpfts/res0025deg/domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc', \
+    domain_subsetbyBox(srcdomain_pathfile='../../../../../share/domains/domain.clm/domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc', \
                           #latlons=np.asarray([[68.6511,68.6711], [-149.3805,-149.3605]]), \
                           #latlons=np.asarray([[68.597947,68.617947], [-149.411596,-149.391596]]), \
                           #latlons=np.asarray([[68.569315,68.589315], [-149.452279,-149.432279]]), \
-                          latlons=np.asarray([[68.596131,68.616131], [-149.515794,-149.495794]]), \
+                          latlons=np.asarray([[68.50,69.0], [-134.0,-133.0]]), \
                           out2D=False, out_type='domain_ncwrite')
     '''

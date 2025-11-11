@@ -150,14 +150,14 @@ def TimeGridedVarPlotting(plt, nrow, ncol, isubplot, t, t_unit, sdata, varname, 
         gridtext.append(("GRID "+str(0)))
         plt.plot(t, sdata, 'o-')
         
-    gridtext = ["ELM Simulation","NIC-IMS Snow-coverage Derived"]
+    gridtext = ['']
     plt.legend((gridtext), loc=2, fontsize=12)
     
 
     plt.xlabel(t_unit, fontsize=12, fontweight='bold')    
     plt.ylabel(varname, fontsize=12, fontweight='bold')
-    plt.xlim(2003,2022)
-    plt.ylim(100,165)
+    #plt.xlim(2003,2022)
+    #plt.ylim(100,165)
     
     ax_user=plt.gca()
     ax_user.tick_params(axis = 'both', which = 'major', labelsize = 16)
@@ -178,8 +178,11 @@ parser.add_option("--workdir", dest="workdir", default="./", \
 (options, args) = parser.parse_args()
 
 
+vname = 'FLDS'
+
 #ncfile = options.workdir+'./CRUJRAV2.3.c2023_daymet4_FSDS_1980-2021_z03.nc'
-ncfile = options.workdir+'./all_hourly.nc'
+ncfile = options.workdir+'./Daymet_ERA5.1km_'+vname+'_1980-2023_z01.nc'
+#ncfile = options.workdir+'./ERA5_TBOT_1950-2024_z01.nc'
 
 
 #--------------------------------------------------------------------------------------
@@ -189,8 +192,8 @@ try:
 except:
     print('nc file NOT exists: ' + ncfile)
 
-vname = 'PRECTmms'
-gdata = f.variables[vname][...]  
+gdata = f.variables[vname][...]
+gdata = gdata.T  # if need to transpose or swap grid/time axis
 gdata2 = []
 datalabel = ''
 
@@ -219,7 +222,7 @@ if(ONE2ONE_PLOTTING):
 
 # time-series plotting
 T_PLOTTING = True
-isub = 2
+if ONE2ONE_PLOTTING: isub = 2
 if (T_PLOTTING):
     TimeGridedVarPlotting(plt, nrow, ncol, isub, t, tunit, gdata, \
                     vname, 'Mean of all-grids')

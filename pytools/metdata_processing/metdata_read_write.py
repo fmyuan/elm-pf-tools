@@ -24,6 +24,8 @@ parser.add_option("--user_metdir", dest="user_metdir", default="./", \
                   help="user-defined met directory (default = ./, i.e., under current directory)")
 parser.add_option("--user_metfile", dest="user_metfile", default="", \
                   help="user-defined met file(s) under user_metdir (default = '', i.e., None)")
+parser.add_option("--user_mettype", dest="user_mettype", default="", \
+                  help="user-defined met type under user_metdir (default = '', i.e., None)")
 parser.add_option("--user_metvars", dest="user_metvars", default="", \
                   help="user-defined met file(s) var names by exact order of 'LONGXY,LATIXY,time,TBOT,PRECTmms,QBOT,FSDS,FLDS,PSRF,WIND' ")
 parser.add_option("--estFLDS", dest="estFLDS", default=False, \
@@ -41,17 +43,17 @@ parser.add_option("--ncout_mettype", dest="nc_write_mettype", default="", \
 
 if('site' in options.nc_write_mettype.lower() \
    or 'cplbypass_site' in options.nc_write_mettype.lower()): 
-    vnames=['LONGXY','LATIXY','time', \
-            'TBOT', 'PRECTmms', 'RH', 'FSDS', 'FLDS', 'PSRF', 'WIND']
+    vnames=['LONGXY','LATIXY','EDGEE','EDGEW','EDGEN','EDGES','time', \
+            'ZBOT','TBOT', 'PRECTmms', 'RH', 'FSDS', 'FLDS', 'PSRF', 'WIND']
 else:
     vnames=['LONGXY','LATIXY','time', \
-            'TBOT', 'PRECTmms', 'QBOT', 'FSDS', 'FLDS', 'PSRF', 'WIND']
+            'ZBOT','TBOT', 'PRECTmms', 'QBOT', 'FSDS', 'FLDS', 'PSRF', 'WIND']
 
 
 #--------------------------------------------------------------------------------------
 # read-in metdata from totally user-defined data
 
-if (options.user_metfile!=''):
+if (options.user_metfile!='' or options.user_metdir!=''):
 
     metfile = options.user_metdir+'/'+options.user_metfile
     if (options.user_metvars ==''):
@@ -70,14 +72,15 @@ if (options.user_metfile!=''):
         vardatas['prect_unit'] = 'mm/s'
         
         # may need to manually set lat/lon
-        vardatas['LONGXY'] = [-70.899]
-        vardatas['LATIXY'] = [42.757]
+        vardatas['LONGXY'] = [-133.50]
+        vardatas['LATIXY'] = [68.75]
         #vardatas['LONGXY'] = [196.4215]
         #vardatas['LATIXY'] = [65.44037]
     elif ('nc' in metfile):
         odata_header,odata = \
             elm_metdata_read.singleReadNcfile(metfile, \
                                              uservars=user_metvars)
+            
         vardatas['time']= odata['time'] # odata is in days since 1901-01-01 00:00:00
                         
         vardatas['tunit'] = 'days since 1901-01-01 00:00'
@@ -91,6 +94,41 @@ if (options.user_metfile!=''):
                 sys.exit(iv + ' or its equivalent NOT in: '+metfile)
             if iv!='time': vardatas[iv] = odata[iv]
     
+    elif 'cpl_bypass' in options.user_metdir:
+        cplbypass_dir = options.user_metdir
+        if options.user_mettype=="":
+            cplbypass_mettype = 'Site'
+        else:
+            cplbypass_mettype = options.user_mettype
+        
+        if (options.user_metvars ==''):
+            user_metvars = ['ZBOT','TBOT', 'PRECTmms', 'QBOT', 'FSDS', 'FLDS', 'PSRF', 'WIND']
+        if (cplbypass_mettype =='Site'):
+            user_metvars = ['ZBOT','TBOT', 'PRECTmms', 'RH', 'FSDS', 'FLDS', 'PSRF', 'WIND']
+        
+        ixy,iz, varsdims, odata = \
+        elm_metdata_read.clm_metdata_cplbypass_read( \
+                        cplbypass_dir, cplbypass_mettype, user_metvars)
+
+        vardatas['time']= odata['DTIME'] # odata is in days since 1901-01-01 00:00:00
+                        
+        vardatas['tunit'] = odata['tunit']
+        vardatas['prect_unit'] = 'mm/s'
+
+        vardatas['LONGXY']= odata['LONGXY']
+        vardatas['LATIXY']= odata['LATIXY']
+        if 'EDGEE' in odata.keys():
+            vardatas['EDGEE'] = odata['EDGEE']
+            vardatas['EDGEW'] = odata['EDGEW']
+            vardatas['EDGEN'] = odata['EDGEN']
+            vardatas['EDGES'] = odata['EDGES']
+
+
+        for iv in vnames:
+            if iv not in odata.keys() and iv!='time':
+                sys.exit(iv + ' or its equivalent NOT in: '+metfile)
+            if iv!='time': vardatas[iv] = odata[iv]
+        
     #     
     # removal of leap-year doy366
     if ('DOY' in odata.keys()):

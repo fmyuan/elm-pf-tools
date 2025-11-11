@@ -26,9 +26,14 @@ def elm_metdata_write(options, metdata, time_dim=0):
     metdata[*]
             LATIXY
             LONGXY
+            EDGEE
+            EDGEW
+            EDGEN
+            EDGES
             YEAR
             DOY
             time
+            ZBOT
             FSDS
             FLDS
             PRECTmms
@@ -46,7 +51,7 @@ def elm_metdata_write(options, metdata, time_dim=0):
 
     if('site' in options.nc_write_mettype.lower() \
        or 'cplbypass_site' in options.nc_write_mettype.lower()): 
-        vnames=['LONGXY','LATIXY','time', \
+        vnames=['LONGXY','LATIXY','EDGEE','EDGEW','EDGEN','EDGES','time', \
                 'ZBOT','TBOT', 'PRECTmms', 'RH', 'FSDS', 'FLDS', 'PSRF', 'WIND']
     else:
         vnames=['LONGXY','LATIXY','time', \
@@ -54,6 +59,33 @@ def elm_metdata_write(options, metdata, time_dim=0):
     
     
     #--------------------------------------------------------------------------------------
+    mdoy=[0,31,59,90,120,151,181,212,243,273,304,334,365] #monthly starting DOY of no-leap year
+    if ('YEAR' not in metdata.keys() or 'DOY' not in metdata.keys()) \
+        and ('time' in metdata.keys() and 'tunit' in metdata.keys()):
+        # in this case both 'time' and 'tunit' must be included
+        t = metdata['time']
+        tunit = metdata['tunit']
+        if ('days since' in tunit):
+            t0_str=str(tunit).strip('days since')
+            if(t0_str.endswith(' 00') and not t0_str.endswith(' 00:00:00')):
+                t0_str=t0_str+':00:00'
+            datetime0=datetime.strptime(t0_str,'%Y-%m-%d %X')
+            y0=datetime0.year
+            #m0=datetime0.month
+            #d0=datetime0.day-1.0
+            #t0=(y0-1)*365+mdoy[m0-1]+d0+datetime0.second/86400.0    # in days from 0000-00-00 00:00:00
+            metdata['YEAR'] = np.floor(t/365.0)+y0
+            metdata['DOY'] = t - np.floor(t/365.0)*365.0            # DOY is starting from 0, and hh:mm:ss as fraction of day
+
+    TIME0_AS_CURRENT = False   
+    # mathematically, 24:00:00 is same as 00:00:00,
+    # but on different DOY and may cause issue when dividing dataset into individual months and even years. 
+    if 'DOY' in metdata.keys():
+        if metdata['DOY'][0] == int(metdata['DOY'][0]):
+            # when DOY is exactly an integer, i.e. time is 00:00:00, assuming doy0 or time0 is included as current day
+            TIME0_AS_CURRENT = True
+        
+        
     #--------------------------------------------------------------------------------------
     # save in ELM forcing data format
     if (options.nc_create or options.nc_write):
@@ -78,10 +110,9 @@ def elm_metdata_write(options, metdata, time_dim=0):
         ncfilein_cplbypass = ''; ncfilein_cplbypass_prv = ''
         metidir = options.met_idir
         if metidir=='': metidir='./'
-        mdoy=[0,31,59,90,120,151,181,212,243,273,304,334,365]#monthly starting DOY
         
         for varname in vnames:
-            if varname in ['LONGXY','LATIXY','time']: continue  #skip and always write if new output nc file
+            if varname in ['LONGXY','LATIXY','EDGEE','EDGEW','EDGEN','EDGES','time']: continue  #skip and always write if new output nc file
             if varname not in metdata.keys(): continue
 
             
@@ -111,7 +142,7 @@ def elm_metdata_write(options, metdata, time_dim=0):
                 ncfilein_cplbypass = ncfilein_cplbypass[0]
                 
             elif 'site' in met_type.lower():
-                fdir = metidir+'/CLM1PT_data_template'
+                fdir = './CLM1PT_data_template'
                 # So 'metdir' must be full path, e.g. ../atm/datm7/CLM1PT_data/1x1pt_US-Brw
                 ncfilein_cplbypass=fdir+'/all_hourly.nc'
                 
@@ -175,8 +206,13 @@ def elm_metdata_write(options, metdata, time_dim=0):
                         for imon in range(1,13):
                             ncfileout = str(iyr)+'-'+str(imon).zfill(2)+'.nc'
                             
-                            tidx = np.argwhere((metdata['YEAR']==iyr) & 
+                            if not TIME0_AS_CURRENT:
+                                tidx = np.argwhere((metdata['YEAR']==iyr) & 
                                                (metdata['DOY']>mdoy[imon-1]) & (metdata['DOY']<=mdoy[imon])) #DOY starting from 1
+                            else:
+                                tidx = np.argwhere((metdata['YEAR']==iyr) & 
+                                               (metdata['DOY']>=mdoy[imon-1]) & (metdata['DOY']<mdoy[imon]))  #DOY starting from 1
+                                
                             t_jointed=metdata['time'][tidx]
                             sdata = metdata[varname][tidx]
                             sdata = sdata[..., np.newaxis] # in 'Site' forcing-data format, dimension in (time, lat, lon), while 'sdata' is in (time, gridcell) 
@@ -223,6 +259,10 @@ def elm_metdata_write(options, metdata, time_dim=0):
                                 error=putvar(ncfileout, [tname], t, varatts=tname+'::units='+tunit)
                                 error=putvar(ncfileout,['LONGXY'], metdata['LONGXY'])
                                 error=putvar(ncfileout,['LATIXY'], metdata['LATIXY'])
+                                error=putvar(ncfileout,['EDGEE'], metdata['EDGEE'])
+                                error=putvar(ncfileout,['EDGEW'], metdata['EDGEW'])
+                                error=putvar(ncfileout,['EDGEN'], metdata['EDGEN'])
+                                error=putvar(ncfileout,['EDGES'], metdata['EDGES'])
                                 
                                 
                             #end of if create nc file

@@ -149,7 +149,7 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
         src_yv = src_grids['yv']    
     
     # 
-    # 1.5 times of grid-size edges 
+    # 0.5 times of grid-size edges 
     # to allows one-grid edges of range of latitude/longitude boxes
     x_edge = 0.0; y_edge = 0.0
     if (1 in src_xc.shape):
@@ -158,22 +158,29 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
             'yv' in src_grids.keys():
             xdiff = np.squeeze(abs(src_xv[...,0]-src_xv[...,1]))
             xdiff = xdiff[np.where(xdiff<=180.0)] # removal those cross line 0/360 or -180/180
-            x_edge = np.nanmean(xdiff)*1.5
-            y_edge = np.nanmean(np.squeeze(abs(src_yv[...,0]-src_yv[...,2])))*1.5        
+            x_edge = np.nanmean(xdiff)*0.5
+            y_edge = np.nanmean(np.squeeze(abs(src_yv[...,0]-src_yv[...,2])))*0.5        
     else:
         xdiff = np.diff(src_xc[0,:])
         xdiff = xdiff[np.where(abs(xdiff)<=180.0)] # removal those cross line 0/360 or -180/180
-        x_edge = abs(np.nanmean(xdiff)*1.5)
-        y_edge = abs(np.nanmean(np.diff(src_yc[:,0]))*1.5)
+        x_edge = abs(np.nanmean(xdiff)*0.5)
+        y_edge = abs(np.nanmean(np.diff(src_yc[:,0]))*0.5)
     # [mask_xc,mask_yc] box
     x_min = min(mask_xc)-x_edge
-    if unlimit_xmin: x_min = min(src_xc[0,:])-x_edge # but may not want to do trunking
     x_max = max(mask_xc)+x_edge
-    if unlimit_xmax: x_max = max(src_xc[0,:])+x_edge
     y_min = min(mask_yc)-y_edge
-    if unlimit_ymin: y_min = min(src_yc[:,0])-y_edge
     y_max = max(mask_yc)+y_edge
-    if unlimit_ymax: y_max = max(src_yc[:,0])+y_edge
+    # but may not want to do trunking
+    if (1 in src_xc.shape):
+        if unlimit_xmin: x_min = min(src_xc[0,:])
+        if unlimit_ymin: y_min = min(src_yc[0,:])
+        if unlimit_xmax: x_max = max(src_xc[0,:])
+        if unlimit_ymax: y_max = max(src_yc[0,:])
+    else:
+        if unlimit_xmin: x_min = min(src_xc[0,:])
+        if unlimit_ymin: y_min = min(src_yc[:,0])
+        if unlimit_xmax: x_max = max(src_xc[0,:])
+        if unlimit_ymax: y_max = max(src_yc[:,0])
     
     boxed_idx = \
         np.where((src_yc>=y_min) &  \

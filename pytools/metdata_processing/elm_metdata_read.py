@@ -396,7 +396,7 @@ def clm_metdata_cplbypass_read(filedir,met_type, varnames, lons=[-999], lats=[-9
         print('paired "lons=,lats=" must be in same length', len(lons), len(lats) )
         sys.exit(-1)
     #
-    if('GSWP3' in met_type or 'ESM' in met_type or 'CRUJRA' in met_type):
+    if('GSWP3' in met_type or 'ESM' in met_type or 'CRUJRA' in met_type or 'ERA5' in met_type):
         # zone_mapping.txt
         f_zoning = filedir+'/zone_mappings.txt'
         all_lons=[]
@@ -474,9 +474,9 @@ def clm_metdata_cplbypass_read(filedir,met_type, varnames, lons=[-999], lats=[-9
     for iv in range(len(varnames)):
         #if('GSWP3' in met_type or 'Site' in met_type or 'ESM' in met_type):
             v = varnames[iv]
-            varlist=['FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
+            varlist=['ZBOT','FLDS','FSDS','PRECTmms','PSRF','QBOT','TBOT','WIND']
             if 'Site' in met_type:
-                varlist=['FLDS','FSDS','PRECTmms','PSRF','RH','TBOT','WIND']
+                varlist=['ZBOT','FLDS','FSDS','PRECTmms','PSRF','RH','TBOT','WIND']
             if v not in varlist:
                 print('NOT found variable:  '+ v)
                 sys.exit()
@@ -496,6 +496,13 @@ def clm_metdata_cplbypass_read(filedir,met_type, varnames, lons=[-999], lats=[-9
                         file=filedir+'/ESM_daymet4_'+v+'_1980-1980_z'+str(int(iz)).zfill(2)+'.nc'
                     else:
                         file=filedir+'/ESM_'+v+'_2021-2099_z'+str(int(iz)).zfill(2)+'.nc'
+
+                elif ('ERA5' in met_type):
+                    if('daymet' in met_type.lower()):
+                        file=filedir+'/Daymet_ERA5.1km_'+v+'_1980-2023_z'+str(int(iz)).zfill(2)+'.nc'
+                    else:
+                        file=filedir+'/ERA5_'+v+'_1950-2024_z'+str(int(iz)).zfill(2)+'.nc'
+                
                 
                 elif('CRUJRA' in met_type):
                     file=filedir+'/CRUJRAV2.3.c2023.0.5x0.5_'+v+'_1901-2021_z'+str(int(iz)).zfill(2)+'.nc'
@@ -508,12 +515,21 @@ def clm_metdata_cplbypass_read(filedir,met_type, varnames, lons=[-999], lats=[-9
     
                 if ('LATIXY' not in met.keys() and iv==0):
                     met['LATIXY']=np.asarray(fnc.variables['LATIXY'])[zline[iz]-1]
+                    if ('Site' in met_type):
+                        # need to read EDGEs
+                        met['EDGEN'] = np.asarray(fnc.variables['EDGEN'])
+                        met['EDGES'] = np.asarray(fnc.variables['EDGES'])
                 elif(iv==0):
                     met['LATIXY']=np.hstack((met['LATIXY'],np.asarray(fnc.variables['LATIXY'])[zline[iz]-1]))
+
                 if ('LONGXY' not in met.keys() and iv==0):
                     met['LONGXY']=np.asarray(fnc.variables['LONGXY'])[zline[iz]-1]
+                    if ('Site' in met_type):
+                        # need to read EDGEs
+                        met['EDGEE'] = np.asarray(fnc.variables['EDGEE'])
+                        met['EDGEW'] = np.asarray(fnc.variables['EDGEW'])
                 elif(iv==0):
-                    met['LONGXY']=np.hstack((met['LONGXY'],np.asarray(fnc.variables['LONGXY'])[zline[iz]-1]))
+                    met['LONGXY']=np.hstack((met['LONGXY'],np.asarray(fnc.variables['LONGXY'])[zline[iz]-1]))                    
             
                 if ('DTIME' not in met.keys()):
                     t=np.asarray(fnc.variables['DTIME'])
@@ -554,10 +570,11 @@ def clm_metdata_cplbypass_read(filedir,met_type, varnames, lons=[-999], lats=[-9
     
                 if(v in fnc.variables.keys()): 
                     d = fnc.variables[v][zline[iz]-1,:]
-                    if (d.dtype==float or d.dtype==np.float32  or d.dtype==np.float64): 
-                        d[np.where(d.mask)] = np.nan
-                    else:
-                        d[np.where(d.mask)] = -9999
+                    if (d.mask):
+                        if (d.dtype==float or d.dtype==np.float32  or d.dtype==np.float64): 
+                            d[np.where(d.mask)] = np.nan
+                        else:
+                            d[np.where(d.mask)] = -9999
                     d=np.asarray(d)
                     if(v not in met.keys()):
                         met[v] = d # 'scale_factor' and 'add_offset' have already used when reading nc data.
