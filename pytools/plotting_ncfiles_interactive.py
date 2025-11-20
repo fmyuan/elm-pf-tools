@@ -1,17 +1,9 @@
 #!/usr/bin/env python
 
-import sys
-import os
-import glob
-import re
-import math
 from optparse import OptionParser
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
 from netCDF4 import Dataset
-import mpl_toolkits
-from mpl_toolkits.mplot3d import Axes3D
 
 # ---------------------------------------------------------------
 # Plot grid surface data all grids
@@ -178,11 +170,12 @@ parser.add_option("--workdir", dest="workdir", default="./", \
 (options, args) = parser.parse_args()
 
 
-vname = 'FLDS'
+vname = 'PRECTmms'
 
 #ncfile = options.workdir+'./CRUJRAV2.3.c2023_daymet4_FSDS_1980-2021_z03.nc'
-ncfile = options.workdir+'./Daymet_ERA5.1km_'+vname+'_1980-2023_z01.nc'
+#ncfile = options.workdir+'./Daymet_ERA5.1km_'+vname+'_1980-2023_z01.nc'
 #ncfile = options.workdir+'./ERA5_TBOT_1950-2024_z01.nc'
+ncfile = options.workdir+'./ATS-subdaily_'+vname+'_z01.nc'
 
 
 #--------------------------------------------------------------------------------------
@@ -192,7 +185,7 @@ try:
 except:
     print('nc file NOT exists: ' + ncfile)
 
-gdata = f.variables[vname][...]
+gdata = f.variables[vname][0,...]
 gdata = gdata.T  # if need to transpose or swap grid/time axis
 gdata2 = []
 datalabel = ''

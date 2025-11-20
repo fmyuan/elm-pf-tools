@@ -1,11 +1,14 @@
 #!/usr/bin/env python
+import os
 import numpy as np
 from netCDF4 import Dataset
 from pyproj import Transformer
 from pyproj import CRS
 
 import geopandas as gpd
-import rioxarray
+import rasterio
+import gdal
+
 
 try:
     from mpi4py import MPI
@@ -13,7 +16,15 @@ try:
 except ImportError:
     HAS_MPI4PY=False
 
-#---
+
+#--- # downloading a boxed SoilGrid data (v2.0.1)
+# 
+# Poggio, L., de Sousa, L. M., Batjes, N. H., Heuvelink, G. B. M., Kempen, B., Ribeiro, E., and Rossiter, D.: 
+# SoilGrids 2.0: producing soil information for the globe with quantified spatial uncertainty, 
+# SOIL, 7, 217–240, https://doi.org/10.5194/soil-7-217-2021, 2021.
+
+# Following a notebook script found at: https://git.wur.nl/isric/soilgrids/soilgrids.notebooks.git
+#
 def download_geotiff_soilgrids(Range_XLONG=[], Range_YLATI=[], outputpath='./original', \
                                 soilvars=['ocd','bdod','sand','silt','clay'], \
                                 value='mean'):
@@ -22,7 +33,8 @@ def download_geotiff_soilgrids(Range_XLONG=[], Range_YLATI=[], outputpath='./ori
     
     # SoilGrids map's CRS
     crs_wcs = "http://www.opengis.net/def/crs/EPSG/0/152160"
-    crs_proj = CRS.from_proj4('+proj=igh +lat_0=0 +lon_0=0 +datum=WGS84 +units=m +no_defs')
+    # from above def, its equvalent is:
+    crs_proj4 = CRS.from_proj4('+proj=igh +lat_0=0 +lon_0=0 +datum=WGS84 +units=m +no_defs')
     # standard horizons
     horizons = ['0-5cm','5-15cm','15-30cm','30-60cm','60-100cm','100-200cm']   
     # mean
@@ -35,7 +47,7 @@ def download_geotiff_soilgrids(Range_XLONG=[], Range_YLATI=[], outputpath='./ori
     # EPSG: 4326
     # Proj4: +proj=longlat +datum=WGS84 +no_defs
     lonlatProj = CRS.from_epsg(4326) # in lon/lat coordinates
-    Tlonlat2xy = Transformer.from_proj(lonlatProj, crs_proj, always_xy=True)
+    Tlonlat2xy = Transformer.from_proj(lonlatProj, crs_proj4, always_xy=True)
 
     X1,Y1 = Tlonlat2xy.transform(Range_XLONG[0],Range_YLATI[0]) #left-bottom
     X2,Y2 = Tlonlat2xy.transform(Range_XLONG[0],Range_YLATI[1]) #right-bottom
@@ -46,7 +58,10 @@ def download_geotiff_soilgrids(Range_XLONG=[], Range_YLATI=[], outputpath='./ori
     subsets = [('X', min(X1,X2,X3,X4), max(X1,X2,X3,X4)), ('Y', min(Y1,Y2,Y3,Y4), max(Y1,Y2,Y3,Y4))]
     
     # organic carbon density: ocd, hg/m3 (aka 0.1kg/m3)
-        
+    
+    # obtain a full geotiff profile for tiff writing
+    template_profile = rasterio.open(outputpath+'/soilgrids_template_withcrs.tif').profile.copy()
+    
     for ivar in soilvars:
         soilgrids_wcs = WebCoverageService('http://maps.isric.org/mapserv?map=/map/'+ivar+'.map',
                          version='2.0.1')
@@ -62,10 +77,29 @@ def download_geotiff_soilgrids(Range_XLONG=[], Range_YLATI=[], outputpath='./ori
                                    subsets=subsets, 
                                    resx=250, resy=250, 
                                    format=svar_horizon.supportedFormats[0])  
-
-            svar_horizon_value_tif = outputpath+'/'+svar_horizon_id+'.tif'
-            with open(svar_horizon_value_tif, 'wb') as file:
+            with open('./tmp.tif', 'wb') as file:
+                # better to save to xarray, but didn't figure out how to from response.read() -> xarray
                 file.write(response.read())
+            
+            # ideally, the above file in tiff should have 'CRS' info but not
+            # so we need to redo
+            rdata=rasterio.open('./tmp.tif')
+            newprofile = rdata.profile.copy()
+            newprofile['crs'] = template_profile['crs']            
+            svar_horizon_value_tif = outputpath+'/'+svar_horizon_id+'.tif'
+            with rasterio.open(
+                svar_horizon_value_tif,
+                'w',
+                **newprofile,
+            ) as file:
+                file.write(rdata.read(1), 1)
+            
+            if os.path.exists('./tmp.tif'): os.remove('./tmp.tif')
+            
+        # layer loop
+    #variable loop
+    
+            
     
 
 #---
@@ -81,6 +115,7 @@ def surfnc_soils_from_geotiffsoilgrids(surfnc_soils_template='./', \
     soilvars=['ocd','bdod','sand','silt','clay']
 
     # the following assumes all data are with same extent and resolution    
+
     
     alldata = {}
     for ivar in range(len(soilvars)):
@@ -89,10 +124,13 @@ def surfnc_soils_from_geotiffsoilgrids(surfnc_soils_template='./', \
         for iz in range(len(horizons)):
             zstr = horizons[iz]
             file  = inputpath+'/'+var+'_'+zstr+'_mean.tif'
+
+            rxdata = rasterio.open(file)
+
             
             fileout = outputpath+'/'+var+'_'+zstr+'_mean-latlon.tif'
             
-            '''
+            
             # the following didn't work, always got zeros for band data. If this works, will save a lot effort.
             gdal.Warp(fileout, file, \
                             format='GTiff', srcSRS='ESRI:54052', \
@@ -100,8 +138,7 @@ def surfnc_soils_from_geotiffsoilgrids(surfnc_soils_template='./', \
                             xRes=0.0025, yRes=0.0025, \
                             outputBounds=[-150.0,68.5,-149.0,69.0], \
                             dstSRS='EPSG:4326')
-            '''           
-            rxdata = rioxarray.open_rasterio(file)
+                       
             # geometry only needs to do once
             if ivar==0 and iz==0:
             
@@ -273,11 +310,7 @@ def test():
     
     # do necessay data processing for soils, and produce a ready-to-merge soil-only surfdata nc file
     surfnc_soils_from_geotiffsoilgrids(surfnc_soils_template='../../../surfdata_0.5x0.5_simyr1850_c240308_TOP.nc')
-    
-    #mksrfdata_updatesoils('./surfdata_0.0025deg.1D_simyr1850_c240308_TOP_TFSarcticpfts-default.nc', \
-    #                    #user_srf_data=surf_fromcavm_jk, user_srf_vars='', OriginPFTclass=True)
-    #                    user_srf_data=surf_fromcavm_jk, user_srf_vars='', OriginPFTclass=False)
-    
+        
       
 if __name__ == '__main__':
     test()
