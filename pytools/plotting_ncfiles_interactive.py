@@ -170,7 +170,7 @@ parser.add_option("--workdir", dest="workdir", default="./", \
 (options, args) = parser.parse_args()
 
 
-vname = 'PRECTmms'
+vname = 'FLDS'
 
 #ncfile = options.workdir+'./CRUJRAV2.3.c2023_daymet4_FSDS_1980-2021_z03.nc'
 #ncfile = options.workdir+'./Daymet_ERA5.1km_'+vname+'_1980-2023_z01.nc'
