@@ -1,24 +1,22 @@
 #!/usr/bin/env python
-import os, math
 import numpy as np
 
 #----- 
+def dist_to_arclength(chord_length, R=6367000.0):
+    """
+    https://en.wikipedia.org/wiki/Great-circle_distance
+    Convert Euclidean chord length to great circle arc length
+    """
+    central_angle = 2*np.arcsin(chord_length/(2.0*R)) 
+    arclength = R*central_angle
+    return arclength
+
 #----- nearest_neibour for earth surface using kdtree
 def nearest_pts_latlon_kdtree(allpoints, excl_points=0, latname='Latitude', lonname='Longitude'):
     import scipy.spatial as spatial
-    from math import radians, cos, sin, asin, sqrt
     #"Based on https://stackoverflow.com/q/43020919/190597"
     R = 6367000.0 # meters
-    def dist_to_arclength(chord_length):
-        """
-        https://en.wikipedia.org/wiki/Great-circle_distance
-        Convert Euclidean chord length to great circle arc length
-        """
-        central_angle = 2*np.arcsin(chord_length/(2.0*R)) 
-        arclength = R*central_angle
-        return arclength
-
-    def kpt_default(data, latname='Latitude', lonname='Longitude',kpt=2):
+    def kpt_default(data, latname=latname, lonname=lonname,kpt=2):
         phi = np.deg2rad(data[latname])
         theta = np.deg2rad(data[lonname])
         data['x'] = R * np.cos(phi) * np.cos(theta)
@@ -37,7 +35,7 @@ def nearest_pts_latlon_kdtree(allpoints, excl_points=0, latname='Latitude', lonn
     Kpts = 2
     idx_void = None
     while not AllNearest:
-        dist,idx=kpt_default(allpoints, latname='Latitude', lonname='Longitude',kpt=Kpts)
+        dist,idx=kpt_default(allpoints, latname=latname, lonname=lonname,kpt=Kpts)
 
         if excl_points<=1:
             AllNearest=True
@@ -387,4 +385,190 @@ def grids_nearest_or_within(src_grids={}, masked_pts={}, remask_approach = 'near
     subdomain['remasked'] = grid_remasked_arr
         
     return subdomain, boxed_idx, srcpolys_unique_pid, srcpolys_contained_maskid
+#
+
+# ------
+#
+
+def elmgrids_gpd(src_grids, LONGXY360=False):
+    '''
+    ELM domain grids to geopanda's geometry (Point or polygons) 
+    '''
+
+    import geopandas as geopd
+    from shapely.geometry import Point
+    from shapely.geometry import MultiLineString, LineString
+    from shapely.ops import polygonize
+        
+    # 
+    # Open the source domain or surface nc file, 
+    # directly from an ELM domain nc file
+    # TIP: in this case, both domain and land surface grid-systems are EXACTLY matching with each other
+    if 'xc' in src_grids.keys(): 
+        src_yc = src_grids['yc']
+        src_xc = src_grids['xc']
+    elif 'LONGXY' in src_grids.keys():
+        src_yc = src_grids['LONGXY']
+        src_xc = src_grids['LATIXY']
+    if LONGXY360: 
+        src_xc[src_xc<0.0]=360+src_xc[src_xc<0.0]
+    else:
+        src_xc[src_xc>180.0]=-360+src_xc[src_xc>180.0]
+
+    if 'xv' in src_grids.keys() \
+        and 'yv' in src_grids.keys():
+        src_xv = src_grids['xv']
+        if LONGXY360: 
+            src_xv[src_xv<0.0]=360+src_xv[src_xv<0.0]
+        else:
+            src_xv[src_xv>180.0]=-360+src_xv[src_xv>180.0]
+            # need to re-adj for cross -180/180 line's grid            
+        src_yv = src_grids['yv']    
+
+        nv = src_xv.shape[-1]
+    
+        boxed_yv1 = src_yv[...,0]; boxed_xv1 = src_xv[...,0]
+        boxed_yv2 = src_yv[...,1]; boxed_xv2 = src_xv[...,1]
+        boxed_yv3 = src_yv[...,2]; boxed_xv3 = src_xv[...,2]
+        if nv==4: boxed_yv4 = src_yv[...,3]; boxed_xv4 = src_xv[...,3]        
+    # 
+       
+    # source domain's xc,yc, i.e. centroids of xv/yv which formed polygons above, 
+    # to be marked in X_axis, Y_axis, and re-indexing
+    # (TIPs: this is import for visualizing data in map or transfrom btw 1D and 2D)
+    X_axis = src_xc
+    Y_axis = src_yc     
+    [X_axis, i] = np.unique(X_axis, return_inverse=True)
+    [Y_axis, j] = np.unique(Y_axis, return_inverse=True)
+    YY, XX = np.meshgrid(Y_axis, X_axis, indexing='ij')
+    xid = np.indices(XX.shape)[1]
+    yid = np.indices(XX.shape)[0]
+    xyid = np.indices(XX.flatten().shape)[0]
+    xyid = np.reshape(xyid, xid.shape)
+
+    if (1 not in src_xc.shape):
+        # structured grids yc[nj,ni], xc[nj,ni]
+        
+        # new indices of paired [yc,xc] in grid-mesh YY/XX
+        # note: here don't override xc,yc, so xc=X_axis[i], yc=Y_axis[j]
+        yxc = np.asarray([(y,x) for y,x in zip(src_yc, src_xc)])
+        yxc_remeshed = np.asarray([(y,x) for y,x in zip(YY.flatten(),XX.flatten())])
+        set1 = dict((k,i) for i,k in enumerate({tuple(row) for row in yxc}))
+        set2 = dict((k,i) for i,k in enumerate({tuple(row) for row in yxc_remeshed}))
+        inter_set = set(set2).intersection(set(set1))
+        ji = np.asarray([set2[yx] for yx in inter_set])
+        ji = np.unravel_index(ji, xyid.shape)
+        sub_xid = xid[ji]     
+        sub_yid = yid[ji]    
+        sub_xyid= xyid[ji]  
+
+    else:
+        # unstructured  yc[1,ni], xc[1,ni]
+        # new indices of paired [yc,xc] in grid-mesh YY/XX
+        sub_xid = xid[j,i]     
+        sub_yid = yid[j,i] 
+        sub_xyid= xyid[j,i]        
+    #
+   
+    if 'xv' in src_grids.keys() \
+        and 'yv' in src_grids.keys():
+        
+        # box trunked source domain's xv,yv to form polygons
+        vpts1=[(x,y) for x,y in zip(boxed_xv1,boxed_yv1)]
+        vpts2=[(x,y) for x,y in zip(boxed_xv2,boxed_yv2)]
+        vpts3=[(x,y) for x,y in zip(boxed_xv3,boxed_yv3)]
+        lines = [(vpts1[i], vpts2[i], vpts3[i], vpts1[i]) for i in range(len(vpts1))]
+        
+        if nv==4: 
+            vpts4=[(x,y) for x,y in zip(boxed_xv4,boxed_yv4)]
+            lines = [(vpts1[i], vpts2[i], vpts3[i], vpts4[i], vpts1[i]) for i in range(len(vpts1))]
+        
+        lines_str = [LineString(lines[i]) for i in range(len(lines))]
+        polygons = list(polygonize(MultiLineString(lines_str)))
+        poly_id = np.asarray(range(polygons.size))
+        
+        grids = geopd.GeoDataFrame({'pid':poly_id,"xyid":sub_xyid,"xid":sub_xid,"yid":sub_yid,
+                                    "xc": src_xc.ravel(), "yc": src_yc.ravel()},
+                                    geometry=polygons,
+                                    crs="EPSG:4326")
+
+        return grids
+            
+    else:
+
+        # re-meshed XX/YY centroids, i.e. don't know vertices
+        
+        grid_centroids = geopd.GeoDataFrame({'pid':poly_id,"xyid":sub_xyid,"xid":sub_xid,"yid":sub_yid, \
+                                             "xc":src_xc.ravel(), "yc":src_yc.ravel()})
+        grid_centroids['geometry'] = grid_centroids.apply(lambda p: Point(p.xc, p.yc), axis=1)
+        
+        return grid_centroids
+
+    #
+
+# ------
+#
+
+def npmeshgrids_gpd(np_meshgrids, xy_or_ji=0, mesh_crs="EPSG:4326", POLYGON=False):
+    '''
+    ELM domain grids to geopanda's geometry (Point or polygons) 
+    '''
+
+    import geopandas as geopd
+    from shapely.geometry import MultiLineString, LineString
+    from shapely.ops import polygonize
+
+    #
+    if xy_or_ji == 0: # Cartesian
+        xx = np_meshgrids[0]
+        yy = np_meshgrids[1]
+    else: # matrix
+        yy = np_meshgrids[0]
+        xx = np_meshgrids[1]
+    #
+    if POLYGON:
+        # mesh are nodes of grids
+        xc = (xx[:-1,:-1]+xx[1:,1:])/2.0
+        yc = (yy[:-1,:-1]+yy[1:,1:])/2.0
+        xyid = np.squeeze(np.indices((xc.ravel().shape)))
+        xid = np.indices(xc.shape)[0].ravel()
+        yid = np.indices(yc.shape)[1].ravel()
+        
+        boxed_yv1 = yy[:-1,:-1].ravel(); boxed_xv1 = xx[:-1,:-1].ravel()
+        boxed_yv2 = yy[:-1,1:].ravel();  boxed_xv2 = xx[:-1,1:].ravel()
+        boxed_yv3 = yy[1:,1:].ravel();   boxed_xv3 = xx[1:,1:].ravel()
+        boxed_yv4 = yy[1:,:-1].ravel();  boxed_xv4 = xx[1:,:-1].ravel()
+        
+        vpts1=[(x,y) for x,y in zip(boxed_xv1,boxed_yv1)]
+        vpts2=[(x,y) for x,y in zip(boxed_xv2,boxed_yv2)]
+        vpts3=[(x,y) for x,y in zip(boxed_xv3,boxed_yv3)]
+        vpts4=[(x,y) for x,y in zip(boxed_xv4,boxed_yv4)]
+        lines = [(vpts1[i], vpts2[i], vpts3[i], vpts4[i], vpts1[i]) for i in range(len(vpts1))]
+        
+        lines_str = [LineString(lines[i]) for i in range(len(lines))]
+        polygons = list(polygonize(MultiLineString(lines_str)))
+        
+        grids = geopd.GeoDataFrame({"xyid":xyid,"xid":xid,"yid":yid},
+                                   geometry= polygons,
+                                   crs = mesh_crs)
+    
+        return grids
+    
+    else:
+        # mesh are centroids of grids
+        
+        # the following are good for 2D and 1D conversion
+        xyid = np.squeeze(np.indices((xx.ravel().shape)))
+        xid = np.indices(xx.shape)[0].ravel()
+        yid = np.indices(yy.shape)[1].ravel()
+        
+        grid_centroids = geopd.GeoDataFrame({"xyid":xyid,"xid":xid,"yid":yid},
+                                             geometry = geopd.points_from_xy(xx.ravel(), yy.ravel()),
+                                             crs=mesh_crs)
+                
+        return grid_centroids
+
+            
+    #
+                
 #

@@ -16,6 +16,17 @@ def set_e3sm_input(path):
 def elm_arcradians2_from_km2(area_km2, R_meters=6.37122e6):
     one_over_re2 = 1.0e6/R_meters/R_meters
     return area_km2 * one_over_re2
+
+def elm_km2_from_arcradians2(area_rad2, R_meters=6.37122e6, latitude=None):
+    re2 = 1.0e-6*R_meters*R_meters
+    if latitude is None:
+        # area_rad2 are measured over great circle of earth    
+        return area_rad2*re2
+    else:
+        # area_rad2 are measured by latitude distance x longitude distance
+        # need to adjust by latitude
+        return area_rad2*re2*np.cos(np.deg2rad(latitude))
+         
 #
 
 #--- #------ ELM soil column layer thickness and depths (nodes and interfaces) ------#
@@ -618,7 +629,7 @@ def domain_remask(input_pathfile='./share/domains/domain.lnd.r05_RRSwISC6to18E3r
         if 'area_km2' in subdomain.keys():
             return boxed_idx, landmask, landfrac, subdomain['xc'], subdomain['yc'], subdomain['area_km2']
         else:
-            return boxed_idx, landmask, landfrac, subdomain['xc'], subdomain['yc']
+            return boxed_idx, landmask, landfrac, subdomain['xc'], subdomain['yc'], np.empty((0,0))
             # trunked domain with updated land mask and land fraction only
         
     elif out == 'subdomain':
@@ -953,16 +964,17 @@ def refine_surfdata(outdir='./', \
                     lnd_domain_file='domain.lnd.r05_RRSwISC6to18E3r5.240328.nc', \
                     fsurdat='surfdata_0.5x0.5_simyr1850_c240308_TOP.nc', \
                     flanduse_timeseries='landuse.timeseries_0.5x0.5_hist_simyr1850-2015_c240308.nc', \
-                    userdomain='./domain.lnd.2687x1pt.coweeta.nc', \
+                    userdomain='', user_latlons=None, \
                     domain_included=False):
-
+    '''
     import glob
     try:
         from mpi4py import MPI
         HAS_MPI4PY=True
     except ImportError:
         HAS_MPI4PY=False
-
+    '''
+    
     #inputs of standard E3SM datasets
     e3sm_inputdata_root = DIN_LOC_ROOT
     if not e3sm_inputdata_root.endswith('/'):
@@ -995,6 +1007,10 @@ def refine_surfdata(outdir='./', \
     km2perpt = []
     lats=[]
     lons=[]
+    if not user_latlons is None:
+        lats = user_latlons['yc']
+        lons = user_latlons['xc']
+       
     #userdomain = './zone_mappings.txt' # OR, using a lat/lon paired pt list.
     #km2perpt = 1.0 # user-grid area in km^2
     # e.g.
@@ -1004,7 +1020,7 @@ def refine_surfdata(outdir='./', \
     #    MEQ2-DAT 68.607947 -149.401596 1.0
     #    MEQ2-PF 68.579315 -149.442279 1.0
     #    MEQ2-ST 68.606131 -149.505794 1.0
-    if userdomain.endswith('.txt'):
+    if userdomain.endswith('.txt') and user_latlons is None:
         with open(userdomain) as f:
             dtxt=f.readlines()
             dtxt=filter(lambda x: x.strip(), dtxt)
@@ -1092,12 +1108,14 @@ def refine_surfdata(outdir='./', \
 #--------------------------------------------------------------------------------------------------------
 #---
 #
+    '''
 if __name__ == '__main__':
     #set_e3sm_input('/Users/f9y/project_ww_elmats/test-e3sm-inputdata')
     set_e3sm_input('/Users/f9y/e3sm_inputdata')
-    #allout = refine_surfdata(userdomain='./domain.lnd.2683x1pt_US-coweeta.nc')
+    '''
 
-    # extrac a pt of domain/surfdata
+    '''
+    # extrac pt or list of pts of domain/surfdata
     allout = refine_surfdata( \
                     lnd_domain_file='domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc', \
                     fsurdat='surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d.nc', \
@@ -1106,8 +1124,13 @@ if __name__ == '__main__':
                     domain_included=True)
 
     print(allout)
-#    zisois, dzsois, zsoil =  soilcolumn(more_vertlayers=True, nlevgrnd=15)   
-
+    
+    #allout = refine_surfdata(userdomain='./domain.lnd.2683x1pt_US-coweeta.nc')
+    #zisois, dzsois, zsoil =  soilcolumn(more_vertlayers=True, nlevgrnd=15)   
+    
+    '''
+    
+    
     
     '''
     # truncate a boxed domain file only 
@@ -1117,10 +1140,19 @@ if __name__ == '__main__':
     #    MEQ2-DAT 68.607947 -149.401596
     #    MEQ2-PF 68.579315 -149.442279
     #    MEQ2-ST 68.606131 -149.505794
-    domain_subsetbybox(srcdomain_pathfile='../../../../../share/domains/domain.clm/domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc', \
-                          #latlons=np.asarray([[68.6511,68.6711], [-149.3805,-149.3605]]), \
-                          #latlons=np.asarray([[68.597947,68.617947], [-149.411596,-149.391596]]), \
-                          #latlons=np.asarray([[68.569315,68.589315], [-149.452279,-149.432279]]), \
-                          latlons=np.asarray([[68.50,69.0], [-134.0,-133.0]]), \
+    
+    domain_subsetbybox(srcdomain_pathfile=DIN_LOC_ROOT+'/share/domains/domain.clm/domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc', \
+                          latlons=np.asarray([[68.50,69.5], [-151.5,-150.0]]), \
                           out2D=False, out_type='domain_ncwrite')
+
+    os.system('mv domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc_remasked domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d_remasked.nc')
+    allout = refine_surfdata( \
+                    #lnd_domain_file=DIN_LOC_ROOT+'/share/domains/domain.clm/domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc', \
+                    #fsurdat=DIN_LOC_ROOT+'/lnd/clm2/surfdata_map/surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d.nc', \
+                    #flanduse_timeseries=DIN_LOC_ROOT+'/lnd/clm2/surfdata_map/landuse.timeseries_0.5x0.5_hist_simyr1850-2015_c240308_cavm1d.nc', \
+                    lnd_domain_file=DIN_LOC_ROOT+'/share/domains/domain.clm/domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d_topo.nc', \
+                    fsurdat=DIN_LOC_ROOT+'/lnd/clm2/surfdata_map/topounit_surfdata_0.5x0.5_simyr1850.c20220204_cavm1d.nc', \
+                    flanduse_timeseries=None, \
+                    userdomain='domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d_remasked.nc', \
+                    domain_included=False)
     '''

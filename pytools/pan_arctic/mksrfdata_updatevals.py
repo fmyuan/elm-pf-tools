@@ -2,21 +2,14 @@
 import os
 import numpy as np
 from netCDF4 import Dataset
-            
+
 #--- # 
 # 
-def updatevals(fsurfnc_in, fsurfnc_out=None, \
-                         user_srf_data={}, user_srfnc_file=None, user_srf_vars=None, OriginPFTclass=True):
-    
-    print('#--------------------------------------------------#')
-    print("Replacing values in surface data by merging user-provided dataset")
-    if fsurfnc_out==None: fsurfnc_out ='./'+fsurfnc_in.split('/')[-1]+'-merged'
-    
-    
-    #---------------------------------------------------------------------------------------
-    #
-    # Arctic PFT classes in B. Sulman et al (2021) paper: 12 arctic PFTs + 2 additional tree PFTs   
-    user_pfts={'pftname':[
+
+#---------------------------------------------------------------------------------------
+#
+# Arctic PFT classes in B. Sulman et al (2021) paper: 12 arctic PFTs + 2 additional tree PFTs   
+user_pfts={'pftname':[
                     "non_vegetated",
                     "arctic_lichen",
                     "arctic_bryophyte",
@@ -32,11 +25,79 @@ def updatevals(fsurfnc_in, fsurfnc_out=None, \
                     "arctic_dry_graminoid",
                     "arctic_wet_graminoid"
                     ],
-                'pftnum': [0,1,2,3,4,5,6,7,8,9,10,11,12,13]
-               };
+            'pftnum': [0,1,2,3,4,5,6,7,8,9,10,11,12,13]
+            };
     
+# default PFT classes by ELM
+natural_pfts={'pftname':[
+                    "not_vegetated                           ",
+                    "needleleaf_evergreen_temperate_tree     ",
+                    "needleleaf_evergreen_boreal_tree        ",
+                    "needleleaf_deciduous_boreal_tree        ",
+                    "broadleaf_evergreen_tropical_tree       ",
+                    "broadleaf_evergreen_temperate_tree      ",
+                    "broadleaf_deciduous_tropical_tree       ",
+                    "broadleaf_deciduous_temperate_tree      ",
+                    "broadleaf_deciduous_boreal_tree         ",
+                    "broadleaf_evergreen_shrub               ",
+                    "broadleaf_deciduous_temperate_shrub     ",
+                    "broadleaf_deciduous_boreal_shrub        ",
+                    "c3_arctic_grass                         ",
+                    "c3_non-arctic_grass                     ",
+                    "c4_grass                                ",
+                    "c3_crop                                 ",  # called generic crop, will drop off if create_crop_landunit = .true.
+                    "c3_irrigated                            "   # called generic crop, will drop off if create_crop_landunit = .true.
+                    ],
+             'pftnum': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+            };
     
-    if OriginPFTclass:
+cfts       ={'pftname':[
+                    "c3_crop                                 ",  # called generic crop
+                    "c3_irrigated                            "   # called generic crop
+                    "corn                                    ",
+                    "irrigated_corn                          ",
+                    "spring_temperate_cereal                 ",
+                    "irrigated_spring_temperate_cereal       ",
+                    "winter_temperate_cereal                 ",
+                    "irrigated_winter_temperate_cereal       ",
+                    "soybean                                 ",
+                    "irrigated_soybean                       "
+                    ],
+             'pftnum': [15,16,17,18,19,20,21,22,23,24]
+            };
+
+
+fates_pfts ={'pftname':[
+                    "broadleaf_evergreen_tropical_tree",
+                    "needleleaf_evergreen_extratrop_tree",
+                    "needleleaf_colddecid_extratrop_tree",
+                    "broadleaf_evergreen_extratrop_tree",
+                    "broadleaf_hydrodecid_tropical_tree",
+                    "broadleaf_colddecid_extratrop_tree",
+                    "broadleaf_evergreen_extratrop_shrub",
+                    "broadleaf_hydrodecid_extratrop_shrub",
+                    "broadleaf_colddecid_extratrop_shrub",
+                    "broadleaf_evergreen_arctic_shrub",
+                    "broadleaf_colddecid_arctic_shrub",
+                    "arctic_c3_grass",
+                    "cool_c3_grass",
+                    "c4_grass"
+                    ],
+             'pftnum': [0,1,2,3,4,5,6,7,8,9,10,11,12,13]
+            };
+    
+
+            
+#--- # 
+# 
+def updatevals(fsurfnc_in, fsurfnc_out=None, \
+                         user_srf_data={}, user_srfnc_file=None, user_srf_vars=None, OriginalPFTclass=True):
+    
+    print('#--------------------------------------------------#')
+    print("Replacing values in surface data by merging user-provided dataset")
+    if fsurfnc_out==None: fsurfnc_out ='./'+fsurfnc_in.split('/')[-1]+'-merged'
+        
+    if OriginalPFTclass:
         # lichen as not_vegetated (0), moss/forb/graminoids as c3 arctic grass (12),
         # evergreen shrub(9), deci. boreal_shrub(11),
         # evergreen boreal tree(2), deci boreal tree (3)
@@ -59,16 +120,21 @@ def updatevals(fsurfnc_in, fsurfnc_out=None, \
         if user_srf_vars==None:
             user_vname = user_srf_vars.keys()
         else:
-            user_vname = user_srf_vars.split(',')
+            try:
+                user_vname = user_srf_vars.split(',')
+            except:
+                user_vname = np.asarray(user_srf_vars)
         for v in user_vname:
             if v in f.variables.keys(): user_srf[v] =f.variables[v][...] 
     elif not len(user_srf_data)<=0:
         if len(np.squeeze(user_srf_data['LATIXY']).shape)==1:
             UNSTRUCTURED = True            
-        if user_srf_vars==None:
-            user_vname = user_srf_vars.keys()
-        else:
+        
+        try:
             user_vname = user_srf_vars.split(',')
+        except:
+            user_vname = np.asarray(user_srf_vars)
+        
         user_srf = user_srf_data
         
     #---------------------------------------------------------------------------------------
@@ -78,14 +144,17 @@ def updatevals(fsurfnc_in, fsurfnc_out=None, \
             
         # new surfdata dimensions
         for dname, dimension in src.dimensions.items():
-            if dname == 'natpft':
+            if dname == 'natpft' and not OriginalPFTclass:
                 len_dimension = len(natpft)            # dim length from new data
             elif dname == 'gridcell':
                 len_dimension = user_srf['LATIXY'].flatten().size
             elif dname in ['lsmlat','lat']:
                 len_dimension = user_srf['LATIXY'].shape[0]
             elif dname in ['lsmlon', 'lon']:
-                len_dimension = user_srf['LONGXY'].shape[1]                
+                len_dimension = user_srf['LONGXY'].shape[1]
+            elif dname == 'topounit' and 'topoPerGrid' in user_srf.keys():
+                max_topounit = np.max(user_srf['topoPerGrid'])
+                len_dimension = max(len(dimension),max_topounit)                               
             else:
                 len_dimension = len(dimension)
             dst.createDimension(dname, len_dimension if not dimension.isunlimited() else None)
@@ -114,14 +183,28 @@ def updatevals(fsurfnc_in, fsurfnc_out=None, \
 
             # dimension length may change, so need to 
             if vname in user_vname:
-                varvals = user_srf[vname][...]
+                try:
+                    varvals = user_srf[vname][...]        # ndarray
+                except:
+                    varvals = np.asarray(user_srf[vname]) # list
                 #
             else:
-                varvals = src[vname][...]
+                varvals = src_vals
                 #
             
-            #                                
-            dst[vname][...] = varvals
+            #
+            if varvals.shape != src_vals.shape:
+                print(vname, varvals.shape, src_vals.shape)
+            
+            if not 0 in dst[vname].shape:
+                # variable with all dims of fixed size                             
+                dst[vname][...] = varvals
+            else:
+                # variables with unlimited dim, assuming on dim-0 only
+                shp = np.asarray(dst[vname].shape)
+                idx_unlimited = np.where(shp==0)
+                size_unlimited = np.asarray(varvals.shape)[idx_unlimited][0]
+                dst[vname][0:size_unlimited,...] = varvals  # assuming that unlimited 'time' dim is the first
                     
         # end of variable-loop        
                 
