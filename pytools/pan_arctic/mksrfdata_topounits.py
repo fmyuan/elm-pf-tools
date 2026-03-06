@@ -23,6 +23,7 @@ Land surface properties assigned into ELevation percetile based topounits:
 
 import argparse
 import numpy as np
+import xarray
 import pandas as pd
 import math
 
@@ -33,7 +34,6 @@ import math
 def read_dem_aoi_xrio(dem_file, bbox_lb_ru, bbox_crs="EPSG:4326", bbox_outfile=''):
     from rasterio.warp import transform_bounds
     import rioxarray
-    import xarray
     from rvt import vis as rvtvis
     
     # rio reading dem
@@ -195,84 +195,184 @@ def recursive_group_bins_area_weighted(df, delta_elev):
 # ---------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------
-def grided_topounits(args, versbose=0):
-    
-    percentiles = np.asarray([10,20,30,40,50,60,70,80,85,90,95,100])
+def grided_topounits(args, 
+                     percentiles = np.asarray([10,20,30,40,50,60,70,80,85,90,95,100]), 
+                     versbose=0, 
+                     elm_domainnc=''):
+ 
+    try:
+        from mpi4py import MPI
+        mycomm = MPI.COMM_WORLD
+        myrank = mycomm.Get_rank()
+        mysize = mycomm.Get_size()
+    except ImportError:
+        mycomm = 0
+        myrank = 0
+        mysize = 1
+
+    #percentiles = np.asarray([10,20,30,40,50,60,70,80,85,90,95,100])
 
     # by rioxarray to read/truncate a geotiff of DEM
     xrio_topo = read_dem_aoi_xrio(args.dem, tuple(args.bbox), bbox_outfile=args.bbox_outfile)
-    elev = xrio_topo[0].data
-    xy = np.meshgrid(xrio_topo.x.data, xrio_topo.y.data)
-    lon = xy[0][elev!=xrio_topo.rio.nodata]
-    lat = xy[1][elev!=xrio_topo.rio.nodata]
-    elev = elev[elev!=xrio_topo.rio.nodata]
+    elv  = xrio_topo[0].data
+    slp  = xrio_topo[1].data
+    asp  = xrio_topo[2].data
+    svf  = xrio_topo[3].data
     
-    # grouping for user-defined resolution grids within bounding box.
-    # (default: one grid within bounding box)
-    ylat = np.asarray([np.min(lat), np.max(lat)])
-    xlon = np.asarray([np.min(lon), np.max(lon)])
-    if args.lonlat_res!=None:
-        dy = tuple(args.lonlat_res)[1]
-        ny = math.ceil((np.max(lat)-np.min(lat))/dy)  # math.ceil() will be over bbox, but this what we want.
-        ylat = np.min(lat)+np.asarray(range(ny+1))*dy
-
-        dx = tuple(args.lonlat_res)[0]
-        nx = math.ceil((np.max(lon)-np.min(lon))/dx)
-        xlon = np.min(lon)+np.asarray(range(nx+1))*dx
+    xy  = np.meshgrid(xrio_topo.x.data, xrio_topo.y.data)
+    lon = xy[0][elv!=xrio_topo.rio.nodata]
+    lat = xy[1][elv!=xrio_topo.rio.nodata]
+    elv = elv[elv!=xrio_topo.rio.nodata]
+    slp = slp[slp!=xrio_topo.rio.nodata]
+    asp = asp[svf!=xrio_topo.rio.nodata]
+    svf = svf[svf!=xrio_topo.rio.nodata]
     
     # contour-binning for whole bounding-box
-    contour_bins = percentile_bins(elev, lon, lat, percentiles)
-    
+    contour_bins = percentile_bins(elv, lon, lat, percentiles)
+
     # grided summarizing
     grid_stats = []
-    for iy in range(ylat.size-1):
-        for ix in range(xlon.size-1):
-            g_mask = ((lat>=ylat[iy]) & (lat<=ylat[iy+1])) & \
-                ((lon>=xlon[ix]) & (lon<=xlon[ix+1]))
-            if not any(g_mask) or sum(g_mask)/g_mask.size<0.001: continue #skip if none or less than 0.01%
+
+    #------------------------------------------------------------------------------------------------------        
+    def masked_topounits(g_mask):        
+        bins_masked = []
+        bins = {}
+        for p in contour_bins.keys():
+            contour_mask = contour_bins[p]['masked']
+            assert g_mask.shape == contour_mask.shape
+            m = (g_mask & contour_mask)
+            bins_masked.append(m)
+            bins[p]={'elev': elv[m],'lat': lat[m], 'lon':lon[m]}        
+        df = summarize_bins_area_weighted(bins)
+        df, groups, group_stats_df = recursive_group_bins_area_weighted(df, args.group_delta_elev)
             
-            bins_masked = []
-            bins = {}
-            for p in contour_bins.keys():
-                contour_mask = contour_bins[p]['masked']
-                assert g_mask.shape == contour_mask.shape
-                m = (g_mask & contour_mask)
-                bins_masked.append(m)
-                bins[p]={'elev': elev[m],
-                         'lat': lat[m], 'lon':lon[m]}
-                
-            df = summarize_bins_area_weighted(bins)
-            df, groups, group_stats_df = recursive_group_bins_area_weighted(df, args.group_delta_elev)
+        # need to merge bins' pixel mask after grouping
+        # NOTE: this logical mask is useful to retrieve pixel position of group contained. 
+        #       e.g. for each group, we could get its pixel location by lat[m]/lon[m] pairs
+        bins_masked = np.asarray(bins_masked)
+        group_pixels_masked = {}
+        group_bins_elv = {}
+        group_bins_asp = {}
+        group_bins_slp = {}
+        group_bins_svf = {}
+        for grpid, start, end in groups:
+            pmasked = np.any(bins_masked[start:end+1,:], axis=0)
+            if np.any(pmasked): 
+                group_pixels_masked[grpid] = pmasked
+                # in case bins may not by elevation or alone, redo elevation bins
+                group_bins_elv[grpid]={'elv': elv[pmasked], 'lat': lat[pmasked], 'lon':lon[pmasked]} 
+                group_bins_slp[grpid]={'slp': slp[pmasked], 'lat': lat[pmasked], 'lon':lon[pmasked]}
+                group_bins_asp[grpid]={'asp': asp[pmasked], 'lat': lat[pmasked], 'lon':lon[pmasked]}
+                group_bins_svf[grpid]={'svf': svf[pmasked], 'lat': lat[pmasked], 'lon':lon[pmasked]}
+        df_elv = summarize_bins_area_weighted(group_bins_elv, topo='elv')                    
+        df_slp = summarize_bins_area_weighted(group_bins_slp, topo='slp')                    
+        df_asp = summarize_bins_area_weighted(group_bins_asp, topo='asp')                    
+        df_svf = summarize_bins_area_weighted(group_bins_svf, topo='svf')                    
             
-            # need to merge bins' pixel mask after grouping
-            # NOTE: this logical mask is useful to retrieve pixel position of group contained. 
-            #       e.g. for each group, we could get its pixel location by lat[m]/lon[m] pairs
-            bins_masked = np.asarray(bins_masked)
-            group_pixels_masked = {}
-            for grpid, start, end in groups:
-                pmasked = np.any(bins_masked[start:end+1,:], axis=0)
-                if np.any(pmasked): group_pixels_masked[grpid] = pmasked
-            
-            #
-            grid_stats.append({
-                "Xindex": ix,
-                "Yindex": iy,
-                "Longitude_range": np.asarray([xlon[ix],xlon[ix+1]]),
-                "Latitude_range": np.asarray([ylat[iy],ylat[iy+1]]),
+        #
+        grid_stats.append({
                 "Topounit_pixels_mask": group_pixels_masked,
                 "Topounit_id:": group_stats_df['Group_ID'],
-                "Topounit_elevation": group_stats_df['Group_Mean'],
-                "Topounit_elevation_std": group_stats_df['Group_Std'],
-                "Topounit_area_fraction": group_stats_df['Group_Area_fraction']
+                "Topounit_area_fraction": group_stats_df['Group_Area_fraction'],
+                "Topounit_elevation": df_elv['Mean_elv'],
+                "Topounit_elevation_std": df_elv['Std_elv'],
+                "Topounit_slope": df_slp['Mean_slp'],
+                "Topounit_slope_std": df_slp['Std_slp'],
+                "Topounit_aspect": df_asp['Mean_asp'],
+                "Topounit_aspect_std": df_asp['Std_asp'],
+                "Topounit_skyview": df_svf['Mean_svf'],
+                "Topounit_skyview_std": df_svf['Std_svf'],
                 })
             
-            # Print group stats
-            print("Group-level statistics for grid: ", iy, ix, ylat[iy],'~~',ylat[iy+1], xlon[ix],'~~',xlon[ix+1])
-            if versbose>0:
-                print(group_stats_df,'\n')
+        # Print group stats
+        if versbose>0:
+            print(df_elv, '\n', df_slp, '\n', df_asp,'\n', df_svf,'\n')
+    #------------------------------------------------------------------------------------------------------        
     
+    # grid by grid topounit summarizing
+    if elm_domainnc=='':
+        # grouping for user-defined resolution grids within bounding box.
+        # (default: one grid within bounding box)
+        ylat = np.asarray([np.min(lat), np.max(lat)])
+        xlon = np.asarray([np.min(lon), np.max(lon)])
+        if args.lonlat_res!=None:
+            dy = tuple(args.lonlat_res)[1]
+            ny = math.ceil((np.max(lat)-np.min(lat))/dy)  # math.ceil() will be over bbox, but this what we want.
+            ylat = np.min(lat)+np.asarray(range(ny+1))*dy
+    
+            dx = tuple(args.lonlat_res)[0]
+            nx = math.ceil((np.max(lon)-np.min(lon))/dx)
+            xlon = np.min(lon)+np.asarray(range(nx+1))*dx
+            
+        #----
+        yidx, xidx = np.indices((ylat.size-1, xlon.size-1)) # those are mesh-lines (not centroid), so need to -1
+        yidx = yidx.flatten()
+        xidx = xidx.flatten()
+        yxidx= np.asarray(range(xidx.size))
+        
+        l_total = yxidx.size        
+        l_myrank = int(math.floor(l_total/mysize))
+        l_mod = int(math.fmod(l_total,mysize))
+        n_myrank = np.full([mysize], 1);n_myrank = np.cumsum(n_myrank)*l_myrank
+        x_myrank = np.full([mysize], 0);x_myrank[:l_mod] = 1
+        n_myrank = n_myrank + np.cumsum(x_myrank) - 1        # ending index, starting 0, for each rank
+        n0_myrank = np.hstack((0, n_myrank[0:mysize-1]+1))   # starting index, starting 0, for each rank
+
+        #----    
+        yxidx_myrank = yxidx[n0_myrank[myrank]:n_myrank[myrank]+1] # +1 for ending-index-inclusive
+        for iyx in yxidx_myrank:
+            iy = yidx[iyx]
+            ix = xidx[iyx]
+            
+            g_mask = ((lat>=ylat[iy]) & (lat<=ylat[iy+1])) & \
+                        ((lon>=xlon[ix]) & (lon<=xlon[ix+1]))
+            if not any(g_mask) or sum(g_mask)/g_mask.size<0.001: continue #skip if none or less than 0.01%
+
+            print("Group-level statistics for grid -- ", 
+                      iy, ':', ylat[iy],'~~',ylat[iy+1], 
+                      ix, ':', xlon[ix],'~~',xlon[ix+1])
+            masked_topounits(g_mask)
+                
+    else:
+        # from elm domain.nc
+        f = xarray.open_dataset(elm_domainnc, engine='netcdf4')
+        ylat = f['yv'].data
+        xlon = f['xv'].data
+
+        #----
+        yidx, xidx = np.indices((ylat[:,:,0].shape)) # those are grids
+        yidx = yidx.flatten()
+        xidx = xidx.flatten()
+        yxidx= np.asarray(range(xidx.size))
+        
+        l_total = yxidx.size        
+        l_myrank = int(math.floor(l_total/mysize))
+        l_mod = int(math.fmod(l_total,mysize))
+        n_myrank = np.full([mysize], 1);n_myrank = np.cumsum(n_myrank)*l_myrank
+        x_myrank = np.full([mysize], 0);x_myrank[:l_mod] = 1
+        n_myrank = n_myrank + np.cumsum(x_myrank) - 1        # ending index, starting 0, for each rank
+        n0_myrank = np.hstack((0, n_myrank[0:mysize-1]+1))   # starting index, starting 0, for each rank
+        #----    
+           
+        yxidx_myrank = yxidx[n0_myrank[myrank]:n_myrank[myrank]+1] # +1 for ending-index-inclusive
+        for iyx in yxidx_myrank:
+            iy = yidx[iyx]
+            ix = xidx[iyx]
+            
+            g_mask = ((lat>=np.min(ylat[iy,ix,])) & (lat<=np.max(ylat[iy,ix,]))) & \
+                     ((lon>=np.min(xlon[iy,ix,])) & (lon<=np.max(xlon[iy,ix,])))
+            if not any(g_mask) or sum(g_mask)/g_mask.size<0.001: continue #skip if none or less than 0.01%
+
+            print("Group-level statistics for grid: ", 
+                      iy, ':', np.min(ylat[iy,ix,]),'~~',np.max(ylat[iy,ix,]), 
+                      ix, ':', np.min(xlon[iy,ix,]),'~~',np.max(xlon[iy,ix,]))
+            masked_topounits(g_mask)
+        #
     #
+    
     return xrio_topo, grid_stats
+
+# ---------------------------------------------------------------------
 
 def test():
     parser = argparse.ArgumentParser()
@@ -289,7 +389,16 @@ def test():
     
     args = parser.parse_args()
     
-    xrio, gridded_stats = grided_topounits(args, versbose=0)
+    # STEP 1: topographic units from DEM geotiff 
+    xrio, gridded_stats = grided_topounits(args, versbose=1)
+
+    #xrio, gridded_stats = grided_topounits(args, percentiles=np.asarray([100]), versbose=1) # if don't do topounit dividing
+    
+    #xrio, gridded_stats = grided_topounits(args, versbose=0, 
+    #                    elm_domainnc='domain.lnd.r05_RRSwISC6to18E3r5.240328_AnakRBurns.nc')
+    
+    # write surfdata 
+    import pytools.pan_arctic.mksrfdata_updatevals as srfupdate
 
 
 if __name__ == "__main__":
