@@ -6,7 +6,7 @@ from netCDF4 import Dataset
 #--- # 
 # 
 def updatevals(fsurfnc_in, fsurfnc_out=None, \
-                         user_srf_data={}, user_srfnc_file=None, user_srf_vars=None, OriginPFTclass=True):
+                         user_srf_data={}, user_srfnc_file=None, user_srf_vars=None, OriginalPFTclass=True):
     
     print('#--------------------------------------------------#')
     print("Replacing values in surface data by merging user-provided dataset")
@@ -35,8 +35,66 @@ def updatevals(fsurfnc_in, fsurfnc_out=None, \
                 'pftnum': [0,1,2,3,4,5,6,7,8,9,10,11,12,13]
                };
     
+    # default PFT classes by ELM
+    natural_pfts={'pftname':[
+                    "not_vegetated                           ",
+                    "needleleaf_evergreen_temperate_tree     ",
+                    "needleleaf_evergreen_boreal_tree        ",
+                    "needleleaf_deciduous_boreal_tree        ",
+                    "broadleaf_evergreen_tropical_tree       ",
+                    "broadleaf_evergreen_temperate_tree      ",
+                    "broadleaf_deciduous_tropical_tree       ",
+                    "broadleaf_deciduous_temperate_tree      ",
+                    "broadleaf_deciduous_boreal_tree         ",
+                    "broadleaf_evergreen_shrub               ",
+                    "broadleaf_deciduous_temperate_shrub     ",
+                    "broadleaf_deciduous_boreal_shrub        ",
+                    "c3_arctic_grass                         ",
+                    "c3_non-arctic_grass                     ",
+                    "c4_grass                                ",
+                    "c3_crop                                 ",  # called generic crop, will drop off if create_crop_landunit = .true.
+                    "c3_irrigated                            "   # called generic crop, will drop off if create_crop_landunit = .true.
+                    ],
+                 'pftnum': [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+                };
     
-    if OriginPFTclass:
+    cfts       ={'pftname':[
+                    "c3_crop                                 ",  # called generic crop
+                    "c3_irrigated                            "   # called generic crop
+                    "corn                                    ",
+                    "irrigated_corn                          ",
+                    "spring_temperate_cereal                 ",
+                    "irrigated_spring_temperate_cereal       ",
+                    "winter_temperate_cereal                 ",
+                    "irrigated_winter_temperate_cereal       ",
+                    "soybean                                 ",
+                    "irrigated_soybean                       "
+                    ],
+                 'pftnum': [15,16,17,18,19,20,21,22,23,24]
+                };
+
+
+    fates_pfts ={'pftname':[
+                    "broadleaf_evergreen_tropical_tree",
+                    "needleleaf_evergreen_extratrop_tree",
+                    "needleleaf_colddecid_extratrop_tree",
+                    "broadleaf_evergreen_extratrop_tree",
+                    "broadleaf_hydrodecid_tropical_tree",
+                    "broadleaf_colddecid_extratrop_tree",
+                    "broadleaf_evergreen_extratrop_shrub",
+                    "broadleaf_hydrodecid_extratrop_shrub",
+                    "broadleaf_colddecid_extratrop_shrub",
+                    "broadleaf_evergreen_arctic_shrub",
+                    "broadleaf_colddecid_arctic_shrub",
+                    "arctic_c3_grass",
+                    "cool_c3_grass",
+                    "c4_grass"
+                    ],
+                 'pftnum': [0,1,2,3,4,5,6,7,8,9,10,11,12,13]
+                };
+    
+    
+    if OriginalPFTclass:
         # lichen as not_vegetated (0), moss/forb/graminoids as c3 arctic grass (12),
         # evergreen shrub(9), deci. boreal_shrub(11),
         # evergreen boreal tree(2), deci boreal tree (3)

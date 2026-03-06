@@ -1,12 +1,10 @@
 #!/usr/bin/env python
-import os, math
 import numpy as np
 
 #----- 
 #----- nearest_neibour for earth surface using kdtree
 def nearest_pts_latlon_kdtree(allpoints, excl_points=0, latname='Latitude', lonname='Longitude'):
     import scipy.spatial as spatial
-    from math import radians, cos, sin, asin, sqrt
     #"Based on https://stackoverflow.com/q/43020919/190597"
     R = 6367000.0 # meters
     def dist_to_arclength(chord_length):
@@ -18,7 +16,7 @@ def nearest_pts_latlon_kdtree(allpoints, excl_points=0, latname='Latitude', lonn
         arclength = R*central_angle
         return arclength
 
-    def kpt_default(data, latname='Latitude', lonname='Longitude',kpt=2):
+    def kpt_default(data, latname=latname, lonname=lonname,kpt=2):
         phi = np.deg2rad(data[latname])
         theta = np.deg2rad(data[lonname])
         data['x'] = R * np.cos(phi) * np.cos(theta)
@@ -37,7 +35,7 @@ def nearest_pts_latlon_kdtree(allpoints, excl_points=0, latname='Latitude', lonn
     Kpts = 2
     idx_void = None
     while not AllNearest:
-        dist,idx=kpt_default(allpoints, latname='Latitude', lonname='Longitude',kpt=Kpts)
+        dist,idx=kpt_default(allpoints, latname=latname, lonname=lonname,kpt=Kpts)
 
         if excl_points<=1:
             AllNearest=True
