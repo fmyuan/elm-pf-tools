@@ -366,6 +366,7 @@ def elm_metdata_write(options, metdata, time_dim=0):
                         if 'site' in met_type.lower():
                             error=putvar(ncfileout_cplbypass,['start_year'], np.floor(t[0]/365.0)+1)
                             error=putvar(ncfileout_cplbypass,['end_year'], np.floor(t[-1]/365.0)+1)
+                        
 
                         else:
                             # except for 'site', other type of cpl_bypass requires zone_mapping.txt file
@@ -380,6 +381,12 @@ def elm_metdata_write(options, metdata, time_dim=0):
                                 f.write('%5d ' % (ig+1) )
                                 f.write('\n')
                             f.close()
+
+                            # if want to save start and end year, as well
+                            if 'start_year' in dst.variables.keys() and 'YEAR' in metdata:
+                                error=putvar(ncfileout_cplbypass,['start_year'], metdata['YEAR'][0])
+                            if 'end_year' in dst.variables.keys() and 'YEAR' in metdata:
+                                error=putvar(ncfileout_cplbypass,['end_year'], metdata['YEAR'][-1])
 
 
                                             

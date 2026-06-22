@@ -3,17 +3,15 @@
 import os, sys
 import glob
 
-from matplotlib.dates import date2num, num2date
-from datetime import datetime, date
+from matplotlib.dates import date2num
+from datetime import date
 from copy import deepcopy
 
 import numpy as np
 import netCDF4
 
-from pyproj import Proj
 from pyproj import Transformer
 from pyproj import CRS
-from scipy.sparse.linalg._eigen.lobpcg.lobpcg import _get_indx
 
 
 #------------------------------------------------------------------------------------------------------------------
@@ -265,10 +263,10 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True, FillValue=None)
 
             
                 #global attributes
-                ncfile.data_source = ('Daymet Software Version 3.0,' +
+                ncfile.data_source = ('Daymet Software Version 4.0,' +
                                       'Please see http://daymet.ornl.gov/ for current Daymet data citation information')
                 if ('ELM' in ncfname):
-                    ncfile.data_source2 = ('E3SM v1.1 Land Model offline simulations for No60 and above, ' +
+                    ncfile.data_source2 = ('E3SM Land Model offline simulations for No60 and above, ' +
                                            'For NGEE-Arctic Project sponsored by DOE Office of Science')
 
                 if ('ELM' in ncfname):
@@ -386,11 +384,11 @@ def Write1GeoNc(vars, vardatas, ptxy=[], ncfname='', newnc=True, FillValue=None)
     # end of for varname in vars:
     if ncfname !='': ncfile.close()
     
-def Daymet_TileInfo(inputdir, years=[1980],tiles=[],ncf0='TPHWLHrly/clmforc.Daymet4.1km.TPQWL.1980-01.nc',\
+def Daymet_TileInfo(inputdir, years=[],tiles=[],ncf0='clmforc.Daymet4.1km.TBOT.20200101-00000.nc',\
                     ncfv='TBOT',ncfout='daymet_tiles.nc', FillValue=None):
     # INPUTS: inputdir    - daymet data directory, under which data structured as: yyyy/tileno/
-    #    (optional) years - by default, year 1980 under 'inputdir'
-    #    (optional) tiles - by default, all tiles under 'inputdir/1980/'
+    #    (optional) years - by default, under 'inputdir/years'
+    #    (optional) tiles - by default, all tiles under 'inputdir/years/'
     #    (optional) ncf0  - nc file name (only one needed) containing daymet tile info
     #    (optional) ncfv  - data variable name (used as mask)
     #    (optional) ncfout - 
@@ -414,10 +412,10 @@ def Daymet_TileInfo(inputdir, years=[1980],tiles=[],ncf0='TPHWLHrly/clmforc.Daym
         alldirs = sorted(alldirs)
 
     # outputs  
-    tile_no = np.empty(0)
-    tile_gindx = np.empty(0)
-    tile_xindx = np.empty(0)
-    tile_yindx = np.empty(0)
+    tile_no = np.empty(0,dtype=int)
+    tile_gindx = np.empty(0,dtype=int)
+    tile_xindx = np.empty(0,dtype=int)
+    tile_yindx = np.empty(0,dtype=int)
                                   
     tile_lat = np.empty(0)
     tile_lon = np.empty(0)
@@ -428,7 +426,7 @@ def Daymet_TileInfo(inputdir, years=[1980],tiles=[],ncf0='TPHWLHrly/clmforc.Daym
     #
     for idir in alldirs:
         itile = idir.split('/')[-1]
-        if itile=='.': itile='0'
+        if itile=='.': itile='-1'
         ncfile = idir+'/'+ncf0
                                 
         if os.path.isfile(ncfile):
@@ -550,7 +548,141 @@ def Daymet_TileInfo(inputdir, years=[1980],tiles=[],ncf0='TPHWLHrly/clmforc.Daym
     #
 #----------------------------------------------------------------------------------------------
 
+#--------------------------------------------------------------------------------------
+def Daymet_ERA5_toDATM(inputdir, years=[], tiles=[], ncf_head='clmforc.Daymet4.1km',\
+                    ncfv='', range_xlon=[], range_ylat=[]):
 
-print('Testing: ')
-Daymet_TileInfo('./', years=[], ncf0='clmforc.Daymet4.1km.T.2023-01-01-00000.nc')
-                    
+    from pathlib import Path
+    from types import SimpleNamespace
+    import re
+    
+    # customized modules
+    from pytools.metdata_processing import elm_metdata_read as mrdr
+    from pytools.metdata_processing import elm_metdata_write as mwrt
+    
+    try:
+        from mpi4py import MPI
+        HAS_MPI4PY=True
+    except ImportError:
+        HAS_MPI4PY=False
+    if HAS_MPI4PY:
+        mycomm = MPI.COMM_WORLD
+        myrank = mycomm.Get_rank()
+        mysize = mycomm.Get_size()
+    else:
+        mycomm = 0
+        myrank = 0
+        mysize = 1
+    # variable names, by MPI rank
+    vars_name=['TBOT','QBOT','PSRF','FSDS','FLDS','WIND','PRECTmms']
+    if ncfv!='': vars_name = ncfv
+    vars_rank = []
+    for i in range(len(vars_name)):
+        if myrank == i%mysize:
+            vars_rank=np.append(vars_rank, int(i))
+    
+    #
+    if not inputdir.endswith('/'): inputdir = inputdir+'/'
+    
+    # tiles or years to be checked
+    #tno=['TILE11749','TILE11750','TILE11751',
+    # 'TILE11929','TILE11930','TILE11931','TILE11932','TILE11933','TILE11934','TILE11935','TILE11936','TILE11937','TILE11938']
+    # 
+    #  file naming (a full year, hourly) for a 2degx2deg tile: 
+        # year/tile_no/SolarHrly/clmforc.Daymet4.1km.Solr.yyyy-mm.nc
+        # year/tile_no/PrecipHrly/clmforc.Daymet4.1km.Prec.yyyy-mm.nc
+        # year/tile_no/TPHWLHrly/clmforc.Daymet4.1km.TPQWL.yyyy-mm.nc
+    
+    #OR, for regions, North_America, Hawaii, Puerto_Rico:
+        # year/${VARNAME}/clmforc.Daymet4.1km.${VARNAME}.yyyymmdd.nc
+        # VARNAME is one of TBOT or QBOT or FSDS or FLDS or PRECTmms or PSRF or WIND
+        
+    
+    if len(years)<1:  
+        subdirs = sorted([f.name for f in Path(inputdir).iterdir() if (f.is_dir() and re.fullmatch(r"\d{4}",f.name))])
+    else:
+        subdirs = ''
+        for y in years:
+            if subdirs=='':
+                subdirs = [str(y)]
+            else:
+                subdirs.extend([str(y)])
+        
+    '''    
+    # need redoing the following
+    if (len(tiles)<1):
+        # no tiles or all tiles
+        alldirs = sorted(glob.glob(os.path.join(inputdir+str(years[0])+'/','*')))
+    
+    else:
+        for t in tiles:
+            alldirs = np.concatenate(alldirs, 
+                sorted(glob.glob(os.path.join((inputdir+str(years[0])+'/'+t,'*')))))
+    '''
+            
+    alldirs = sorted([glob.glob(os.path.join(inputdir,sub)) for sub in subdirs])
+    
+    
+    #--------------------------------------------------------------------------------------
+    # read-in metdata from totally user-defined data folder
+
+    for iv in range(len(vars_rank)):
+        v = vars_name[int(vars_rank[iv])]
+        for i in range(len(alldirs)):
+            idir = os.path.abspath(alldirs[i][0])
+            if i==0:
+                v_alldirs = glob.glob(os.path.join(idir,v,'*'))
+            else:
+                v_alldirs.extend(glob.glob(os.path.join(idir,v,'*')))
+        v_alldirs = sorted(v_alldirs)
+        
+        # have to put all yyyymmdd.nc or yyyy-mm.nc for ONE variable into one single folder
+        # because DATM data are organized in that way somehow
+        fvdir = './'+v
+        os.system('mkdir -p '+fvdir)
+        os.system('rm -rf '+fvdir+'/*')
+        for dirfile in v_alldirs:
+            if (not v in dirfile or not os.path.isfile(dirfile)): continue
+            filename = dirfile.split('/')[-1]
+            os.system('ln -sf '+dirfile+' '+fvdir+ '/'+filename) # softlinks of all files
+            
+            
+        #--------------------------------------------------------------------------------------
+        # read-in data
+        metvd, metdata = mrdr.clm_metdata_Daymet_downscaled_read(fvdir, 
+                                    ts_hr=1, fileheader=ncf_head, \
+                                    range_xlon=range_xlon, range_ylat=range_ylat, \
+                                    varnames=[v])
+    
+        #--------------------------------------------------------------------------------------
+        # save in ELM forcing data format
+        write_options = SimpleNamespace( \
+                met_idir = './', \
+                nc_create = True, \
+                nc_write = False, \
+                nc_write_mettype = 'cplbypass_ERA5_daymet' )
+    
+        mwrt.elm_metdata_write(write_options, metdata) 
+    
+        if HAS_MPI4PY: mycomm.Barrier()
+        if myrank==0:
+            os.system('mv *.nc ./cpl_bypass_full/')
+            os.system('mv zone_mappings.txt ./cpl_bypass_full/')
+    
+            print('Done variable ',v)
+    
+    
+    #--------------------------------------------------------------------------------------
+    
+    #
+
+
+if __name__ == '__main__':   
+    print('Testing: ')
+    #Daymet_TileInfo('./', years=[], tiles=[], ncf0='clmforc.Daymet4.1km.TBOT.20200101-00000.nc')
+    
+    #Daymet_ERA5_toDATM('./', years=[], tiles=[], ncf_head='clmforc.Daymet4.1km',\
+    #                ncfv=[], range_xlon=[], range_ylat=[])                
+
+    Daymet_ERA5_toDATM('./', years=[2000], tiles=[], ncf_head='clmforc.Daymet4.1km',\
+                    ncfv=['TBOT'], range_xlon=[-146.00,-145.50], range_ylat=[63.50,64.00])                

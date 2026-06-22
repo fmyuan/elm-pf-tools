@@ -1713,27 +1713,31 @@ def clm_metdata_ERA5(era5_dirfilehead, template_clm_metfile='', OUTDATA=False):
 #
 
 
-def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', ptxyind=[], varnames=[]):
+def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', \
+                                       ptxyind=[], range_xlon=[], range_ylat=[], \
+                                       varnames=[]):
     #
     # Daymet_ERA5 or GSWP3 data formats
     #  file naming (a full year, hourly) for a 2degx2deg tile: 
         # year/tile_no/SolarHrly/clmforc.Daymet4.1km.Solr.yyyy-mm.nc
         # year/tile_no/PrecipHrly/clmforc.Daymet4.1km.Prec.yyyy-mm.nc
         # year/tile_no/TPHWLHrly/clmforc.Daymet4.1km.TPQWL.yyyy-mm.nc
+    
+    #OR, for regions, North_America, Hawaii, Puerto_Rico:
+        # year/${VARNAME}/clmforc.Daymet4.1km.${VARNAME}.yyyymmdd.nc
+        # VARNAME is one of TBOT or QBOT or FSDS or FLDS or PRECTmms or PSRF or WIND
         
-        # (1) data in 2D, with x/y coordinates of daymet projection
-        # (2) there is a file 'daymet_tiles.nc' for easy searching tile information,
-        #        which includes: tile_no,tile_gindx,tile_xindx,tile_yindx,tile_geox,tile_geoy,tile_lat,tile_lon
+    # (1) data in 2D, with x/y coordinates of daymet projection
+    # (2) if there is a file 'daymet_tiles.nc' for easy searching tile information,
+    #        which includes: tile_no,tile_gindx,tile_xindx,tile_yindx,tile_geox,tile_geoy,tile_lat,tile_lon
     #
 
+    #
+    if not daymetera5_dir.endswith('/'): daymetera5_dir=daymetera5_dir+'/'
     #
     fileheader0 = fileheader  # save the input for multiple varnames
 
     #
-    if len(ptxyind)>0:
-        ix = ptxyind[:,0]
-        iy = ptxyind[:,1]
-
     #files data-reading
     met ={}
     vdims={}
@@ -1754,15 +1758,18 @@ def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', p
             
         # file directories
         if (v == 'FSDS'):
-            fdir = daymetera5_dir+'/Solar'+ts_str+'Hrly/'
+            fdir = daymetera5_dir+'Solar'+ts_str+'Hrly/'
             if fileheader0=='': fileheader = 'clmforc.Daymet4.1km.Solr'
         elif (v == 'PRECTmms'):
-            fdir = daymetera5_dir+'/Precip'+ts_str+'Hrly/'
+            fdir = daymetera5_dir+'Precip'+ts_str+'Hrly/'
             if fileheader0=='': fileheader = 'clmforc.Daymet4.1km.Prec'
         else:
-            fdir = daymetera5_dir+'/TPHWL'+ts_str+'Hrly/'
+            fdir = daymetera5_dir+'TPHWL'+ts_str+'Hrly/'
             if fileheader0=='': fileheader = 'clmforc.Daymet4.1km.TPQWL'
-
+        # if data NOT organized in year/tile_no/SolarHrly/
+        if (not os.path.isdir(fdir)):
+            fdir = daymetera5_dir
+            if fileheader0=='': fileheader = 'clmforc.Daymet4.1km.'+v
         #
         tvar = np.asarray([])
         vdata= np.asarray([])
@@ -1772,24 +1779,33 @@ def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', p
             fdirheader=fdir+fileheader.strip()
             dirfiles = sorted(glob.glob("%s*.*" % fdirheader))  # maybe file pattern in 'fileheader'
         
-        # find the mask
-        if len(dirfiles)<1: return 
+        if len(dirfiles)<1: return 0, 0
         
+        # find the mask
         fnc = Dataset(dirfiles[0],'r')
-        vdata0 = fnc.variables[v][0,...]
-        yindx, xindx = np.where((~vdata0.mask))
+        vdata0 = fnc.variables[v][0,...]    
         # only need to read once for all files
         if ('LATIXY' not in met.keys()):
             if 'LATIXY' in fnc.variables.keys():
-                met['LATIXY']=np.asarray(fnc.variables['LATIXY'])[yindx,xindx]
+                ylat=np.asarray(fnc.variables['LATIXY'])[...]
             elif 'lat' in fnc.variables.keys():
-                met['LATIXY']=np.asarray(fnc.variables['lat'])[yindx,xindx]
+                ylat=np.asarray(fnc.variables['lat'])[...]
         if ('LONGXY' not in met.keys()):
             if 'LONGXY' in fnc.variables.keys():
-                met['LONGXY']=np.asarray(fnc.variables['LONGXY'])[yindx,xindx]
+                xlon=np.asarray(fnc.variables['LONGXY'])[...]
             elif 'lon' in fnc.variables.keys():
-                met['LONGXY']=np.asarray(fnc.variables['lon'])[yindx,xindx]
+                xlon=np.asarray(fnc.variables['lon'])[...]
         fnc.close()
+        if len(ptxyind)>0:
+            xindx = ptxyind[:,0]
+            yindx = ptxyind[:,1]
+        elif len(range_xlon)>0 or len(range_ylat)>0:
+            yindx, xindx = np.where(  (xlon>=min(range_xlon)) & (xlon<=max(range_xlon)) \
+                                    & (ylat>=min(range_ylat)) & (ylat<=max(range_ylat)) )
+        else:
+            yindx, xindx = np.where((~vdata0.mask))
+        met['LATIXY'] = ylat[yindx,xindx]
+        met['LONGXY'] = xlon[yindx,xindx]
 
         for dirfile in dirfiles:
             # in metdata directory
@@ -1800,7 +1816,7 @@ def clm_metdata_Daymet_downscaled_read(daymetera5_dir, ts_hr=1, fileheader='', p
                 # for 'time', need to convert tunit AND must do for each var, due to from different files
                 if ('time' in fnc.variables.keys()):
                     t=fnc.variables['time'][...]
-                    if len(np.where(t.mask)[0])>0:
+                    if t.mask.any() and len(np.where(t.mask)[0])>0:
                         tindx = np.where(~t.mask)[0]
                         t=t[tindx]
                     else:
@@ -1928,6 +1944,7 @@ for i in range(len(vars_name)):
 
 """
 
+'''
 from pytools.metdata_processing.elm_metdata_write import elm_metdata_write
 
 metdata = clm_metdata_ERA5('./tfs_ERA5')
@@ -1937,7 +1954,7 @@ write_options = SimpleNamespace( \
             nc_write = False, \
             nc_write_mettype = 'cplbypass_ERA5' )
 elm_metdata_write(write_options, metdata) 
-
+'''
 #--------------
 
 
