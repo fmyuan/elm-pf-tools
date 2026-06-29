@@ -8,8 +8,13 @@ from netCDF4 import Dataset
 
 #---------------------------------------------------------------------------------------
 #
-# Arctic PFT classes in B. Sulman et al (2021) paper: 12 arctic PFTs + 2 additional tree PFTs   
-user_pfts={'pftname':[
+# Arctic PFT classes in B. Sulman et al (2021) paper: 12 arctic PFTs + 2 additional tree PFTs
+    # when aggregating into 17 ELM default PFTs, it shall be like following
+        # lichen as not_vegetated (0), moss/forb/graminoids as c3 arctic grass (12),
+        # evergreen shrub(9), deci. boreal_shrub(11),
+        # evergreen boreal tree(2), deci boreal tree (3)
+   
+arctic_pfts={'pftname':[
                     "non_vegetated",
                     "arctic_lichen",
                     "arctic_bryophyte",
@@ -25,7 +30,8 @@ user_pfts={'pftname':[
                     "arctic_dry_graminoid",
                     "arctic_wet_graminoid"
                     ],
-            'pftnum': [0,1,2,3,4,5,6,7,8,9,10,11,12,13]
+            'pftnum': [0,1,2,3,4,5,6,7,8,9,10,11,12,13],
+            'pftnum_default17':[0,0,12,2,3,9,9,11,11,11,11,12,12,12]
             };
     
 # default PFT classes by ELM
@@ -91,20 +97,20 @@ fates_pfts ={'pftname':[
 #--- # 
 # 
 def updatevals(fsurfnc_in, fsurfnc_out=None, \
-                         user_srf_data={}, user_srfnc_file=None, user_srf_vars=None, OriginalPFTclass=True):
+                         user_srf_data={}, user_srfnc_file=None, user_srf_vars=None, \
+                         user_pftname_num=None, OriginalPFTclass=True):
     
     print('#--------------------------------------------------#')
     print("Replacing values in surface data by merging user-provided dataset")
     if fsurfnc_out==None: fsurfnc_out ='./'+fsurfnc_in.split('/')[-1]+'-merged'
+    
+    if not user_pftname_num==None:
+        user_pftname_num = arctic_pfts
         
     if OriginalPFTclass:
-        # lichen as not_vegetated (0), moss/forb/graminoids as c3 arctic grass (12),
-        # evergreen shrub(9), deci. boreal_shrub(11),
-        # evergreen boreal tree(2), deci boreal tree (3)
-        user_pfts['pftnum'] = [0,0,12,2,3,9,9,11,11,11,11,12,12,12]
         natpft = np.asarray(range(17))
     else:
-        natpft = np.asarray(range(max(user_pfts['pftnum'])+1)) # this is the real arcticpft order number 
+        natpft = np.asarray(range(max(user_pftname_num['pftnum'])+1)) # this is the real arcticpft order number 
  
     #---------------------------------------------------------------------------------------
 
@@ -188,7 +194,20 @@ def updatevals(fsurfnc_in, fsurfnc_out=None, \
                 except:
                     varvals = np.asarray(user_srf[vname]) # list
                 #
+                if vname=='PCT_NAT_PFT' and OriginalPFTclass:
+                    # need to check and merge data
+                    if varvals.shape[0]!=len(natpft):
+                        src_vals[...] = 0.0
+                        for i in range(len(user_pftname_num['pftnum'])):
+                            iv = user_pftname_num['pftnum_default17'][i]
+                            src_vals[iv] = src_vals[iv]+varvals[i]
+                        varvals = src_vals
+                
                 print(vname, varvals.shape, src_vals.shape)
+            
+            elif vname=='natpft' and not OriginalPFTclass:
+                varvals = natpft
+                
             else:
                 varvals = src_vals
                 #

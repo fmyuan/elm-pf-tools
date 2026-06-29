@@ -743,44 +743,59 @@ def elmdomain_xrio(fnc_grid2d):
       ndarray list or dict, either from domain.nc (xc/yc, with xv/yv), or surfdata.nc (LONGXY, LATIXY)
     '''
 
-    #import geopandas as geopd
-    #from shapely.geometry import Point
-    #from shapely.geometry import MultiLineString, LineString
-    #from shapely.ops import polygonize
-
     import xarray
-    import rioxarray
     import rasterio
         
     # 
     # Open the source domain or surface nc file, 
     # directly from an ELM domain nc file
     f = xarray.open_dataset(fnc_grid2d, engine="netcdf4")  
-    lonx = f["xc"].values[0,:]
-    laty = f["yc"].values[:,0]
+    xc = f["xc"].values
+    yc = f["yc"].values
+    lonx = xc[0,:]
+    laty = yc[:,0]
     lndmask = f["mask"].values
     lndfrac = f["frac"].values
-    lndfrac[np.where(lndmask<=0.)]=np.nan
+    lndfrac =np.ma.masked_where(lndmask<=0., lndfrac)
+    area = f["area"].values
+    area =np.ma.masked_where(lndmask<=0., area)
+
+    #elm domain grids are IDed, which are very useful in 2D (structured) <-->1D (unstructured)
+    if 'gridID' in f.variables and \
+        'gridXID' in f.variables and 'gridYID' in f.variables:
+        xyid = f["gridID"].values
+        xid = f["gridXID"].values
+        yid = f["gridYID"].values
+    else:
+        xid = np.indices(lndmask.shape)[1]
+        yid = np.indices(lndmask.shape)[0]
+        xyid = np.indices(lndmask.flatten().shape)[0]
+        xyid = np.reshape(xyid, xid.shape)
+    xid = np.ma.masked_where(lndmask<=0., xid)
+    yid = np.ma.masked_where(lndmask<=0., yid)
+    xyid = np.ma.masked_where(lndmask<=0., xyid)
     
+    f.close()
+    
+    band_names = ["GridID","GridXID", "GridYID", "xc","yc","area", "mask", "frac"]
+    band_data=np.stack([xyid, xid, yid, xc,yc,area, lndmask, lndfrac])
     lnd_xr = xarray.DataArray(
-                            data=lndfrac,
-                            dims=["y","x"],
-                            coords={"y": laty, "x":lonx}
+                            data=band_data, 
+                            dims=["band","y","x"],
+                            coords={"band":band_names, "y": laty, "x":lonx}
                             )
     
-    lnd_xr = lnd_xr.rio.write_crs("EPSG:4326", inplace=True)
-    lnd_xr = lnd_xr.rio.set_spatial_dims(x_dim="x", y_dim="y")
+    lnd_xr.rio.set_spatial_dims(x_dim="x", y_dim="y")
+    lnd_xr.rio.write_crs("EPSG:4326", inplace=True)
     
     min_lonx = np.min(lonx)
     max_laty = np.max(laty)
     res_x = np.mean(np.diff(lonx))
     res_y = np.mean(np.diff(laty))                   
     tfrom = rasterio.transform.from_origin(min_lonx, max_laty, res_x, res_y)
-    lnd_xr = lnd_xr.rio.write_transform(tfrom, inplace=True)
+    lnd_xr.rio.write_transform(tfrom, inplace=True)
     
-    lnd_xr = lnd_xr.rio.write_nodata(np.nan)
-    
-    
+    #lnd_xr.rio.write_nodata(-99999)
     #
     return lnd_xr
 

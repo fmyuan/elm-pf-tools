@@ -7,22 +7,30 @@ try:
 except ImportError:
     HAS_MPI4PY=False
 
+#
+# Arctic PFT classes in B. Sulman et al (2021) paper: 12 arctic PFTs + 2 additional tree PFTs
+    # when aggregating into 17 ELM default PFTs, it shall be like following
+        # lichen as not_vegetated (0), moss/forb/graminoids as c3 arctic grass (12),
+        # evergreen shrub(9), deci. boreal_shrub(11),
+        # evergreen boreal tree(2), deci boreal tree (3)   
 arctic_pfts={'pftname':[
-                    "not_vegetated                           ",
-                    "arctic_lichen                           ",
-                    "arctic_bryophyte                        ",
-                    "arctic_needleleaf_tree                  ",
-                    "arctic_broadleaf_tree                   ",
-                    "arctic_evergreen_shrub_dwarf            ",
-                    "arctic_evergreen_shrub_tall             ",
-                    "arctic_deciduous_shrub_dwarf            ",
-                    "arctic_deciduous_srhub_low              ",
-                    "arctic_deciduous_shrub_tall             ",
-                    "arctic_deciduous_shrub_alder            ",
-                    "arctic_forb                             ",
-                    "arctic_dry_graminoid                    ",
-                    "arctic_wet_graminoid                    "],
-             'pftnum': [0,1,2,3,4,5,6,7,8,9,10,11,12,13]
+                    "non_vegetated",
+                    "arctic_lichen",
+                    "arctic_bryophyte",
+                    "arctic_needleleaf_tree",
+                    "arctic_broadleaf_tree",
+                    "arctic_evergreen_shrub",
+                    "arctic_evergreen_tall_shrub",
+                    "arctic_deciduous_dwarf_shrub",
+                    "arctic_deciduous_low_shrub",
+                    "arctic_low_to_tall_willowbirch_shrub",
+                    "arctic_low_to_tall_alder_shrub",
+                    "arctic_forb",
+                    "arctic_dry_graminoid",
+                    "arctic_wet_graminoid"
+                    ],
+            'pftnum': [0,1,2,3,4,5,6,7,8,9,10,11,12,13],
+            'pftnum_default17':[0,0,12,2,3,9,9,11,11,11,11,12,12,12]
             };
 
 #---
@@ -655,9 +663,13 @@ def arctic_lupft_fromcavm_jkumaretal2(elm_domainnc='./domain.lnd.r0125_IcoswISC3
     '''
     
     
-    #from netCDF4 import Dataset
     from pytools.commons_utils.gridlocator import elmdomain_xrio
     from pytools.pan_arctic.arctic_domain import DIN_LOC_ROOT
+    from pytools.pan_arctic.arctic_domain import elm_km2_from_arcradians2 
+    
+    from rasterio.enums import Resampling
+    import xarray
+    import gc
     
     # the default domain nc file for CAVM extent, contained CAVM 'landcov_code'
     # 'domain.lnd.pan-arctic_CAVM.0.01d.1D.c250623.nc'
@@ -669,36 +681,58 @@ def arctic_lupft_fromcavm_jkumaretal2(elm_domainnc='./domain.lnd.r0125_IcoswISC3
     else:
         fnc = DIN_LOC_ROOT+'/share/domains/domain.clm/'+elm_domainnc
 
-    xr_elmdomain = elmdomain_xrio(fnc) 
+    xrio_elmdomain = elmdomain_xrio(fnc)
+    bmask = np.where(xrio_elmdomain.band=='mask')[0][0]
+    xrio_elmdomain_mask=xrio_elmdomain[bmask]
+    xrio_elmdomain_mask.rio.write_nodata(0.0, inplace=True)
+    #xrio_elmdomain_gid=xrio_elmdomain[0]  # appears this is a messy id dataset in domain.nc created in other scripts (TODO: fix it asap)
+    # instead, re-do it from 'mask' data structure
+    xrio_elmdomain_gid = xrio_elmdomain_mask.copy()
+    gid = np.indices((xrio_elmdomain_mask.to_numpy()).flatten().shape)
+    xrio_elmdomain_gid.data = gid.reshape(xrio_elmdomain_mask.shape)
+ 
     
-    # LU - ELM LandUnit of landcover
-    band_lupft0 = lupft0.band
-
+                
+    #xarray rio operations - this is much faster than geopd sjoin
     
-    # grids containing veged_natpft data (normalize PFT fractions) from JKumar & TQ Zhang et al.
-    band_vpft = veggedonlypft.band
-    
-    
-    masked_pts = {}
-    
+    NONVEG_FROM_CAVM = False
+    if not lupft0 is None:
+        NONVEG_FROM_CAVM = True
+        # the following appears not excludes nodata for multi-banded rxio 
+        #lupft0_resampled = lupft0.rio.reproject_match(
+        #            xrio_elmdomain_mask,
+        #            resampling=Resampling.average)
+        
     #
-    # targetted grids
-    #        
-    #
-    #                    
-    '''
+    
     if not NONVEG_FROM_CAVM:
-        for i in range(len(grids_uid)):
-            igrid = grids_uid[i]    
-            # water/barren included in Zhang/Jitu's data
-            if 'water' in lu_vegonlypft.keys():
-                newludata = lu_vegonlypft['water']
-                newludata = newludata[~newludata.mask]
-                #print(i) # for checking
-                pct_water.ravel()[i] = np.nanmean(newludata[grids_maskptsid[igrid]])
-        pct_natveg = pct_natveg - pct_water
-        pct_vegedonly = pct_natveg - pct_barren
-            
+        ib_gridIDed = xrio_elmdomain_gid.rio.reproject_match(
+                                veggedonlypft[0],
+                                resampling=Resampling.nearest)
+        ib_gridID = ib_gridIDed.drop_vars(['band','spatial_ref'])
+        ib_gridID.name = 'gridID'
+        
+        if 'water' in veggedonlypft.band:
+            ib = np.where(veggedonlypft.band=='water')[0][0]
+            ib_data = veggedonlypft[ib].drop_vars(['band','spatial_ref'])
+            ib_data.name = str(veggedonlypft.band[ib].data)
+            ib_data_df = xarray.merge([ib_data, ib_gridID]).to_dataframe()
+            aggr_data = ib_data_df.groupby('gridID')[ib_data.name].mean().to_numpy()
+            pct_water = aggr_data.reshape(xrio_elmdomain_mask.rio.shape)
+            del ib, ib_data, ib_data_df, aggr_data
+            gc.collect() 
+        
+        if 'barren' in veggedonlypft.band:
+            ib = np.where(veggedonlypft.band=='barren')[0][0]
+            ib_data = veggedonlypft[ib].drop_vars(['band','spatial_ref'])
+            ib_data.name = str(veggedonlypft.band[ib].data)
+            ib_data_df = xarray.merge([ib_data, ib_gridID]).to_dataframe()
+            aggr_data = ib_data_df.groupby('gridID')[ib_data.name].mean().to_numpy()
+            pct_barren = aggr_data.reshape(xrio_elmdomain_mask.rio.shape)
+            del ib, ib_data, ib_data_df, aggr_data
+            gc.collect() 
+    
+           
     # the following are, for data above (exactly matching up with), standared PFT names and order in 14 arcticpft physiology parameters
     # a full list is: (0)not_vegetated, (1)arctic_lichen, (2)arctic_bryophyte,
     #                 (3)arctic_needleleaf_tree, (4)arctic_broadleaf_tree,
@@ -706,86 +740,157 @@ def arctic_lupft_fromcavm_jkumaretal2(elm_domainnc='./domain.lnd.r0125_IcoswISC3
     #                 (7)arctic_deciduous_shrub_dwarf, (8)arctic_deciduous_srhub_low, (9)arctic_deciduous_shrub_tall, (10)arctic_deciduous_shrub_alder,
     #                 (11)arctic_forb, (12)arctic_dry_graminoid,(13)arctic_wet_graminoid
 
-    pct_nat_pft = np.zeros(np.append(14, landcov.shape), dtype=float) 
+    pct_nat_pft = np.zeros(np.append(len(arctic_pfts['pftnum']), xrio_elmdomain_mask.rio.shape), dtype=float) 
     # barren/not_vegetated
-    if NONVEG_FROM_CAVM:
+    if not NONVEG_FROM_CAVM:
         pct_nat_pft[0,...] = pct_barren
     else:
-        pct_iv = pct_nat_pft[0]
         try:
-            if '0' in lu_vegonlypft.keys():
-                newpftdata = lu_vegonlypft[0]
-            elif 'barren' in lu_vegonlypft.keys():
-                newpftdata = lu_vegonlypft['barren']            
-            newpftdata = newpftdata[~newpftdata.mask]
-            for i in range(len(grids_uid)):
-                igrid = grids_uid[i]
-                pct_iv.ravel()[i] = np.nanmean(newpftdata[grids_maskptsid[igrid]])
-            pct_vegedonly = pct_natveg - pct_iv
-            pct_nat_pft[0] = pct_iv
-        except:
-            print('No barren data')  
+            
+            ib_gridIDed = xrio_elmdomain_gid.rio.reproject_match(
+                                lupft0[0],
+                                resampling=Resampling.nearest)
+            ib_gridID = ib_gridIDed.drop_vars(['band','spatial_ref'])
+            ib_gridID.name = 'gridID'
+            
+            if 'PCT_NAT_PFT0' in lupft0.band:
+                ib = np.where(lupft0.band=='PCT_NAT_PFT0')[0][0]
+                ib_data = lupft0[ib].drop_vars(['band','spatial_ref'])
+                ib_data.name = str(lupft0.band[ib].data)
+                ib_data_df = xarray.merge([ib_data, ib_gridID]).to_dataframe()
+                aggr_data = ib_data_df.groupby('gridID')[ib_data.name].mean().to_numpy()
+                pct_nat_pft[0] = aggr_data.reshape(xrio_elmdomain_mask.rio.shape)
+                del ib, ib_data, ib_data_df, aggr_data  # since memory use could be problematic
+                gc.collect() 
+        
+            # other LULC
+            if 'PCT_GLACIER' in lupft0.band:
+                ib = np.where(lupft0.band=='PCT_GLACIER')[0][0]
+           
+                # the following 'Resampling.average' actually did NOT exclude nodata=np.nan
+                #ib_resampled = lupft0[ib].rio.reproject_match(
+                #                    xrio_elmdomain_mask,
+                #                    resampling=Resampling.average,
+                #                    nodata=np.nan)             
+                #pct_glacier = ib_resampled.to_numpy()
+                ib_data = lupft0[ib].drop_vars(['band','spatial_ref'])
+                ib_data.name = str(lupft0.band[ib].data)
+                ib_data_df = xarray.merge([ib_data, ib_gridID]).to_dataframe()
+                aggr_data = ib_data_df.groupby('gridID')[ib_data.name].mean().to_numpy()
+                pct_glacier = aggr_data.reshape(xrio_elmdomain_mask.rio.shape)
+                del ib, ib_data, ib_data_df, aggr_data
+                gc.collect() 
+                
+            if 'PCT_WATER' in lupft0.band:
+                ib = np.where(lupft0.band=='PCT_WATER')[0][0]
+                ib_data = lupft0[ib].drop_vars(['band','spatial_ref'])
+                ib_data.name = str(lupft0.band[ib].data)
+                ib_data_df = xarray.merge([ib_data, ib_gridID]).to_dataframe()
+                aggr_data = ib_data_df.groupby('gridID')[ib_data.name].mean().to_numpy()
+                pct_water = aggr_data.reshape(xrio_elmdomain_mask.rio.shape)
+                del ib, ib_data, ib_data_df, aggr_data
+                gc.collect() 
+
+            if 'PCT_NATVEG' in lupft0.band:
+                ib = np.where(lupft0.band=='PCT_NATVEG')[0][0]
+                ib_data = lupft0[ib].drop_vars(['band','spatial_ref'])
+                ib_data.name = str(lupft0.band[ib].data)
+                ib_data_df = xarray.merge([ib_data, ib_gridID]).to_dataframe()
+                aggr_data = ib_data_df.groupby('gridID')[ib_data.name].mean().to_numpy()
+                pct_natveg = aggr_data.reshape(xrio_elmdomain_mask.rio.shape)
+                del ib, ib_data, ib_data_df, aggr_data
+                gc.collect() 
+            
+        except ValueError:
+            print(ValueError)
+             
     # really veged
-    for iv in range(1,14):              
-        # get real veged PFT fraction from  JKumar & TQ Zhang et al.
-        # vegedonly_pftdata, from JKumar and T-Q Zhang etal
-        bandinfos = lu_vegonlypft['bandinfos']
-        pct_iv = pct_nat_pft[iv]
-        if iv in bandinfos['pftnum']:
-            newpftdata = lu_vegonlypft[iv]
-            newpftdata = newpftdata[~newpftdata.mask]
-            for i in range(len(grids_uid)):
-                igrid = grids_uid[i]
-                #print(i, iv) # for checking
-                pct_iv.ravel()[i] = np.nanmean(newpftdata[grids_maskptsid[igrid]])
-            #
-            pct_nat_pft[iv,...] = pct_iv*pct_vegedonly
+    if not veggedonlypft is None:
+        ib_gridIDed = xrio_elmdomain_gid.rio.reproject_match(
+                                veggedonlypft[0],
+                                resampling=Resampling.nearest)
+        ib_gridID = ib_gridIDed.drop_vars(['band','spatial_ref'])
+        ib_gridID.name = 'gridID'
+        
+        for iv in arctic_pfts['pftnum']:
+            if iv==0: continue    
+                 
+            # get real veged PFT fraction from  JKumar & TQ Zhang et al.
+            # vegedonly_pftdata, from JKumar and T-Q Zhang etal
+            v=arctic_pfts['pftname'][iv].strip()
+            if  v in veggedonlypft.band:
+                ib = np.where(veggedonlypft.band==v)[0][0]
+                
+                # the following 'Resampling.average' actually did NOT exclude nodata=np.nan
+                #ib_resampled = veggedonlypft[ib].rio.reproject_match(
+                #                    xrio_elmdomain_mask,
+                #                    resampling=Resampling.average,
+                #                    nodata=np.nan)                            
+                #pct_nat_pft[iv,...] = ib_resampled.to_numpy()*100.0  # fraction --> PCT
+                
+                ib_data = veggedonlypft[ib].drop_vars(['band','spatial_ref'])
+                ib_data.name = str(veggedonlypft.band[ib].data)
+                ib_data_df = xarray.merge([ib_data, ib_gridID]).to_dataframe()
+                aggr_data = ib_data_df.groupby('gridID')[ib_data.name].mean().to_numpy()
+                pct_nat_pft[iv] = aggr_data.reshape(xrio_elmdomain_mask.rio.shape)
+                pct_nat_pft[iv] = pct_nat_pft[iv]*100.0  # fraction --> PCT
+                del ib, ib_data, ib_data_df, aggr_data
+                gc.collect() 
     
     #
-    # checking if summed to 100%
-    sumallveg = np.sum(pct_nat_pft[0:,...], axis=0)
-    if ((sumallveg-1.0)<0.0).any():
-        #still having some all-pft pixels of zero???. Put those gaps into not_vegetated
-        idx = np.where((sumallveg-1.0)<0.0)
-        pct_nat_pft[0][idx] = pct_nat_pft[0][idx]+(1.0 - sumallveg[idx])
-    sumallveg = np.sum(pct_nat_pft[0:,...], axis=0)
-    if ((sumallveg-1.0)>1.e-7).any():
-        #still tiny over 100%?
-        idx = np.where((sumallveg-1.0)>1.e-7)
-        for iv in range(0,14):
-            pct_nat_pft[iv,...][idx] = pct_nat_pft[iv,...][idx]/sumallveg[idx]
+    # normalizing real pft to PCT_NATVEG-lu only
+    sumallveg = 100.0 - pct_nat_pft[0,...] # pct_nat_pft[0] already normalized over 'pct_natveg' above
+    for iv in arctic_pfts['pftnum']:
+        if iv==0: continue
+        pct_nat_pft[iv,...] = pct_nat_pft[iv,...]*(sumallveg/100.0)
     
-
-    
+    # re-checking 100% of all summed pfts, inc.
+    sum_err = np.zeros_like(sumallveg)
+    idx = np.where(~np.isnan(sumallveg))
+    sum_err[idx] = (100.0 - np.nansum(pct_nat_pft, axis=0))[idx]
+    if (np.abs(sum_err)>1.e-7).any(): 
+        idx = np.where(np.abs(sum_err)>1.e-7)
+        pct_nat_pft[0,...][idx] = pct_nat_pft[0,...][idx]+sum_err[idx]
+    for iv in arctic_pfts['pftnum']:
+        if iv==0: continue
+        # appears there are data-missing in pan-arctic Arctic-pft datasets after aggregation
+        idx = np.where( (~np.isnan(sumallveg)) & (np.isnan(pct_nat_pft[iv,...])) )
+        if len(idx[0])>0: pct_nat_pft[iv,...][idx] = 0.0
+        
     
     
     # only need trunked data
-    xc = xc.flatten()[grids_uid]
-    yc = yc.flatten()[grids_uid]
-    xv = xv.flatten()[grids_uid]
-    yv = yv.flatten()[grids_uid]
-    area_km = area_km.flatten()[grids_uid]
-    pct_water = pct_water.flatten()[grids_uid]
-    pct_barren = pct_barren.flatten()[grids_uid]
-    pct_natveg = pct_natveg.flatten()[grids_uid]
-    pct_glacier = pct_glacier.flatten()[grids_uid]
-    pct_vegedonly = pct_vegedonly.flatten()[grids_uid]
-
-
+    idx = np.where(xrio_elmdomain_mask.to_numpy()>0.0)
+    ib = np.where(xrio_elmdomain.band=='xc')
+    xc = (xrio_elmdomain[ib][0].to_numpy())[idx]
+    ib = np.where(xrio_elmdomain.band=='yc')
+    yc = (xrio_elmdomain[ib][0].to_numpy())[idx]
+    #xv = xrio_elmdomain[idx]
+    #yv = xrio_elmdomain[idx]
+    ib = np.where(xrio_elmdomain.band=='area')
+    area = (xrio_elmdomain[ib][0].to_numpy())[idx]
+    area_km2 = elm_km2_from_arcradians2(area, latitude=yc) 
+    pct_water = pct_water[idx]
+    pct_natveg = pct_natveg[idx]
+    pct_glacier = pct_glacier[idx]
+    pct_nat_pft = [pct_nat_pft[iv,...][idx] for iv in arctic_pfts['pftnum']]
+    
+    #
     surfdata = {}
     surfdata['LONGXY'] = xc
     surfdata['LATIXY'] = yc
-    surfdata['AREA']   = area_km
-    surfdata['PCT_GLACIER'] = pct_glacier*100.0
-    surfdata['PCT_LAKE']    = pct_water*100.0
-    surfdata['PCT_NATVEG']  = pct_natveg*100.0
-    surfdata['PCT_NAT_PFT'] = pct_nat_pft*100.0
-    surfdata['PCT_CROP'] = np.zeros_like(pct_natveg)
-    surfdata['PCT_URBAN'] = np.zeros((3,)+pct_natveg.shape)
-    surfdata['PCT_WETLAND'] = np.zeros_like(pct_natveg)
+    surfdata['AREA']   = area_km2
+    surfdata['PCT_GLACIER'] = pct_glacier
+    surfdata['PCT_LAKE']    = pct_water
+    surfdata['PCT_NATVEG']  = pct_natveg
+    surfdata['PCT_NAT_PFT'] = pct_nat_pft
+    surfdata['PCT_CROP'] = np.zeros_like(pct_natveg)          # not yet
+    surfdata['PCT_URBAN'] = np.zeros((3,)+pct_natveg.shape)   # not yet
+    surfdata['PCT_WETLAND'] = np.zeros_like(pct_natveg)       # not-yet
         
     return surfdata
-    '''
+    
+    #
 
 def test_hires():
     
@@ -909,14 +1014,14 @@ def test():
                         #'pftnum': [-2,-1,1,2,3,4,5,8,11,12]}
                         'pftnum': [1,2,3,4,5,8,11,12]}
 
-    '''
+    
     # vegetated only PFTs from 0.00833 deg pan-Arctic raster data
     # note: data in rioxarray, bandded with Arctic PFT numbering order, but normalized over vegetated area ONLY.
     xrio_vegedonly_pftdata_cavm = arctic_vegedonly_fromraster_jkumaretal(\
                                 inputpath=inputpath,
                                 rasterfiles=rasterfiles,
                                 bandinfos=bandinfos)
-    '''
+    
     # glacier, water (lake), PFT0 (not_vegetated) from CAVM dataset. 
     # note: didn't use what from PFT works, because it appears not fully finished (e.g. glacier not there)
     xrio_lupft0 = arctic_lu_barren_fromcavm(cavm_tiff='./raster_cavm_v1_01d.tif', \
@@ -925,9 +1030,10 @@ def test():
                                 outdata=True)
     
     # spatially merging above 2 datasets for LandUnits (glacier, water, naturally-veged, and PFTs)     
-    xrio_srfdata_fromcavm_jk = arctic_lupft_fromcavm_jkumaretal2( \
+    srfdata_fromcavm_jk = arctic_lupft_fromcavm_jkumaretal2( \
+                                #elm_domainnc='./domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm2d.nc', \
                                 elm_domainnc='./domain.lnd.r0125_IcoswISC30E3r5.250918_cavm2d.nc', \
-                                #vegedonlypft=xrio_vegedonly_pftdata_cavm, \
+                                veggedonlypft=xrio_vegedonly_pftdata_cavm, \
                                 lupft0=xrio_lupft0, \
                                 outdata_tiff='')
         
@@ -957,12 +1063,17 @@ def test():
                         #elm_domainnc='domain.lnd.r0125_IcoswISC30E3r5.250918_cavm1d.nc')
     
     
-    
+    '''
     
     #    
-    srfupdate.updatevals('./surfdata_0.0025deg.1D_simyr1850_c240308_TOP_TFSarcticpfts-sub12+.nc', \
-                        user_srf_data=surf_fromcavm_jk, user_srf_vars='PCT_NAT_VEG', OriginalPFTclass=False)
-    '''
+    srfupdate.updatevals(
+                        #'./surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d.nc', \
+                        'surfdata_0.125x0.125_simyr1850_c250910_TOP_cavm1d.nc', \
+                        user_srf_data=srfdata_fromcavm_jk, \
+                        user_srf_vars='PCT_NATVEG, PCT_GLACIER, PCT_LAKE, PCT_WETLAND, PCT_CROP, PCT_URBAN, PCT_NAT_PFT', \
+                        OriginalPFTclass=True, user_pftname_num=arctic_pfts)
+                        #OriginalPFTclass=False)
+    
       
 if __name__ == '__main__':
     test()
