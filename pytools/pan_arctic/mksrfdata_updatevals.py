@@ -189,6 +189,10 @@ def updatevals(fsurfnc_in, fsurfnc_out=None, \
                     varvals = np.asarray(user_srf[vname]) # list
                 #
                 print(vname, varvals.shape, src_vals.shape)
+            
+            elif vname=='natpft' and not OriginalPFTclass:
+                varvals = natpft
+                
             else:
                 varvals = src_vals
                 #
