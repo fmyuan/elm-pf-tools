@@ -108,6 +108,15 @@ def soilcolumn(more_vertlayers=False, nlevgrnd=15, printout=False):
 '''
 def domain_ncwrite(elmdomain_data, WRITE2D=True, ncfile='domain.nc', coord_system=True):
 
+    # standard
+    lon_arr = elmdomain_data['xc']
+    lat_arr = elmdomain_data['yc']
+    xv_arr  = elmdomain_data['xv']
+    yv_arr  = elmdomain_data['yv']
+    area_arr = elmdomain_data['area']
+    landfrac_arr = elmdomain_data['frac']
+    mask_arr = elmdomain_data['mask']
+
     # (optional) full 2D spatial extent
     if coord_system and 'X_axis' in elmdomain_data.keys():
         X_axis = elmdomain_data['X_axis']  # either longitude or projected geox, indiced as gridXID
@@ -120,14 +129,12 @@ def domain_ncwrite(elmdomain_data, WRITE2D=True, ncfile='domain.nc', coord_syste
         grid_xid_arr = elmdomain_data['gridXID']
         grid_yid_arr = elmdomain_data['gridYID']
 
-    # standard
-    lon_arr = elmdomain_data['xc']
-    lat_arr = elmdomain_data['yc']
-    xv_arr  = elmdomain_data['xv']
-    yv_arr  = elmdomain_data['yv']
-    area_arr = elmdomain_data['area']
-    landfrac_arr = elmdomain_data['frac']
-    mask_arr = elmdomain_data['mask']
+        if grid_id_arr.shape == mask_arr.shape:
+            # masked XX//YY as well for convience
+            YX_masked = np.zeros_like(XX,dtype=np.bool).flatten()
+            YX_masked[...]=False
+            YX_masked[grid_id_arr]=(mask_arr>0)
+            YX_masked = YX_masked.reshape(XX.shape)
 
     # extra
     if 'area_km2' in elmdomain_data.keys():
@@ -141,7 +148,7 @@ def domain_ncwrite(elmdomain_data, WRITE2D=True, ncfile='domain.nc', coord_syste
 
     #if in 1D, or so-called unstructured in ELM domain
     if not WRITE2D:
-        TLND_MASK=np.where(mask_arr)
+        TLND_MASK=np.where(mask_arr>0)
         if coord_system and 'X_axis' in elmdomain_data.keys():
             grid_id_arr = grid_id_arr[TLND_MASK]
             grid_xid_arr = grid_xid_arr[TLND_MASK]
@@ -155,6 +162,26 @@ def domain_ncwrite(elmdomain_data, WRITE2D=True, ncfile='domain.nc', coord_syste
         mask_arr = mask_arr[TLND_MASK]
         if 'area_km2' in elmdomain_data.keys():
             area_km2_arr = area_km2_arr[TLND_MASK]
+
+    elif (len(lon_arr.shape)==1 or 1 in lon_arr.shape) \
+        and ('X_axis' in elmdomain_data.keys() and 'Y_axis' in elmdomain_data.keys()) :
+        # need to re-dimension to 2D
+        xyshp = (len(elmdomain_data['Y_axis']), len(elmdomain_data['X_axis']))
+        xyvshp = (len(elmdomain_data['Y_axis']), len(elmdomain_data['X_axis']),nv)
+        lon_arr = lon_arr.reshape(xyshp)
+        lat_arr = lat_arr.reshape(xyshp)
+        xv_arr = xv_arr.reshape(xyvshp)
+        yv_arr = yv_arr.reshape(xyvshp)
+        area_arr = area_arr.reshape(xyshp)
+        landfrac_arr = landfrac_arr.reshape(xyshp)
+        mask_arr = mask_arr.reshape(xyshp)
+        if 'area_km2' in elmdomain_data.keys():
+            area_km2_arr = area_km2_arr.reshape(xyshp)
+        if coord_system:
+            grid_id_arr = grid_id_arr.reshape(xyshp)
+            grid_xid_arr = grid_xid_arr.reshape(xyshp)
+            grid_yid_arr = grid_yid_arr.reshape(xyshp)
+            
 
 
     # write to nc file
@@ -201,27 +228,15 @@ def domain_ncwrite(elmdomain_data, WRITE2D=True, ncfile='domain.nc', coord_syste
         w_nc_var.long_name = 'latitude of 2D land gridcell center (GCS_WGS_84), increasing from south to north'
         w_nc_var.units = "degrees_north"
         w_nc_fid.variables['lat'][...] = YY
+        
+        if 'YX_masked' in locals():
+            w_nc_var = w_nc_fid.createVariable('gmasked', np.int8, ('y','x'))
+            w_nc_var.long_name = 'masked or not of 2D land gridcells'
+            w_nc_var.units = ""
+            w_nc_fid.variables['gmasked'][...] = YX_masked.astype(np.int8)
+            
 
     if WRITE2D:
-        if (len(lon_arr.shape)==1 or 1 in lon_arr.shape) \
-            and ('X_axis' in elmdomain_data.keys() and 'Y_axis' in elmdomain_data.keys()) :
-            # need to re-dimension to 2D
-            xyshp = (len(elmdomain_data['Y_axis']), len(elmdomain_data['X_axis']))
-            xyvshp = (len(elmdomain_data['Y_axis']), len(elmdomain_data['X_axis']),nv)
-            lon_arr = lon_arr.reshape(xyshp)
-            lat_arr = lat_arr.reshape(xyshp)
-            xv_arr = xv_arr.reshape(xyvshp)
-            yv_arr = yv_arr.reshape(xyvshp)
-            area_arr = area_arr.reshape(xyshp)
-            landfrac_arr = landfrac_arr.reshape(xyshp)
-            mask_arr = mask_arr.reshape(xyshp)
-            if 'area_km2' in elmdomain_data.keys():
-                area_km2_arr = area_km2_arr.reshape(xyshp)
-            if coord_system:
-                grid_id_arr = grid_id_arr.reshape(xyshp)
-                grid_xid_arr = grid_xid_arr.reshape(xyshp)
-                grid_yid_arr = grid_yid_arr.reshape(xyshp)
-            
         w_nc_fid.createDimension('ni', lon_arr.shape[1])
         w_nc_fid.createDimension('nj', lon_arr.shape[0])
         w_nc_fid.createDimension('nv', nv)
@@ -1143,16 +1158,16 @@ if __name__ == '__main__':
     '''
 
 
-    '''
+    ''''''
     # extrac pt or list of pts of domain - no changes of resolutions or grid order, 
     # but extracted and includes xyid <-> (xid, yid) for 1d unstructured to 2d structured
     
     domain_subsetbymaskncf( \
             srcdomain_pathfile=DIN_LOC_ROOT+'/share/domains/domain.clm/domain.lnd.r0125_IcoswISC30E3r5.250918.nc', \
-            maskncf='../domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623.nc', \
+            maskncf='../CAVM001/domain.lnd.pan-arctic_CAVM.0.01deg.1D.c250623.nc', \
             reorder_src=False, \
             keep_duplicated=False, \
-            out2D=True, out_type='domain_ncwrite')
+            out2D=False, out_type='domain_ncwrite')
 
     # do surfdata extraction without changes of resolutions or grid ordering
     # using just newly-generated domain file
@@ -1167,7 +1182,7 @@ if __name__ == '__main__':
                     domain_included=False)
 
     print(allout)
-    '''
+    ''''''
 
     '''
     #allout = refine_surfdata(userdomain='./domain.lnd.2683x1pt_US-coweeta.nc')
@@ -1177,7 +1192,7 @@ if __name__ == '__main__':
     
     
     
-    ''''''
+    '''
     # truncate a boxed domain file only 
     
     #    site_name lat lon
@@ -1210,4 +1225,4 @@ if __name__ == '__main__':
                     #flanduse_timeseries=None, \
                     userdomain='domain.lnd.r05_RRSwISC6to18E3r5_N45.240328_remasked.nc', \
                     domain_included=False)
-    ''''''
+    '''
