@@ -744,6 +744,7 @@ def elmdomain_xrio(fnc_grid2d):
     '''
 
     import xarray
+    import rioxarray  # this is a must to have xarray dataset with extension rio
     import rasterio
         
     # 
@@ -785,8 +786,8 @@ def elmdomain_xrio(fnc_grid2d):
                             coords={"band":band_names, "y": laty, "x":lonx}
                             )
     
-    lnd_xr.rio.set_spatial_dims(x_dim="x", y_dim="y")
     lnd_xr.rio.write_crs("EPSG:4326", inplace=True)
+    lnd_xr.rio.set_spatial_dims(x_dim="x", y_dim="y")
     
     min_lonx = np.min(lonx)
     max_laty = np.max(laty)

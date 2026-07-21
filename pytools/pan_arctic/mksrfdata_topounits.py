@@ -51,6 +51,13 @@ def read_dem_aoi_xrio(dem_file, bbox_lb_ru, bbox_crs="EPSG:4326", bbox_outfile='
     del src
     
     # slope, aspect, and sky view factor (svf) derived from dem
+    if 'int' in str(elv_xr.dtype):
+        # image may be in integer, but not good for topographic calculation below
+        elv_xr = elv_xr.astype('float32')
+        elv_xr.data[np.where(elv_xr.data==rio_nodata)]=np.nan
+        elv_xr.rio.write_nodata(np.nan, inplace=True)
+        rio_nodata = elv_xr.rio.nodata
+        
     elev = elv_xr[0].data
     dem_mask = (elev==rio_nodata)        
     sa = rvtvis.slope_aspect(elev, output_units="degree", no_data=rio_nodata)
@@ -96,8 +103,7 @@ def thresholds_bins(topo_element, xlon, ylat, thresholds_element, thresholds_lab
         m = (bins_indx==ip)
         bins[thresholds_label[ip]] = {"masked": m, 
                                       "topo_element": topo_element[m], 
-                                      "lon":xlon[m] ,"lat": ylat[m]}
-        
+                                      "lon":xlon[m] ,"lat": ylat[m]}    
     return bins
 
 # ---------------------------------------------------------------------
@@ -193,6 +199,97 @@ def recursive_group_bins_area_weighted(df, delta_elev):
     group_stats_df = pd.DataFrame(group_stats)
     return df, groups, group_stats_df
 
+# ---------------------------------------------------------------------
+# xrio/geopandas used
+
+def percentile_bins_xriolabled(topo_element_xrio, percentiles):
+    xrio_data = topo_element_xrio.to_numpy()
+    xmask = ((xrio_data!=topo_element_xrio.rio.nodata) & (~np.isnan(xrio_data)))
+    
+    bins_labeledid = topo_element_xrio.copy()
+    bins_labeledid.data[...] = np.nan
+     
+    # Nan excluded data bins and indexing
+    thresholds = np.percentile(xrio_data[xmask], percentiles)
+    bins_labeledid.data[xmask] = thresholds_bins_indexing(xrio_data[xmask], thresholds)
+       
+    return bins_labeledid
+
+def thresholds_bins_indexing(topo_element, thresholds_element):
+    # note: topo_element must be Nan removed.    
+    bins_indx = np.digitize(topo_element, thresholds_element, right=True)
+    return bins_indx
+
+def pd_df_groupby_weighted(group, valcol_name="elevation", wtcol_name="area", ret='mean'):
+    # Extract values and weights for the current group
+    vals = group[valcol_name]
+    weights = group[wtcol_name]
+
+    # 1. Calculate the weighted average
+    weighted_avg = np.average(vals, weights=weights)
+    if ret=='mean':
+        return weighted_avg
+
+    # 2. Calculate the weighted variance
+    if ret=='std':
+        weighted_var = np.average((vals - weighted_avg) ** 2, weights=weights)
+        return np.sqrt(weighted_var)
+
+
+
+def stats_gridbins_area_weighted(topo_xrio, topo_gid, topo_binid, topo_area=None, topo_var="elevation"):
+    # GeoArea-weighted bin statistics
+    import pandas
+    
+    topo_xrio = topo_xrio.drop_vars(['band','spatial_ref'])
+    topo_xrio.name = topo_var
+    
+    topo_binid = topo_binid.drop_vars(['band','spatial_ref'])
+    topo_binid.name = 'topounitID'
+    uniq_binid = np.unique(topo_binid.to_numpy())
+    
+    topo_gid = topo_gid.drop_vars(['band','spatial_ref'])
+    topo_gid.name = 'gridID'
+    #uniq_gid = np.unique(topo_gid.to_numpy())
+    
+    
+    if not topo_area is None:
+        # for calculating area-weights within individual grid
+        topo_area = topo_area.drop_vars(['band','spatial_ref'])
+        topo_area.name = 'area'
+        topo_df = xarray.merge([topo_xrio,topo_area,topo_binid,topo_gid]).to_dataframe()
+    else:
+        topo_df = xarray.merge([topo_xrio, topo_gid, topo_binid]).to_dataframe()
+    
+    aggr_df = topo_df.groupby('gridID')['gridID'].mean().astype(int)
+    # aggr_df.name???
+    for i in range(uniq_binid.size):
+        ibin=uniq_binid[i]
+        if np.isnan(ibin): continue
+        bin_group = topo_df.groupby('topounitID').get_group(ibin)
+        if topo_area is None:
+            bin_mean = bin_group.groupby('gridID')[topo_var].mean()
+            bin_std = bin_group.groupby('gridID')[topo_var].std()
+        else:
+            #bin_area = bin_group.groupby('gridID')['area'].sum()
+            #bin_mean = bin_group.groupby('gridID')[topo_var].sum()/bin_area
+            #bin_std = bin_group.groupby('gridID')[topo_var].std()/bin_area # this is not correct
+            bin_mean = bin_group.groupby('gridID'). \
+                apply(pd_df_groupby_weighted,
+                      valcol_name=topo_var, wtcol_name="area", 
+                      ret='mean', include_groups=False)
+
+            bin_std = bin_group.groupby('gridID'). \
+                apply(pd_df_groupby_weighted, 
+                      valcol_name=topo_var, wtcol_name="area", 
+                      ret='std', include_groups=False)
+            
+        bin_mean.name = topo_var+str(int(ibin))+'_mean'
+        aggr_df = pandas.merge(aggr_df, bin_mean, left_index=True, right_index=True, how='left')
+        bin_std.name = topo_var+str(int(ibin))+'_std'
+        aggr_df = pandas.merge(aggr_df, bin_std, left_index=True, right_index=True, how='left')
+
+    return aggr_df
 
 # ---------------------------------------------------------------------
 # Main
@@ -224,13 +321,16 @@ def grid_stats_topounits(args,
     
     # by rioxarray to read/truncate a geotiff of DEM
     xrio_topo = read_dem_aoi_xrio(args.dem, tuple(args.bbox), bbox_outfile=args.bbox_outfile)
+    
+    # The following grid-wised loop is slow and requires a large amount of memory
+    
     elv  = xrio_topo[0].data
     slp  = xrio_topo[1].data
     asp  = xrio_topo[2].data
     svf  = xrio_topo[3].data
     
     xy  = np.meshgrid(xrio_topo.x.data, xrio_topo.y.data)
-    nanmask = elv!=xrio_topo.rio.nodata
+    nanmask = ((elv!=xrio_topo.rio.nodata) & (~np.isnan(elv))) 
     lon = xy[0][nanmask]
     lat = xy[1][nanmask]
     elv = elv[nanmask]
@@ -307,6 +407,8 @@ def grid_stats_topounits(args,
         if verbose>1:
             print(df_elv, '\n', df_slp, '\n', df_asp,'\n', df_svf,'\n')
     #------------------------------------------------------------------------------------------------------        
+    
+    
     
     # grid by grid topounit summarizing
     if elm_domainnc=='':
@@ -432,6 +534,77 @@ def grid_stats_topounits(args,
     return xrio_topo, grid_poly
 
 # ---------------------------------------------------------------------
+
+
+def grid_stats_topounits2(args, 
+                     percentiles = np.asarray([10,20,30,40,50,60,70,80,85,90,95,100]), 
+                     verbose=0, 
+                     elm_domainnc=''):
+
+    from pytools.commons_utils.gridlocator import elmdomain_xrio
+    from pytools.pan_arctic.arctic_domain import elm_km2_from_arcradians2
+    
+    from rasterio.enums import Resampling
+    import geopandas
+    from cmath import pi
+ 
+    #percentiles = np.asarray([10,20,30,40,50,60,70,80,85,90,95,100])  # total 12 bins
+
+    # boxed boundary from domain.nc
+    if not elm_domainnc=='':
+        xrio_elmdomain = elmdomain_xrio(elm_domainnc)
+        bmask = np.where(xrio_elmdomain.band=='mask')[0][0]
+        xrio_elmdomain_mask=xrio_elmdomain[bmask]
+        xrio_elmdomain_mask.rio.write_nodata(0.0, inplace=True)
+        xrio_elmdomain_gid = xrio_elmdomain_mask.copy()
+        gid = np.indices((xrio_elmdomain_mask.to_numpy()).flatten().shape)
+        xrio_elmdomain_gid.data = gid.reshape(xrio_elmdomain_mask.shape)
+
+        #domain_xr = xarray.open_dataset(elm_domainnc, engine='netcdf4')
+        xlmt = [xrio_elmdomain.rio.bounds()[0],xrio_elmdomain.rio.bounds()[2]]
+        ylmt = [xrio_elmdomain.rio.bounds()[1],xrio_elmdomain.rio.bounds()[3]]  
+        args.bbox = [np.nanmin(xlmt),np.nanmin(ylmt),np.nanmax(xlmt),np.nanmax(ylmt)]
+        
+    
+    # by rioxarray to read/truncate a geotiff of DEM
+    xrio_topo = read_dem_aoi_xrio(args.dem, tuple(args.bbox), bbox_outfile=args.bbox_outfile)
+    
+    # pixel area in unit of km2, calculated from lat/lon axis
+    xrio_topoarea = xrio_topo[0].copy()
+    res_x = np.mean(np.diff(xrio_topoarea.x.to_numpy()))
+    res_y = np.mean(np.diff(xrio_topoarea.y.to_numpy()))
+    res_rad2 = abs(res_x*res_y/180.0/180.0*pi*pi)
+    yc = np.meshgrid(xrio_topoarea.x,xrio_topoarea.y)[1]
+    xrio_topoarea.data = elm_km2_from_arcradians2(res_rad2, latitude=yc)
+
+    
+    # masking topounit (labeled xrio arrays)
+    elv_xrio  = xrio_topo[0]
+    elv_binid = percentile_bins_xriolabled(elv_xrio, percentiles)
+    #slp_xrio  = xrio_topo[1]
+    #slp_binid = percentile_bins_xriolabled(slp_xrio, np.asarray([100]))
+    #asp_xrio  = xrio_topo[2]
+    #asp_binid = percentile_bins_xriolabled(asp_xrio, np.asarray([50.0,100.0])) # could be merged with elevation-classes (contour bins)
+    #svf_xrio  = xrio_topo[3]
+    #svf_binid = percentile_bins_xriolabled(svf_xrio, np.asarray([100]))
+    
+    # assigning grid id to DEM raster cells
+    elv_gid = xrio_elmdomain_gid.rio.reproject_match(
+                                elv_xrio,
+                                resampling=Resampling.nearest)
+
+
+    # summarizing by bin ids following grid ids, via pandas' xarray dataframe.groupby
+    aggr_df = stats_gridbins_area_weighted(elv_xrio, elv_gid, elv_binid, \
+                                 topo_area=xrio_topoarea, topo_var="elevation")
+        
+    #aggr_df = topo_df.dissolve(
+    #                            by=['gridID', 'topounitID'], 
+    #                            aggfunc={'elevation': 'mean'}
+    #                        )     
+    
+    return xrio_topo, aggr_df
+
 
 def srf_topo_from_gridstats(geopd_topo_data,
                             TOPOUNIT = False, outdata=True, outnc_surf=''):
@@ -631,11 +804,10 @@ def test():
     if not IFTGU:
         # if don't do topounit dividing    
         xrio, gridded_stats = grid_stats_topounits(args, percentiles=np.asarray([100]), verbose=0, 
-                        elm_domainnc='domain_test.nc')
+                        elm_domainnc='domain.lnd.r0125_IcoswISC30E3r5.250918_cavm2d_TVC.nc')
     else:
-        xrio, gridded_stats = grid_stats_topounits(args, verbose=1, 
-                        elm_domainnc='domain_test.nc')
-                        #elm_domainnc='domain.lnd.r0125_IcoswISC30E3r5.250918_cavm1d.nc')
+        xrio, gridded_stats = grid_stats_topounits2(args, verbose=1, 
+                        elm_domainnc='domain.lnd.r0125_IcoswISC30E3r5.250918_cavm2d_TVC.nc')
                         #elm_domainnc='domain.lnd.r05_RRSwISC6to18E3r5.240328_AnakRBurns.nc')
     
     
