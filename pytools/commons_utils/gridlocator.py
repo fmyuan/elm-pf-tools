@@ -789,13 +789,6 @@ def elmdomain_xrio(fnc_grid2d):
     lnd_xr.rio.write_crs("EPSG:4326", inplace=True)
     lnd_xr.rio.set_spatial_dims(x_dim="x", y_dim="y")
     
-    min_lonx = np.min(lonx)
-    max_laty = np.max(laty)
-    res_x = np.mean(np.diff(lonx))
-    res_y = np.mean(np.diff(laty))                   
-    tfrom = rasterio.transform.from_origin(min_lonx, max_laty, res_x, res_y)
-    lnd_xr.rio.write_transform(tfrom, inplace=True)
-    
     #lnd_xr.rio.write_nodata(-99999)
     #
     return lnd_xr
