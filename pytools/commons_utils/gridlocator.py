@@ -737,7 +737,7 @@ def npmeshgrids_gpd(np_meshgrids, xy_or_ji=0, mesh_crs="EPSG:4326", POLYGON=True
     #
                 
 #
-def elmdomain_xrio(fnc_grid2d):
+def elmdomain_xrio(fnc_grid2d, gridID_redo=False):
     '''
     ELM domain grids to rioxarray Dataset, for easier image operations ( maybe ? - TODO: test)
       ndarray list or dict, either from domain.nc (xc/yc, with xv/yv), or surfdata.nc (LONGXY, LATIXY)
@@ -750,36 +750,37 @@ def elmdomain_xrio(fnc_grid2d):
     # 
     # Open the source domain or surface nc file, 
     # directly from an ELM domain nc file
-    f = xarray.open_dataset(fnc_grid2d, engine="netcdf4")  
-    xc = f["xc"].values
-    yc = f["yc"].values
-    lonx = xc[0,:]
-    laty = yc[:,0]
-    lndmask = f["mask"].values
-    lndfrac = f["frac"].values
-    lndfrac =np.ma.masked_where(lndmask<=0., lndfrac)
-    area = f["area"].values
-    area =np.ma.masked_where(lndmask<=0., area)
+    with xarray.open_dataset(fnc_grid2d, engine="netcdf4") as f: 
+        xc = f["xc"].values
+        yc = f["yc"].values
+        lonx = xc[0,:]
+        laty = yc[:,0]
+        
+        lndmask = f["mask"].values
+        lndfrac = f["frac"].values
+        lndfrac =np.ma.masked_where(lndmask<=0., lndfrac)
+        area = f["area"].values
+        area =np.ma.masked_where(lndmask<=0., area)
 
-    #elm domain grids are IDed, which are very useful in 2D (structured) <-->1D (unstructured)
-    if 'gridID' in f.variables and \
-        'gridXID' in f.variables and 'gridYID' in f.variables:
-        xyid = f["gridID"].values
-        xid = f["gridXID"].values
-        yid = f["gridYID"].values
-    else:
-        xid = np.indices(lndmask.shape)[1]
-        yid = np.indices(lndmask.shape)[0]
-        xyid = np.indices(lndmask.flatten().shape)[0]
-        xyid = np.reshape(xyid, xid.shape)
-    xid = np.ma.masked_where(lndmask<=0., xid)
-    yid = np.ma.masked_where(lndmask<=0., yid)
-    xyid = np.ma.masked_where(lndmask<=0., xyid)
+        #elm domain grids are IDed, which are very useful in 2D (structured) <-->1D (unstructured)
+        if ('gridID' in f.variables and \
+            'gridXID' in f.variables and 'gridYID' in f.variables) and \
+            not gridID_redo:
+            xyid = f["gridID"].values
+            xid = f["gridXID"].values
+            yid = f["gridYID"].values
+        else:
+            xid = np.indices(lndmask.shape)[1]
+            yid = np.indices(lndmask.shape)[0]
+            xyid = np.indices(lndmask.flatten().shape)[0]
+            xyid = np.reshape(xyid, xid.shape)
+        xid = np.ma.masked_where(lndmask<=0., xid)
+        yid = np.ma.masked_where(lndmask<=0., yid)
+        xyid = np.ma.masked_where(lndmask<=0., xyid)
     
-    f.close()
     
     band_names = ["GridID","GridXID", "GridYID", "xc","yc","area", "mask", "frac"]
-    band_data=np.stack([xyid, xid, yid, xc,yc,area, lndmask, lndfrac])
+    band_data=np.stack([xyid, xid, yid, xc,yc,area,lndmask,lndfrac])
     lnd_xr = xarray.DataArray(
                             data=band_data, 
                             dims=["band","y","x"],

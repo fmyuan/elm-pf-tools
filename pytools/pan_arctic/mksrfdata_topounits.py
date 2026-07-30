@@ -28,6 +28,7 @@ import xarray
 #import math
 import os
 
+
 #import pytools.commons_utils.gridlocator as gridlocator
 
 # ---------------------------------------------------------------------
@@ -155,7 +156,7 @@ def pd_df_groupby_weighted(group, valcol_name="elevation", wtcol_name="area", re
         return np.sqrt(weighted_var)
 
 def stats_gridbins_area_weighted(topo_xrio, topo_gid, topo_binid, aggr_to_gid=None, 
-                                 topo_area=None, topo_var="elevation"):
+                                 topo_area=None, topo_var="elevation", out_gxy=False):
     # GeoArea-weighted bin statistics
     import pandas
     
@@ -191,25 +192,31 @@ def stats_gridbins_area_weighted(topo_xrio, topo_gid, topo_binid, aggr_to_gid=No
         aggr_df['gridID'] = aggr_to_gid.groupby('gridID')['gridID'].mean().astype(int)
     
     # need grid's xy coordinates, which are all-pixels' median
-    gridxy = topo_df.groupby('gridID')['gridID'].groups
-    gridxy = [np.nanmedian([np.array(gridxy[i][j]) for j in range(gridxy[i].size)], axis=0) for i in gridxy.keys()]      
+    # this is an expensive loop, and may not need by default
+    if out_gxy:
+        gridxy = topo_df.groupby('gridID')['gridID'].groups
+        gridxy = [np.nanmedian([np.array(gridxy[i][j]) for j in range(gridxy[i].size)], axis=0) for i in gridxy.keys()]  # could be long loops - needs a better method    
 
-    gridx  = topo_df.groupby('gridID')['gridID'].mean().astype(float) # as a df as gridID, but renamed and assigned values below 
-    gridx.name = 'gridX'
-    gridx.values[...]=np.array(gridxy)[:,0]   
-    aggr_df['gridX'] = pandas.merge(aggr_df['gridID'], gridx, left_index=True, right_index=True, how='left')
+        gridx  = topo_df.groupby('gridID')['gridID'].mean().astype(float) # as a df as gridID, but renamed and assigned values below 
+        gridx.name = 'gridX'
+        gridx.values[...]=np.array(gridxy)[:,0]   
+        aggr_df['gridX'] = pandas.merge(aggr_df['gridID'], gridx, left_index=True, right_index=True, how='left')
 
-    gridy  = topo_df.groupby('gridID')['gridID'].mean().astype(float) # as a df as gridID, but renamed and assigned values below 
-    gridy.name = 'gridY'
-    gridy.values[...]=np.array(gridxy)[:,1]   
-    aggr_df['gridY'] = pandas.merge(aggr_df['gridID'], gridy, left_index=True, right_index=True, how='left')
+        gridy  = topo_df.groupby('gridID')['gridID'].mean().astype(float) # as a df as gridID, but renamed and assigned values below 
+        gridy.name = 'gridY'
+        gridy.values[...]=np.array(gridxy)[:,1]   
+        aggr_df['gridY'] = pandas.merge(aggr_df['gridID'], gridy, left_index=True, right_index=True, how='left')
     
     # pixel area if any
     if not topo_area is None:
-        aggr_df['area_km2'] = topo_df.groupby('gridID')['area'].sum().astype(float)
-        aggr_df['area_km2'].name = 'area_km2'
+        area_km2 = topo_df.groupby('gridID')['area'].sum().astype(float)
+        area_km2.name = 'area_km2'
+        aggr_df['area_km2'] = pandas.merge(aggr_df['gridID'], area_km2, left_index=True, right_index=True, how='left')
     
     # aggregating data bin-by-bin
+    #nanbin_group = topo_df.groupby('topounitID', dropna=False).get_group(np.nan) # this didn't work to exclude nan-topoid'ed pixel area
+    idx=np.where(np.isnan(topo_df['topounitID'].to_numpy()))
+    topo_df['gridID'].values[idx]=np.nan
     for i in range(uniq_binid.size):
         ibin=uniq_binid[i]
         if np.isnan(ibin): continue
@@ -252,30 +259,30 @@ def stats_gridbins_area_weighted(topo_xrio, topo_gid, topo_binid, aggr_to_gid=No
 # ---------------------------------------------------------------------
 
 
-def grid_stats_topounits2(args, 
+def grid_topounits(args, 
                      percentiles = np.asarray([10,20,30,40,50,60,70,80,85,90,95,100]), 
-                     verbose=0, 
-                     elm_domainnc=''):
+                     elm_domainnc='',
+                     xrio_topo_out=False):
 
     from pytools.commons_utils.gridlocator import elmdomain_xrio
-    from pytools.pan_arctic.arctic_domain import elm_km2_from_arcradians2
     
     from rasterio.enums import Resampling
     #import geopandas
-    from cmath import pi
  
     #percentiles = np.asarray([10,20,30,40,50,60,70,80,85,90,95,100])  # total 12 bins
 
     # boxed boundary from domain.nc, if any
     if not elm_domainnc=='':
-        xrio_elmdomain = elmdomain_xrio(elm_domainnc)
-        bmask = np.where(xrio_elmdomain.band=='mask')[0][0]
-        xrio_elmdomain_mask=xrio_elmdomain[bmask]
-        xrio_elmdomain_mask.rio.write_nodata(0.0, inplace=True)
-        xrio_elmdomain_gid = xrio_elmdomain_mask.copy()
-        gid = np.indices((xrio_elmdomain_mask.to_numpy()).flatten().shape)+1.0 
-        # as float, so that nan can be used to mask. gid=0 will be lost below when do xrio reproject_match
-        xrio_elmdomain_gid.data = gid.reshape(xrio_elmdomain_mask.shape)
+        xrio_elmdomain = elmdomain_xrio(elm_domainnc, gridID_redo=True)
+        
+        bgid = np.where(xrio_elmdomain.band=='GridID')[0][0]
+        xrio_elmdomain_gid=xrio_elmdomain[bgid]
+        
+        # gid as float, so that nan can be used to mask. 
+        # and aslo, if gid=0, it will be lost below when do xrio reproject_match
+        gid = xrio_elmdomain_gid.to_numpy()+1.0 
+        gid[np.where(gid<=0)]=np.nan #mask out 
+        xrio_elmdomain_gid.data = gid
 
         #domain_xr = xarray.open_dataset(elm_domainnc, engine='netcdf4')
         res_x = abs(xrio_elmdomain.rio.resolution()[0])
@@ -288,47 +295,75 @@ def grid_stats_topounits2(args,
     
     # by rioxarray to read/truncate a geotiff of DEM
     xrio_topo = read_dem_aoi_xrio(args.dem, tuple(args.bbox), bbox_outfile=args.bbox_outfile)
+        
+    # masking topounit ID (labeled xrio arrays)
+    elv_xrio  = xrio_topo[0]
+    topo_binid = percentile_bins_xriolabled(elv_xrio, percentiles, topo_xdelta=args.group_delta_elev)
     
-    # pixel area in unit of km2, calculated from lat/lon axis
+    #slp_xrio  = xrio_topo[1]
+    #slp_binid = percentile_bins_xriolabled(slp_xrio, np.asarray([100]))
+    #asp_xrio  = xrio_topo[2]
+    #asp_binid = percentile_bins_xriolabled(asp_xrio, np.asarray([50.0,100.0])) # could be merged with elevation-classes (contour bins)
+    #svf_xrio  = xrio_topo[3]
+    #svf_binid = percentile_bins_xriolabled(svf_xrio, np.asarray([100]))
+    
+    # assigning grid id to DEM raster cells
+    if not elm_domainnc=='':
+        topo_gid = xrio_elmdomain_gid.rio.reproject_match(
+                                elv_xrio,
+                                resampling=Resampling.nearest,
+                                nodata=np.nan)
+        #
+        topo_gid.values = topo_gid.values - 1.0
+        if xrio_topo_out:
+            return xrio_topo, topo_gid, topo_binid, xrio_elmdomain
+        else:
+            return topo_gid, topo_binid, xrio_elmdomain
+    else:
+        topo_gid = elv_xrio.copy()
+        topo_gid.values[...] = np.indices(elv_xrio.to_numpy().flatten().shape).reshape(topo_gid.shape)
+        #
+        if xrio_topo_out:
+            return xrio_topo, topo_gid, topo_binid
+        else:
+            return topo_gid, topo_binid
+
+    #
+
+#
+
+def grid_topounits_stats(xrio_topo, xrio_topo_gid, xrio_topo_binid,  
+                     xrio_elmdomain_gid=None):
+
+    #
+    from pytools.pan_arctic.arctic_domain import elm_km2_from_arcradians2
+    from cmath import pi
+
+
+    if not xrio_elmdomain_gid is None:
+        aggr_to_gid = xrio_elmdomain_gid
+    else:
+        aggr_to_gid = xrio_topo_gid
+
+
+    # summarizing by bin ids following grid ids, via pandas' xarray dataframe.groupby
+
+    # pixel area in unit of km2, calculated from lat/lon axis. for weighted-averaging
     xrio_topoarea = xrio_topo[0].copy()
     res_x = np.mean(np.diff(xrio_topoarea.x.to_numpy()))
     res_y = np.mean(np.diff(xrio_topoarea.y.to_numpy()))
     res_rad2 = abs(res_x*res_y/180.0/180.0*pi*pi)
     yc = np.meshgrid(xrio_topoarea.x,xrio_topoarea.y)[1]
     xrio_topoarea.data = elm_km2_from_arcradians2(res_rad2, latitude=yc)
+    
 
-    
-    # masking topounit ID (labeled xrio arrays)
-    elv_xrio  = xrio_topo[0]
-    elv_binid = percentile_bins_xriolabled(elv_xrio, percentiles, topo_xdelta=25.0)
-    
-    slp_xrio  = xrio_topo[1]
-    #slp_binid = percentile_bins_xriolabled(slp_xrio, np.asarray([100]))
-    asp_xrio  = xrio_topo[2]
-    #asp_binid = percentile_bins_xriolabled(asp_xrio, np.asarray([50.0,100.0])) # could be merged with elevation-classes (contour bins)
-    svf_xrio  = xrio_topo[3]
-    #svf_binid = percentile_bins_xriolabled(svf_xrio, np.asarray([100]))
-    
-    # assigning grid id to DEM raster cells
-    if not elm_domainnc=='':
-        elv_gid = xrio_elmdomain_gid.rio.reproject_match(
-                                elv_xrio,
-                                resampling=Resampling.nearest,
-                                nodata=np.nan)
-        aggr_to_gid = xrio_elmdomain_gid
-    else:
-        elv_gid = elv_xrio.copy()
-        elv_gid.values[...] = np.indices(elv_xrio.to_numpy().flatten().shape).reshape(elv_gid.shape)+1.0
-        aggr_to_gid = elv_gid
-
-    # summarizing by bin ids following grid ids, via pandas' xarray dataframe.groupby
-    elv_df = stats_gridbins_area_weighted(elv_xrio, elv_gid, elv_binid, aggr_to_gid = aggr_to_gid, \
-                                 topo_area=xrio_topoarea, topo_var="elevation")
-    slp_df = stats_gridbins_area_weighted(slp_xrio, elv_gid, elv_binid, aggr_to_gid = aggr_to_gid, \
+    elv_df = stats_gridbins_area_weighted(xrio_topo[0], xrio_topo_gid, xrio_topo_binid, aggr_to_gid = aggr_to_gid, \
+                                 topo_area=xrio_topoarea, topo_var="elevation", out_gxy=True)
+    slp_df = stats_gridbins_area_weighted(xrio_topo[1], xrio_topo_gid, xrio_topo_binid, aggr_to_gid = aggr_to_gid, \
                                  topo_area=xrio_topoarea, topo_var="slope")
-    asp_df = stats_gridbins_area_weighted(asp_xrio, elv_gid, elv_binid, aggr_to_gid = aggr_to_gid, \
+    asp_df = stats_gridbins_area_weighted(xrio_topo[2], xrio_topo_gid, xrio_topo_binid, aggr_to_gid = aggr_to_gid, \
                                  topo_area=xrio_topoarea, topo_var="aspect")
-    svf_df = stats_gridbins_area_weighted(svf_xrio, elv_gid, elv_binid, aggr_to_gid = aggr_to_gid, \
+    svf_df = stats_gridbins_area_weighted(xrio_topo[3], xrio_topo_gid, xrio_topo_binid, aggr_to_gid = aggr_to_gid, \
                                  topo_area=xrio_topoarea, topo_var="svf")
     
     '''
@@ -345,9 +380,9 @@ def grid_stats_topounits2(args,
     '''
         
     df_topo = {}
-    df_topo['gridID']  = elv_df['gridID']-1
-    df_topo['grid_xc'] = elv_df['gridX'].drop(columns=['gridID'])
-    df_topo['grid_yc'] = elv_df['gridY'].drop(columns=['gridID'])
+    df_topo['gridID']  = elv_df['gridID']
+    if 'gridX' in elv_df.keys(): df_topo['grid_xc'] = elv_df['gridX'].drop(columns=['gridID'])
+    if 'gridY' in elv_df.keys(): df_topo['grid_yc'] = elv_df['gridY'].drop(columns=['gridID'])
     if 'area_km2' in elv_df.keys(): df_topo['area_km2'] = elv_df['area_km2']
     df_topo['Topounit_area_fraction'] = elv_df['Area_fraction'] .drop(columns=['gridID'])   
     df_topo['Topounit_elevation']     = elv_df['Mean_elevation'].drop(columns=['gridID'])
@@ -359,7 +394,7 @@ def grid_stats_topounits2(args,
     df_topo['Topounit_skyview']     = svf_df['Mean_svf'].drop(columns=['gridID'])
     df_topo['Topounit_skyview_std'] = svf_df['Std_svf'].drop(columns=['gridID'])
     
-    return xrio_topo, df_topo
+    return df_topo
 
 
 def srf_topo_from_gridstats(pd_topo_data,
@@ -372,8 +407,14 @@ def srf_topo_from_gridstats(pd_topo_data,
     # directly from grided topo feature dataset    
     srf_grids_sub = pd_topo_data
             
-    xc = srf_grids_sub['grid_xc'].values
-    yc = srf_grids_sub['grid_yc'].values
+    if 'grid_xc' in srf_grids_sub.keys():
+        xc = srf_grids_sub['grid_xc'].values
+    else:
+        xc = None
+    if 'grid_yc' in srf_grids_sub.keys():
+        yc = srf_grids_sub['grid_yc'].values
+    else:
+        yc = None
     if 'area' in srf_grids_sub.keys():
         area_rad2 = srf_grids_sub['area'].values/180/180*pi*pi
         area_km2 = elm_domain.elm_km2_from_arcradians2(area_rad2, latitude=yc)
@@ -384,7 +425,7 @@ def srf_topo_from_gridstats(pd_topo_data,
     else:
         area_km2 = None
           
-    grd_size = xc.size
+    grd_size = srf_grids_sub['gridID'].values.size
     topounit_size = 12
     topounit_id   = [np.where(~np.isnan(srf_grids_sub["Topounit_area_fraction"].iloc[i].values))[0] for i in range(grd_size)]
     area_fraction = [srf_grids_sub["Topounit_area_fraction"].iloc[i].values.astype(float) for i in range(grd_size)]  # to np float datatype for convenience
@@ -519,7 +560,7 @@ def srf_topo_from_gridstats(pd_topo_data,
         topo2     = np.nansum(elevation*area_fraction, axis=0)
         topo2_max = np.nanmax(elevation, axis=0)
         topo2_n   = [topounit_id[i].size for i in range(len(topounit_id))]  #topounit_id still a list of grid, with varying id length
-        topo2_n0  = [topounit_id[i][0] for i in range(len(topounit_id))]
+        #topo2_n0  = [topounit_id[i][0] for i in range(len(topounit_id))]
         
         
     #--------------------------------------------------------------------------------------------------------
@@ -532,8 +573,8 @@ def srf_topo_from_gridstats(pd_topo_data,
 
     if outdata:
         surfdata = {}
-        surfdata['LONGXY']   = xc
-        surfdata['LATIXY']   = yc
+        if not xc is None: surfdata['LONGXY']   = xc
+        if not yc is None: surfdata['LATIXY']   = yc
         if not area_km2 is None: 
             surfdata['AREA'] = area_km2
         surfdata['TOPO']     = topo1
@@ -551,7 +592,7 @@ def srf_topo_from_gridstats(pd_topo_data,
             surfdata['TopounitAveElv']    = topounit_elev
             surfdata['TopounitFracArea']  = topounit_frac
             surfdata['topoPerGrid']       = topo2_n
-            surfdata['topounit0PerGrid']  = topo2_n0 # this is useful to allow lateral connection
+            #surfdata['topounit0PerGrid']  = topo2_n0 # this is useful to allow lateral connection
         
         
         return surfdata
@@ -578,20 +619,35 @@ def test():
 
     #------------------------------------------------------------------------------------    
     IFTGU=True
+    DOMAIN_Extraction = False
     
-    user_domainnc = 'domain.lnd.r0125_IcoswISC30E3r5.250918_cavm2d.nc'
+    user_domainnc_2d = 'domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm2d.nc'
+    user_domainnc_1d = 'domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
+    #user_domainnc_2d = 'domain.lnd.r0125_IcoswISC30E3r5.250918_cavm2d.nc'
+    #user_domainnc_1d = 'domain.lnd.r0125_IcoswISC30E3r5.250918_cavm1d.nc'
+    #user_domainnc='domain.lnd.r05_RRSwISC6to18E3r5.240328_AnakRBurns.nc'
     
-    # STEP 1: topographic units from DEM geotiff 
+    # STEP 1: topographic units from DEM geotiff, and pixel-wide gridID and topounitID
  
     if not IFTGU:
         # if don't do topounit dividing    
-        xrio, gridded_stats = grid_stats_topounits2(args, percentiles=np.asarray([100]), verbose=0, 
-                        elm_domainnc=user_domainnc)
+        xrio, xrio_gid, xrio_tid, xrio_elmdomain = grid_topounits(args, percentiles=np.asarray([100]), 
+                        elm_domainnc=user_domainnc_2d,
+                        xrio_topo_out=True)
     else:
-        xrio, gridded_stats = grid_stats_topounits2(args, verbose=1, 
-                        elm_domainnc=user_domainnc)
-                        #elm_domainnc='domain.lnd.r05_RRSwISC6to18E3r5.240328_AnakRBurns.nc')
+        xrio, xrio_gid, xrio_tid, xrio_elmdomain = grid_topounits(args, 
+                        elm_domainnc=user_domainnc_2d,
+                        xrio_topo_out=True)
     
+    # grid-level topounits statistics
+    bgid = np.where(xrio_elmdomain.band=='GridID')[0][0]
+    xrio_elmdomain_gid=xrio_elmdomain[bgid]
+
+    xmask=xrio_elmdomain[np.where(xrio_elmdomain.band=='mask')[0][0]].to_numpy()
+    xmask_gid = xrio_elmdomain_gid.to_numpy()
+    xmask_gid[np.where(xmask<=0.0)] = np.nan
+    xrio_elmdomain_gid.data = xmask_gid # this will exclude non-landmask gridcell below SO the data is to be unstructured
+    gridded_stats = grid_topounits_stats(xrio, xrio_gid, xrio_tid, xrio_elmdomain_gid=xrio_elmdomain_gid)
     
     #------------------------------------------------------------------------------------
     # STEP 2: write surfdata with TOPO features 
@@ -601,7 +657,7 @@ def test():
     elm_domain.set_e3sm_input('/Users/f9y/project_e3sm/e3sm_inputdata')
  
     
-    # example 1: generating template domain and surfdata, from DEM only, and then filling in new TOPO
+    # example 1: generating template domain and surfdata, from DEM only or user_domainnc, and then filling in new TOPO
     surfdata_topo = srf_topo_from_gridstats(gridded_stats, TOPOUNIT=IFTGU)
     
     
@@ -618,37 +674,67 @@ def test():
         xdomain['area_km2'] = surfdata_topo['AREA']
         xdomain['area'] = elm_domain.elm_arcradians2_from_km2(xdomain['area_km2'])    
     if 'xv' in xdomain.keys() and 'yv' in xdomain.keys(): 
+        #from DEM
         elm_domain.domain_ncwrite(xdomain, WRITE2D=False, ncfile='xdomain.nc', coord_system=False)
         xdomain_ncf='xdomain.nc'
         
-    elif not user_domainnc is None:
-        xdomain_ncf=user_domainnc
+    elif not user_domainnc_2d is None:
+        #from user domain
+        xdomain_ncf=user_domainnc_1d
     
+        #xc,yc,area directly from user_domain
+        # because those in 'surfdata_topo' are DEM pixels aggregated data, which excluded non-values pixels
+        bgx = np.where(xrio_elmdomain.band=='xc')[0][0]
+        xrio_bgx=xrio_elmdomain[bgx].to_numpy()
+        surfdata_topo['LONGXY'] = xrio_bgx[np.where(xmask>0.0)].reshape(surfdata_topo['LONGXY'].shape) # this will overide
+        
+        bgx = np.where(xrio_elmdomain.band=='yc')[0][0]
+        xrio_bgx=xrio_elmdomain[bgx].to_numpy()
+        surfdata_topo['LATIXY'] = xrio_bgx[np.where(xmask>0.0)].reshape(surfdata_topo['LATIXY'].shape) # this will overide
+        
+        bgx = np.where(xrio_elmdomain.band=='area')[0][0]
+        xrio_bgx=xrio_elmdomain[bgx].to_numpy()
+        area_km2 = xrio_bgx[np.where(xmask>0.0)].reshape(surfdata_topo['LATIXY'].shape)
+        area_km2 = elm_domain.elm_km2_from_arcradians2(area_km2, latitude=surfdata_topo['LATIXY'])
+        surfdata_topo['AREA'] = area_km2
+        
+        
+        
     
+    # generate surfdata template, and domain if required (e.g. different resolution from user-provided domain)
+    #DOMAIN_Extraction = True # if want to overide
     if IFTGU:
         allout = elm_domain.refine_surfdata( \
                 lnd_domain_file=elm_domain.DIN_LOC_ROOT+'/share/domains/domain.clm/domain.lnd.r05_RRSwISC6to18E3r5_N45.240328.nc', \
                 fsurdat=elm_domain.DIN_LOC_ROOT+'/lnd/clm2/surfdata_map/topounit_surfdata_0.5x0.5_simyr1850_N45.c20220204_TOP.nc', \
                 flanduse_timeseries=None, \
                 userdomain=xdomain_ncf, \
-                SUBDOMAIN_REORDER=True, KEEP_DUPLICATED=True, \
-                domain_included=True)
+                SUBDOMAIN_REORDER=(not DOMAIN_Extraction), 
+                KEEP_DUPLICATED=(not DOMAIN_Extraction), \
+                domain_included=DOMAIN_Extraction)
     else:
         allout = elm_domain.refine_surfdata( \
                 lnd_domain_file=elm_domain.DIN_LOC_ROOT+'/share/domains/domain.clm/domain.lnd.r0125_IcoswISC30E3r5.250918.nc', \
                 fsurdat=elm_domain.DIN_LOC_ROOT+'/lnd/clm2/surfdata_map/surfdata_0.125x0.125_simyr1850_c250910_TOP.nc', \
                 flanduse_timeseries=None, \
                 userdomain=xdomain_ncf, \
-                SUBDOMAIN_REORDER=True, KEEP_DUPLICATED=True, \
-                domain_included=True)
+                SUBDOMAIN_REORDER=(not DOMAIN_Extraction), 
+                KEEP_DUPLICATED=(not DOMAIN_Extraction), \
+                domain_included=DOMAIN_Extraction)
 
     
     # the surfdata is named as 'topounit_surfdata_0.5x0.5_simyr1850.c20220204_cavm1d_subset.nc' from above
     os.system('mv '+allout[0]+' surfdata.nc')
    
     
-    srf_topo_vars = ['TOPO','STD_ELEV','SLOPE', 'TOPO2','MaxTopounitElv', 'TopounitAveElv','TopounitFracArea','topoPerGrid', \
-                     'SINSL_COSAS', 'SINSL_SINAS', 'SKY_VIEW', 'TERRAIN_CONFIG' ]
+    if DOMAIN_Extraction:
+        srf_topo_vars = ['TOPO','STD_ELEV','SLOPE', 'TOPO2','MaxTopounitElv', 'TopounitAveElv','TopounitFracArea','topoPerGrid', \
+                    'SINSL_COSAS', 'SINSL_SINAS', 'SKY_VIEW', 'TERRAIN_CONFIG' ]
+    else:
+        srf_topo_vars = ['LONGXY','LATIXY', 'AREA', \
+                    'TOPO','STD_ELEV','SLOPE', 'TOPO2','MaxTopounitElv', 'TopounitAveElv','TopounitFracArea','topoPerGrid', \
+                    'SINSL_COSAS', 'SINSL_SINAS', 'SKY_VIEW', 'TERRAIN_CONFIG' ]
+        
     srfupdate.updatevals('surfdata.nc', \
                         user_srf_data=surfdata_topo, user_srf_vars=srf_topo_vars)
     
