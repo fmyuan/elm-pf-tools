@@ -91,7 +91,44 @@ fates_pfts ={'pftname':[
                     ],
              'pftnum': [0,1,2,3,4,5,6,7,8,9,10,11,12,13]
             };
+
+maxtopounits = 12
+
+#-----------------------------------------------------------------------------------------------------------------------
+def topovar_topounits_stats(xrio_topovar, xrio_topo_gid, xrio_topo_binid,  topovar="",
+                     xrio_elmdomain_gid=None, outgxy=False):
+
+    #
+    from pytools.pan_arctic.mksrfdata_topounits import stats_gridbins_area_weighted
+    from pytools.pan_arctic.arctic_domain import elm_km2_from_arcradians2
+    from cmath import pi
+
+
+    if not xrio_elmdomain_gid is None:
+        aggr_to_gid = xrio_elmdomain_gid
+    else:
+        aggr_to_gid = xrio_topo_gid
+
+
+    # summarizing by bin ids following grid ids, via pandas' xarray dataframe.groupby
+
+    # pixel area in unit of km2, calculated from lat/lon axis. for weighted-averaging
+    xrio_topoarea = xrio_topovar.copy()
+    res_x = np.mean(np.diff(xrio_topoarea.x.to_numpy()))
+    res_y = np.mean(np.diff(xrio_topoarea.y.to_numpy()))
+    res_rad2 = abs(res_x*res_y/180.0/180.0*pi*pi)
+    yc = np.meshgrid(xrio_topoarea.x,xrio_topoarea.y)[1]
+    xrio_topoarea.data = elm_km2_from_arcradians2(res_rad2, latitude=yc)
     
+
+    topovar_df = stats_gridbins_area_weighted( \
+                    xrio_topovar, xrio_topo_gid, xrio_topo_binid, \
+                    aggr_to_gid = aggr_to_gid, \
+                    topo_area=xrio_topoarea, topo_var=topovar, out_gxy=outgxy)
+        
+    return topovar_df
+
+#-----------------------------------------------------------------------------------------------------------------------
 
             
 #--- # 

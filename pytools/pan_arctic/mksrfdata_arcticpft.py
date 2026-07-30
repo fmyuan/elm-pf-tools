@@ -891,6 +891,130 @@ def arctic_lupft_fromcavm_jkumaretal2(elm_domainnc='./domain.lnd.r0125_IcoswISC3
     return surfdata
     
     #
+#--------------------------------------------------------------------
+
+def topounits_lupft_fromcavm_jkumaretal(topounit_args, user_domainnc_2d,
+                                    xrio_veggedonlypft=None,
+                                    xrio_lupft0=None,
+                                    outdata_tiff=''):
+    
+    from rasterio.enums import Resampling
+
+    # STEP 1: topographic units from DEM geotiff
+    import pytools.pan_arctic.mksrfdata_topounits as mksrfdata_topounits
+    from pytools.pan_arctic.mksrfdata_updatevals import topovar_topounits_stats
+    from pytools.pan_arctic.mksrfdata_updatevals import maxtopounits
+ 
+    if xrio_lupft0 is None and xrio_veggedonlypft is None:
+        print()
+        return {}
+    
+    xrio_gid, xrio_tid, xrio_elmdomain = \
+        mksrfdata_topounits.grid_topounits(topounit_args, 
+                                            elm_domainnc=user_domainnc_2d)
+    
+    # STEP 2: grid-level topounits statistics
+    bgid = np.where(xrio_elmdomain.band=='GridID')[0][0]
+    xrio_elmdomain_gid=xrio_elmdomain[bgid]
+
+    xmask=xrio_elmdomain[np.where(xrio_elmdomain.band=='mask')[0][0]].to_numpy()
+    xmask_gid = xrio_elmdomain_gid.to_numpy()
+    xmask_gid[np.where(xmask<=0.0)] = np.nan
+    xrio_elmdomain_gid.data = xmask_gid # this will exclude non-landmask gridcell below SO the data is to be unstructured
+    
+    # STEP 3: resolve LU-PFT data to topounits-Grids
+    srfdata_fromcavm_jk2 = {}
+    grd_size = np.sum(~np.isnan(xmask_gid))
+    zeros_srfdata = np.zeros_like(xmask_gid[~np.isnan(xmask_gid)])           # this is gridcell-wised surfdata variable to be like
+    zeros_srfdata = np.zeros((maxtopounits,)+zeros_srfdata.shape)            # currently max. 12 topounits per grid
+    pct_nat_pft = np.zeros(np.append(len(arctic_pfts['pftnum']), zeros_srfdata.shape), dtype=float)
+
+    #-----------------------------------------------
+    def dfstats_topounit_to_grid(xrio_banded, var):
+        ib = np.where(xrio_banded.band==var)[0][0]
+        xrio_topovar = xrio_banded[ib]
+        xrio_topovar = xrio_topovar.rio.reproject_match(
+                                xrio_tid,
+                                resampling=Resampling.average,
+                                nodata=np.nan)
+        df_topovar   = topovar_topounits_stats(
+                                    xrio_topovar, xrio_gid, xrio_tid, topovar=var, 
+                                    xrio_elmdomain_gid=xrio_elmdomain_gid)
+        df_topovar   = df_topovar['Mean_'+var].drop(columns=['gridID'])
+            
+        return [df_topovar.iloc[i].values.astype(float) for i in range(grd_size)] 
+        # return df_topovar.T # this may be skipping empty-data of grid
+    #-----------------------------------------------
+      
+    #LU
+    if not xrio_lupft0 is None:
+        srfdata_fromcavm_jk2['PCT_CROP']    = zeros_srfdata                      # not yet
+        srfdata_fromcavm_jk2['PCT_URBAN']   = np.zeros((3,)+zeros_srfdata.shape) # not yet
+        srfdata_fromcavm_jk2['PCT_WETLAND'] = zeros_srfdata                      # not-yet
+        if 'PCT_GLACIER' in xrio_lupft0.band:
+            var = 'PCT_GLACIER'
+            srfdata_fromcavm_jk2['PCT_GLACIER'] = dfstats_topounit_to_grid(xrio_lupft0, var)
+        else:
+            srfdata_fromcavm_jk2['PCT_GLACIER'] = zeros_srfdata
+
+        if 'PCT_WATER' in xrio_lupft0.band:
+            var = 'PCT_WATER'
+            srfdata_fromcavm_jk2['PCT_LAKE'] = dfstats_topounit_to_grid(xrio_lupft0, var)
+        else:
+            srfdata_fromcavm_jk2['PCT_LAKE'] = zeros_srfdata
+
+        if 'PCT_NATVEG' in xrio_lupft0.band:
+            var = 'PCT_NATVEG'
+            srfdata_fromcavm_jk2['PCT_NATVEG'] = dfstats_topounit_to_grid(xrio_lupft0, var)
+        else:
+            srfdata_fromcavm_jk2['PCT_NATVEG'] = 100.0 - srfdata_fromcavm_jk2['PCT_WETLAND'] \
+                                                     - srfdata_fromcavm_jk2['PCT_LAKE'] \
+                                                     - srfdata_fromcavm_jk2['PCT_GLACIER'] \
+                                                     - srfdata_fromcavm_jk2['PCT_CROP'] \
+                                                     - np.sum(srfdata_fromcavm_jk2['PCT_URBAN'], axis=0)
+        
+        # PCT_NAT_PFT (summed to 100% and occupys 'PCT_NATVEG')
+        # barren or bare-ground is from cavm, but will be normalized by 'PCT_NATVEG' as its PFT0
+        if 'PCT_NAT_PFT0' in xrio_lupft0.band:
+            var = 'PCT_NAT_PFT0'
+            pct_nat_pft0 = dfstats_topounit_to_grid(xrio_lupft0, var)
+            pct_nat_pft0 = pct_nat_pft0/srfdata_fromcavm_jk2['PCT_NATVEG']*100.0
+            if not xrio_veggedonlypft is None:
+                srfdata_fromcavm_jk2['PCT_NAT_PFT0'] = pct_nat_pft0
+            else:
+                pct_nat_pft[0,] = pct_nat_pft0
+        
+    # PCT_NAT_PFT, with all real PFTs or including 'water', 'barren'
+    if not xrio_veggedonlypft is None:
+        for iv in arctic_pfts['pftnum']:
+            if iv==0: continue    
+                 
+            # get real veged PFT fraction from  JKumar & TQ Zhang et al.
+            # vegedonly_pftdata, from JKumar and T-Q Zhang etal
+            v=arctic_pfts['pftname'][iv].strip()
+            if  v in xrio_veggedonlypft.band:
+                ib = np.where(xrio_veggedonlypft.band==v)[0][0]
+                xrio_topovar = xrio_lupft0[ib]
+                xrio_topovar = xrio_topovar.rio.reproject_match(
+                                    xrio_tid,
+                                    resampling=Resampling.average,
+                                    nodata=np.nan)            
+                df_topovar = topovar_topounits_stats(
+                                        xrio_topovar, xrio_gid, xrio_tid, topovar=v, 
+                                        xrio_elmdomain_gid=xrio_elmdomain_gid)
+                pct_nat_pft[iv,] = df_topovar.to_numpy()
+        #
+        
+                
+        
+        srfdata_fromcavm_jk2['PCT_NAT_PFT'] = pct_nat_pft
+        #
+    
+    #
+    return srfdata_fromcavm_jk2
+#--------------------------------------------------------------------
+
+
 
 def test_hires():
     
@@ -968,13 +1092,14 @@ def test_hires():
     srfupdate.updatevals('./surfdata_0.0025deg.1D_simyr1850_c240308_TOP_TFSarcticpfts-sub12+.nc', \
                         user_srf_data=surf_fromcavm_jk, user_srf_vars='PCT_NAT_VEG', OriginalPFTclass=False)
     
-#--------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------
 
 #---
 def test():
     
     import pytools.pan_arctic.mksrfdata_updatevals as srfupdate
     import pytools.pan_arctic.arctic_domain as elm_domain
+
 
     """
     args = sys.argv[1:]
@@ -1017,10 +1142,10 @@ def test():
     
     # vegetated only PFTs from 0.00833 deg pan-Arctic raster data
     # note: data in rioxarray, bandded with Arctic PFT numbering order, but normalized over vegetated area ONLY.
-    xrio_vegedonly_pftdata_cavm = arctic_vegedonly_fromraster_jkumaretal(\
-                                inputpath=inputpath,
-                                rasterfiles=rasterfiles,
-                                bandinfos=bandinfos)
+    #xrio_vegedonly_pftdata_cavm = arctic_vegedonly_fromraster_jkumaretal(\
+    #                            inputpath=inputpath,
+    #                            rasterfiles=rasterfiles,
+    #                            bandinfos=bandinfos)
     
     # glacier, water (lake), PFT0 (not_vegetated) from CAVM dataset. 
     # note: didn't use what from PFT works, because it appears not fully finished (e.g. glacier not there)
@@ -1029,51 +1154,62 @@ def test():
                                 outdata_tiff='', \
                                 outdata=True)
     
-    # spatially merging above 2 datasets for LandUnits (glacier, water, naturally-veged, and PFTs)     
-    srfdata_fromcavm_jk = arctic_lupft_fromcavm_jkumaretal2( \
-                                #elm_domainnc='./domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm2d.nc', \
-                                elm_domainnc='./domain.lnd.r0125_IcoswISC30E3r5.250918_cavm2d.nc', \
-                                veggedonlypft=xrio_vegedonly_pftdata_cavm, \
+    #------------------------------------------------------------------------------------    
+    IFTGU=True   
+
+    #user_domainnc_2d = 'domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm2d.nc'
+    #user_domainnc_1d = 'domain.lnd.r05_RRSwISC6to18E3r5.240328_cavm1d.nc'
+    user_domainnc_2d = 'domain.lnd.r0125_IcoswISC30E3r5.250918_cavm2d_TVC.nc'
+    #user_domainnc_1d = 'domain.lnd.r0125_IcoswISC30E3r5.250918_cavm1d_TVC.nc'
+    
+    #user_surfdata_ncf = './surfdata_0.05x0.05_simyr1850_c240308_TOP_cavm1d.nc'
+    user_surfdata_ncf = './topounit_surfdata_0.05x0.05_simyr1850_c240308_TOP_cavm1d.nc'
+
+    if not IFTGU:
+        # spatially merging above 2 datasets for LandUnits (glacier, water, naturally-veged, and PFTs)
+        # into elm_domain grids, without topounits    
+    
+        srfdata_fromcavm_jk = arctic_lupft_fromcavm_jkumaretal2( \
+                                elm_domainnc=user_domainnc_2d, \
+                                #veggedonlypft=xrio_vegedonly_pftdata_cavm, \
                                 lupft0=xrio_lupft0, \
                                 outdata_tiff='')
         
-    
-    
-    #------------------------------------------------------------------------------------    
-    # TOPUNITs masked grid
-    '''
-    IFTGU=True   
-    args={}
-    args.dem = 'hyd_glo_dem_15s.tif'
-    args.bbox = [-180.0, 50, 180, 85]
-    args.lonlat_res = [0.125, 0.125] 
-    args.group_delta_elev=50.0    
-    
-    # STEP 1: topographic units from DEM geotiff
-    import pytools.pan_arctic.mksrfdata_topounits as mksrfdata_topounits 
- 
-    if not IFTGU:
-        # if don't do topounit dividing    
-        xrio, gridded_stats = mksrfdata_topounits.grid_stats_topounits(
-                        args, percentiles=np.asarray([100]), verbose=0, 
-                        elm_domainnc='domain_test.nc')
-    else:
-        xrio, gridded_stats = mksrfdata_topounits.grid_stats_topounits(args, verbose=1, 
-                        elm_domainnc='domain_test.nc')
-                        #elm_domainnc='domain.lnd.r0125_IcoswISC30E3r5.250918_cavm1d.nc')
-    
-    
-    '''
-    
-    #    
-    srfupdate.updatevals(
-                        #'./surfdata_0.5x0.5_simyr1850_c240308_TOP_cavm1d.nc', \
-                        'surfdata_0.125x0.125_simyr1850_c250910_TOP_cavm1d.nc', \
+        srfupdate.updatevals(
+                        user_surfdata_ncf, \
                         user_srf_data=srfdata_fromcavm_jk, \
                         user_srf_vars='PCT_NATVEG, PCT_GLACIER, PCT_LAKE, PCT_WETLAND, PCT_CROP, PCT_URBAN, PCT_NAT_PFT', \
                         OriginalPFTclass=True, user_pftname_num=arctic_pfts)
                         #OriginalPFTclass=False)
     
+    
+    #------------------------------------------------------------------------------------    
+    else:
+        # TOPUNITs masked grid
+    
+        from types import SimpleNamespace
+
+        args = SimpleNamespace( \
+                                dem = 'hyd_glo_dem_15s.tif',
+                                bbox = [-180.0, 50, 180, 85],
+                                lonlat_res = [0.125, 0.125], 
+                                group_delta_elev=100.0,
+                                bbox_outfile=''
+                            )   
+    
+        srfdata_fromcavm_jk2 = topounits_lupft_fromcavm_jkumaretal(
+                        args, 
+                        user_domainnc_2d=user_domainnc_2d, 
+                        #xrio_veggedonlypft=xrio_vegedonly_pftdata_cavm, 
+                        xrio_lupft0=xrio_lupft0)
+        #    
+        srfupdate.updatevals(
+                        user_surfdata_ncf, \
+                        user_srf_data=srfdata_fromcavm_jk2, \
+                        user_srf_vars='PCT_NATVEG, PCT_GLACIER, PCT_LAKE, PCT_WETLAND, PCT_CROP, PCT_URBAN, PCT_NAT_PFT', \
+                        OriginalPFTclass=True, user_pftname_num=arctic_pfts)
+                        #OriginalPFTclass=False)
+                            
       
 if __name__ == '__main__':
     test()

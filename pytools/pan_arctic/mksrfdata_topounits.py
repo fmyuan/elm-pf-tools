@@ -384,7 +384,7 @@ def grid_topounits_stats(xrio_topo, xrio_topo_gid, xrio_topo_binid,
     if 'gridX' in elv_df.keys(): df_topo['grid_xc'] = elv_df['gridX'].drop(columns=['gridID'])
     if 'gridY' in elv_df.keys(): df_topo['grid_yc'] = elv_df['gridY'].drop(columns=['gridID'])
     if 'area_km2' in elv_df.keys(): df_topo['area_km2'] = elv_df['area_km2']
-    df_topo['Topounit_area_fraction'] = elv_df['Area_fraction'] .drop(columns=['gridID'])   
+    df_topo['Topounit_area_fraction'] = elv_df['Area_fraction'].drop(columns=['gridID'])   
     df_topo['Topounit_elevation']     = elv_df['Mean_elevation'].drop(columns=['gridID'])
     df_topo['Topounit_elevation_std'] = elv_df['Std_elevation'].drop(columns=['gridID']) 
     df_topo['Topounit_slope']     = slp_df['Mean_slope'].drop(columns=['gridID'])
@@ -402,6 +402,7 @@ def srf_topo_from_gridstats(pd_topo_data,
     
     #from pytools.commons_utils.gridlocator import grids_nearest_or_within
     import pytools.pan_arctic.arctic_domain as elm_domain
+    import pytools.pan_arctic.mksrfdata_updatevals.maxtopounits as maxtopounits
     from cmath import pi
     
     # directly from grided topo feature dataset    
@@ -426,7 +427,7 @@ def srf_topo_from_gridstats(pd_topo_data,
         area_km2 = None
           
     grd_size = srf_grids_sub['gridID'].values.size
-    topounit_size = 12
+    topounit_size = maxtopounits
     topounit_id   = [np.where(~np.isnan(srf_grids_sub["Topounit_area_fraction"].iloc[i].values))[0] for i in range(grd_size)]
     area_fraction = [srf_grids_sub["Topounit_area_fraction"].iloc[i].values.astype(float) for i in range(grd_size)]  # to np float datatype for convenience
     elevation     = [srf_grids_sub["Topounit_elevation"].iloc[i].values.astype(float) for i in range(grd_size)]    
