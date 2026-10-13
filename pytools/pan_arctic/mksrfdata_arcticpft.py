@@ -940,10 +940,19 @@ def topounits_lupft_fromcavm_jkumaretal(topounit_args, user_domainnc_2d,
         df_topovar   = topovar_topounits_stats(
                                     xrio_topovar, xrio_gid, xrio_tid, topovar=var, 
                                     xrio_elmdomain_gid=xrio_elmdomain_gid)
+        topo_fraction  = df_topovar["Area_fraction"].drop(columns=['gridID'])
+        topo_id   = [np.where(~np.isnan(topo_fraction.iloc[i].values))[0] \
+                         for i in range(grd_size)]       
         df_topovar   = df_topovar['Mean_'+var].drop(columns=['gridID'])
             
-        return [df_topovar.iloc[i].values.astype(float) for i in range(grd_size)] 
-        # return df_topovar.T # this may be skipping empty-data of grid
+        #return np.array(df_topovar.T)
+        # padding NaN in ending - this is how ELM (topounits,grid) data organized
+        padding_tpovar = \
+            [np.pad(df_topovar.iloc[i],
+                    (0, maxtopounits-topo_id[i].size), 
+                    mode='constant',constant_values=np.nan) 
+                    for i in range(grd_size)]
+        return padding_tpovar
     #-----------------------------------------------
       
     #LU
@@ -1212,7 +1221,7 @@ def test():
                             
       
 if __name__ == '__main__':
-    test()
+    test_hires()
 
 
 

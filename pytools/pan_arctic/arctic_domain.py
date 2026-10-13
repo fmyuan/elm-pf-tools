@@ -118,30 +118,44 @@ def domain_ncwrite(elmdomain_data, WRITE2D=True, ncfile='domain.nc', coord_syste
     mask_arr = elmdomain_data['mask']
 
     # (optional) full 2D spatial extent
-    if coord_system and 'X_axis' in elmdomain_data.keys():
+    if coord_system and 'X_axis' in elmdomain_data.keys() and 'Y_axis' in elmdomain_data.keys():
         X_axis = elmdomain_data['X_axis']  # either longitude or projected geox, indiced as gridXID
         Y_axis = elmdomain_data['Y_axis']  # either latitude or projected geoy, indiced as gridYID
-        XX = elmdomain_data['XX']  # longitude[Y_axis,X_axis], indiced as gridID
-        YY = elmdomain_data['YY']  # latitude[Y_axis,X_axis], indiced as gridID
 
         # (optional) the following is for map conversion of 1D <==> 2D
-        grid_id_arr = elmdomain_data['gridID']
-        grid_xid_arr = elmdomain_data['gridXID']
-        grid_yid_arr = elmdomain_data['gridYID']
-
+        if 'XX' in elmdomain_data.keys() and 'YY' in elmdomain_data.keys(): 
+            XX = elmdomain_data['XX']  # longitude[Y_axis,X_axis], indiced as gridID
+            YY = elmdomain_data['YY']  # latitude[Y_axis,X_axis], indiced as gridID
+        else: 
+            YY, XX = np.meshgrid(Y_axis, X_axis, indexing='ij')
+        if 'gridID' in elmdomain_data.keys(): 
+            grid_id_arr = elmdomain_data['gridID']
+        else:            
+            grid_id_arr = np.indices(XX.flatten().shape)[0].flatten()
         if grid_id_arr.shape == mask_arr.shape:
             # masked XX//YY as well for convience
             YX_masked = np.zeros_like(XX,dtype=np.bool).flatten()
             YX_masked[...]=False
             YX_masked[grid_id_arr]=(mask_arr>0)
             YX_masked = YX_masked.reshape(XX.shape)
+        if 'gridXID' in elmdomain_data.keys(): 
+            grid_xid_arr = elmdomain_data['gridXID']
+        else:
+            grid_xid_arr = np.indices(XX.shape)[1].flatten()
+        if 'gridYID' in elmdomain_data.keys(): 
+            grid_yid_arr = elmdomain_data['gridYID']
+        else:
+            grid_yid_arr = np.indices(XX.shape)[0].flatten()
+    else:
+        #over-ride if no enough info
+        coord_system = False
 
     # extra
     if 'area_km2' in elmdomain_data.keys():
         area_km2_arr = elmdomain_data['area_km2']
 
-    nv = elmdomain_data['xv'].shape[1]
-    if nv!= elmdomain_data['yv'].shape[1]:
+    nv = elmdomain_data['xv'].shape[-1]
+    if nv!= elmdomain_data['yv'].shape[-1]:
         print('not equal vertices of xv: ', nv, ' and yv: ',elmdomain_data['yv'].shape[1])
         os.sys.exit(-2)
 
@@ -155,8 +169,8 @@ def domain_ncwrite(elmdomain_data, WRITE2D=True, ncfile='domain.nc', coord_syste
             grid_yid_arr = grid_yid_arr[TLND_MASK]
         lon_arr = lon_arr[TLND_MASK]
         lat_arr = lat_arr[TLND_MASK]
-        xv_arr  = xv_arr[TLND_MASK,]
-        yv_arr  = yv_arr[TLND_MASK,]
+        xv_arr  = xv_arr[TLND_MASK]
+        yv_arr  = yv_arr[TLND_MASK]
         area_arr = area_arr[TLND_MASK]
         landfrac_arr = landfrac_arr[TLND_MASK]
         mask_arr = mask_arr[TLND_MASK]
