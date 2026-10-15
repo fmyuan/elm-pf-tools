@@ -34,355 +34,7 @@ arctic_pfts={'pftname':[
             };
 
 #---
-def arctic_veged_fromraster_jkumaretal(inputpath='./', \
-                                    rasterfiles = ['lichen.tif', 
-                                                   'bryophyte.tif', 
-                                                   'evergreen_shrub.tif', 
-                                                   'deciduous_shrub.tif',
-                                                   'forb.tif', 
-                                                   'graminoid.tif'], 
-                                    bandinfos={'bands':["arctic_lichen",
-                                                        "arctic_bryophyte",
-                                                        "arctic_evergreen_shrub",
-                                                        "arctic_deciduous_shrub",
-                                                        "arctic_forb",
-                                                        "arctic_graminoid"],
-                                                'pftnum': [1,2,5,8,11,12]},
-                                    wetness=None,
-                                    pctpft_normalized=False):
-    #
-    import rioxarray
-    
-    # the following data are not normalized over land area, and only really-vegetated
-    # pctpft_normalized = False
-
-    # the following are, for data above (exactly matching up with), standared PFT names and order in 14 arcticpft physiology parameters
-    # a full list is: (0)not_vegetated, (1)arctic_lichen, (2)arctic_bryophyte,
-    #                 (3)arctic_needleleaf_tree, (4)arctic_broadleaf_tree,
-    #                 (5)arctic_evergreen_shrub_dwarf, (6)arctic_evergreen_shrub_tall,
-    #                 (7)arctic_deciduous_shrub_dwarf, (8)arctic_deciduous_srhub_low, (9)arctic_deciduous_shrub_tall, (10)arctic_deciduous_shrub_alder,
-    #                 (11)arctic_forb, (12)arctic_dry_graminoid,(13)arctic_wet_graminoid
- 
-    # rasterfiles = ['1.tif', '2.tif']
-    
-    # read tif data    
-    alldata = {}
-    for i in range(len(bandinfos['pftnum'])):
-        ifile = inputpath+rasterfiles[i]
-        iband = bandinfos['bands'][i]
-        ipft = bandinfos['pftnum'][i]
-        with rioxarray.open_rasterio(ifile, mode='r') as f:
-            # geox/y coordinates in 1-D (axis), centroid
-            xx = f.x.data
-            yy = f.y.data
-            crs_res = f.rio.resolution()
-            crs = f.rio.crs
-            rdata=f[0].data 
-            mdata = np.ma.array(rdata,mask=(rdata==f.rio.nodata))
             
-            
-            #
-            if ipft in alldata.keys():
-                alldata[ipft] = alldata[ipft] + mdata # add or merge
-            else:
-                if ipft not in arctic_pfts['pftnum']:
-                    # use original 'band name' not numbered
-                    alldata[iband] = mdata               
-                elif ipft==0:
-                    # barren or bareground, if input as PFT0, not included when normalized below                   
-                    alldata['barren'] = mdata                  
-                else:
-                    # really vegetated
-                    alldata[ipft] = mdata # only 1 banded data
-            
-            # wet or dry graminoid, if given info
-            if iband=='arctic_graminoid' and not wetness==None:
-                if ipft==12: #assumed as arctic_dry_graminoid
-                    alldata[ipft] = mdata*(1.0-wetness)
-                    alldata[13] = mdata*wetness
-                elif ipft==13: #assumed as arctic_wet_graminoid
-                    alldata[ipft] = mdata*wetness
-                    alldata[12] = mdata*(1.0-wetness)
-            
-    
-    #
-    # user must know if fractions are normalized over whole land or vegetated unit only
-    # because Zhang's tif files sometime include bare_ground, water, or others (like litter, unknown, ...)
-    # normalization here is only for so-called vegetated area, i.e., 
-    #     excluding not_vegetated (i.e. bareground/barren et al). 
-    # If bareground/barren is provided, called it as 'barren' in data's dict.
-    
-    if not pctpft_normalized:
-        #
-        sumall = np.zeros_like(alldata[bandinfos['pftnum'][0]])
-        for iv in alldata.keys():
-            # only sum real vegs
-            if iv not in arctic_pfts['pftnum'] or iv=='0': continue
-            sumall = sumall+alldata[iv]
-        
-        zerosum_indx = np.where(((sumall<=0.0) & (~sumall.mask)))
-        nonzero_indx = np.where(((sumall>0.0) & (~sumall.mask)))
-        if len(zerosum_indx[0]>0):
-            # those probably is fraction of water bodies or other non-vegetated and can be assumed as non-vegetated
-            if '0' not in alldata.keys():
-                alldata[0] = 1.0 - sumall
-            else:
-                alldata[0][zerosum_indx] = 1.0
-               
-        for iv in alldata.keys():
-            if iv not in arctic_pfts['pftnum'] or iv=='0': continue
-            # normalized non-zero sum only needed
-            alldata[iv][nonzero_indx] = alldata[iv][nonzero_indx] \
-                                        /sumall[nonzero_indx]
-                
-    alldata['bandinfos'] = bandinfos
-    alldata['xx'] = xx
-    alldata['yy'] = yy
-    alldata['crs_res'] = crs_res
-    alldata['crs_wkt'] = crs.wkt
-    alldata['sum_real_pft'] = sumall
-    
-    return alldata
-
-#
-            
-#
-
-def arctic_lupft_fromcavm_jkumaretal(cavm_within_domainnc='domain.lnd.pan-arctic_CAVM.0.01d.1D.c250623.nc', \
-                                            lu_vegonlypft={}, \
-                                            outnc_surf='', \
-                                            outdata=False):
-    '''
-        There are TWO steps to generate ELM surfdata of LandUnit and PFTs for its naturally-vegetated landunit
-        LandUnits, other than naturally-vegetated, will be from CAVM categories: 
-           (1) PCT_LAKE    -    landcov_code 91 (open water, incl. some wider river)
-               PCT_GLACIER -    landcov_code 93  
-    '''
-    
-    
-    from netCDF4 import Dataset
-    from pytools.commons_utils.gridlocator import grids_nearest_or_within
-    from pytools.pan_arctic.arctic_domain import DIN_LOC_ROOT
-    
-    # the default domain nc file for CAVM extent, contained CAVM 'landcov_code'
-    # 'domain.lnd.pan-arctic_CAVM.0.01d.1D.c250623.nc'
-    
-    if cavm_within_domainnc.startswith('/') \
-        or cavm_within_domainnc.startswith('./'):
-        # already in full path
-        fnc = cavm_within_domainnc
-    else:
-        fnc = DIN_LOC_ROOT+'/share/domains/domain.clm/'+cavm_within_domainnc
-    nonvegs_alldata = Dataset(fnc,'r')
-
-    if 'xc' in nonvegs_alldata.variables.keys():
-        xc = nonvegs_alldata['xc'][...]
-    else:
-        xc = nonvegs_alldata['LONGXY'][...]
-    if 'yc' in nonvegs_alldata.variables.keys():
-        yc = nonvegs_alldata['yc'][...]
-    else:
-        yc = nonvegs_alldata['LATIXY'][...]
-            
-    if 'xv' in nonvegs_alldata.variables.keys(): xv = nonvegs_alldata['xv'][...]
-    if 'yv' in nonvegs_alldata.variables.keys(): yv = nonvegs_alldata['yv'][...]
-    if 'area_LAEA' in nonvegs_alldata.variables.keys():
-        area_km = nonvegs_alldata['area_LAEA'][...]
-    elif 'area_km' in nonvegs_alldata.variables.keys():
-        area_km = nonvegs_alldata['area_km'][...]
-    elif 'AREA' in nonvegs_alldata.variables.keys():
-        area_km = nonvegs_alldata['AREA'][...]
-
-    # LU - ELM LandUnit of landcover
-    NONVEG_FROM_CAVM = False
-    if 'landcov_code' in nonvegs_alldata.variables.keys():
-        
-        landcov = nonvegs_alldata['landcov_code'][...]
-        if landcov.any()>0.0: 
-            # CAVM provides freshwater, glacier, barens fractions, if used
-            NONVEG_FROM_CAVM = True
-        
-        if NONVEG_FROM_CAVM:    
-            # fresh-water (open water), as PCT_LAKE in surfdata
-            pct_water = np.zeros_like(landcov)
-            pct_water[np.where(landcov==91.0)] = 1.0
-        
-            # glaciers, as PCT_GLACIER in surfdata
-            pct_glacier = np.zeros_like(landcov)
-            pct_glacier[np.where(landcov==93.0)] = 1.0
-            
-            # partial barren, assumed as category 0 in natural PFTs, i.e. not_vegetated
-            # (NOTE: this will have to merged into veged only, and re-normalled to 100%)    
-            pct_barren = np.zeros_like(landcov)
-            #codes are: 1-B1, 2-B2a, 3-B3, 4-B4, 5-B2b, 
-            # assuming 25% veged for B1, and 50% for other barren, if non-zeros existed in veged data
-            pct_barren[np.where(landcov==1)] = 0.25
-            pct_barren[np.where(landcov==2)] = pct_barren[np.where(landcov==2)]+0.50
-            pct_barren[np.where(landcov==3)] = pct_barren[np.where(landcov==3)]+0.50
-            pct_barren[np.where(landcov==4)] = pct_barren[np.where(landcov==4)]+0.50
-            pct_barren[np.where(landcov==5)] = pct_barren[np.where(landcov==5)]+0.50
-        
-            pct_vegedonly = np.ones_like(landcov, dtype=float)
-            pct_vegedonly = pct_vegedonly - pct_water - pct_glacier - pct_barren
-        
-            # pct_barren + pct_vegedonly, assumed to be PCT_NATVEG in surfdata
-            pct_natveg = pct_barren + pct_vegedonly
-            
-            pct_barren[np.where(pct_natveg>0.0)] = pct_barren[np.where(pct_natveg>0.0)] \
-                                                    /pct_natveg[np.where(pct_natveg>0.0)]
-            pct_vegedonly[np.where(pct_natveg>0.0)] = pct_vegedonly[np.where(pct_natveg>0.0)] \
-                                                    /pct_natveg[np.where(pct_natveg>0.0)]
-    if not NONVEG_FROM_CAVM:
-        landcov = np.zeros_like(xc, dtype=float)-999.0
-        # no data sources for non-vegetated, assuming as 0
-        pct_water   = np.zeros_like(xc)
-        pct_glacier = np.zeros_like(xc)
-        pct_barren  = np.zeros_like(xc)                
-        pct_vegedonly = np.ones_like(xc, dtype=float)
-        pct_natveg  = pct_barren + pct_vegedonly
-    #
-    nonvegs_alldata.close()
-        
-
-    # grids containing veged_natpft data (normalize PFT fractions) from JKumar & TQ Zhang et al.
-    # note that the resolution is about 20m, but in regular lat/lon mesh
-    masked_pts = {}
-    if 'xc' in lu_vegonlypft.keys() and 'yc' in lu_vegonlypft.keys():
-        # fully paired centroid xc/yc, unstructured or flatten 
-        masked_pts['xc'] = lu_vegonlypft['xc']
-        masked_pts['yc'] = lu_vegonlypft['yc']
-    elif 'xx' in lu_vegonlypft.keys() and 'yy' in lu_vegonlypft.keys():
-        # xx/yy meshed, need to flatten for easier point search
-        x_axis=lu_vegonlypft['xx']
-        y_axis=lu_vegonlypft['yy']
-        yy,xx=np.meshgrid(y_axis, x_axis, indexing='ij')
-        masked_data = lu_vegonlypft[lu_vegonlypft['bandinfos']['pftnum'][0]]
-        masked_pts['xc']=xx[~masked_data.mask]
-        masked_pts['yc']=yy[~masked_data.mask]
-    
-    #
-    # targetted grids
-    #        
-    cavm_grids={}
-    cavm_grids['xc'] = xc
-    cavm_grids['yc'] = yc
-    cavm_grids['xv'] = xv
-    cavm_grids['yv'] = yv
-    
-    # the following is not good for large amount of grids or meshes
-    cavm_grids_sub, boxed_idx, grids_uid, grids_maskptsid = \
-                        grids_nearest_or_within( \
-                                                src_grids=cavm_grids, \
-                                                masked_pts=masked_pts, \
-                                                remask_approach = 'within', \
-                                                keep_duplicated=False)   
-    #
-    #                    
-    if not NONVEG_FROM_CAVM:
-        for i in range(len(grids_uid)):
-            igrid = grids_uid[i]    
-            # water/barren included in Zhang/Jitu's data
-            if 'water' in lu_vegonlypft.keys():
-                newludata = lu_vegonlypft['water']
-                newludata = newludata[~newludata.mask]
-                #print(i) # for checking
-                pct_water.ravel()[i] = np.nanmean(newludata[grids_maskptsid[igrid]])
-        pct_natveg = pct_natveg - pct_water
-        pct_vegedonly = pct_natveg - pct_barren
-            
-    # the following are, for data above (exactly matching up with), standared PFT names and order in 14 arcticpft physiology parameters
-    # a full list is: (0)not_vegetated, (1)arctic_lichen, (2)arctic_bryophyte,
-    #                 (3)arctic_needleleaf_tree, (4)arctic_broadleaf_tree,
-    #                 (5)arctic_evergreen_shrub_dwarf, (6)arctic_evergreen_shrub_tall,
-    #                 (7)arctic_deciduous_shrub_dwarf, (8)arctic_deciduous_srhub_low, (9)arctic_deciduous_shrub_tall, (10)arctic_deciduous_shrub_alder,
-    #                 (11)arctic_forb, (12)arctic_dry_graminoid,(13)arctic_wet_graminoid
-
-    pct_nat_pft = np.zeros(np.append(14, landcov.shape), dtype=float) 
-    # barren/not_vegetated
-    if NONVEG_FROM_CAVM:
-        pct_nat_pft[0,...] = pct_barren
-    else:
-        pct_iv = pct_nat_pft[0]
-        try:
-            if '0' in lu_vegonlypft.keys():
-                newpftdata = lu_vegonlypft[0]
-            elif 'barren' in lu_vegonlypft.keys():
-                newpftdata = lu_vegonlypft['barren']            
-            newpftdata = newpftdata[~newpftdata.mask]
-            for i in range(len(grids_uid)):
-                igrid = grids_uid[i]
-                pct_iv.ravel()[i] = np.nanmean(newpftdata[grids_maskptsid[igrid]])
-            pct_vegedonly = pct_natveg - pct_iv
-            pct_nat_pft[0] = pct_iv
-        except:
-            print('No barren data')  
-    # really veged
-    for iv in range(1,14):              
-        # get real veged PFT fraction from  JKumar & TQ Zhang et al.
-        # vegedonly_pftdata, from JKumar and T-Q Zhang etal
-        bandinfos = lu_vegonlypft['bandinfos']
-        pct_iv = pct_nat_pft[iv]
-        if iv in bandinfos['pftnum']:
-            newpftdata = lu_vegonlypft[iv]
-            newpftdata = newpftdata[~newpftdata.mask]
-            for i in range(len(grids_uid)):
-                igrid = grids_uid[i]
-                #print(i, iv) # for checking
-                pct_iv.ravel()[i] = np.nanmean(newpftdata[grids_maskptsid[igrid]])
-            #
-            pct_nat_pft[iv,...] = pct_iv*pct_vegedonly
-    
-    #
-    # checking if summed to 100%
-    sumallveg = np.sum(pct_nat_pft[0:,...], axis=0)
-    if ((sumallveg-1.0)<0.0).any():
-        #still having some all-pft pixels of zero???. Put those gaps into not_vegetated
-        idx = np.where((sumallveg-1.0)<0.0)
-        pct_nat_pft[0][idx] = pct_nat_pft[0][idx]+(1.0 - sumallveg[idx])
-    sumallveg = np.sum(pct_nat_pft[0:,...], axis=0)
-    if ((sumallveg-1.0)>1.e-7).any():
-        #still tiny over 100%?
-        idx = np.where((sumallveg-1.0)>1.e-7)
-        for iv in range(0,14):
-            pct_nat_pft[iv,...][idx] = pct_nat_pft[iv,...][idx]/sumallveg[idx]
-    
-
-    
-    
-    
-    # only need trunked data
-    xc = xc.flatten()[grids_uid]
-    yc = yc.flatten()[grids_uid]
-    xv = xv.flatten()[grids_uid]
-    yv = yv.flatten()[grids_uid]
-    area_km = area_km.flatten()[grids_uid]
-    pct_water = pct_water.flatten()[grids_uid]
-    pct_barren = pct_barren.flatten()[grids_uid]
-    pct_natveg = pct_natveg.flatten()[grids_uid]
-    pct_glacier = pct_glacier.flatten()[grids_uid]
-    pct_vegedonly = pct_vegedonly.flatten()[grids_uid]
-
-
-    if outnc_surf!='':
-        print('write to land unit and natpft to surfdata: ', outnc_surf)
-
-    if outdata:
-        surfdata = {}
-        surfdata['natpft_info'] = bandinfos
-        surfdata['LONGXY'] = xc
-        surfdata['LATIXY'] = yc
-        surfdata['AREA']   = area_km
-        surfdata['PCT_GLACIER'] = pct_glacier*100.0
-        surfdata['PCT_LAKE']    = pct_water*100.0
-        surfdata['PCT_NATVEG']  = pct_natveg*100.0
-        surfdata['PCT_NAT_PFT'] = pct_nat_pft*100.0
-        surfdata['PCT_CROP'] = np.zeros_like(pct_natveg)
-        surfdata['PCT_URBAN'] = np.zeros((3,)+pct_natveg.shape)
-        surfdata['PCT_WETLAND'] = np.zeros_like(pct_natveg)
-        
-        return surfdata
-            
-    #
 #
 #--------------------------------------------------------------------------------------------------------------------
 def arctic_lu_barren_fromcavm(cavm_tiff='./raster_cavm_v1_01d.tif', bbox_lb_ru=None, bbox_crs="EPSG:4326", \
@@ -471,27 +123,27 @@ def arctic_lu_barren_fromcavm(cavm_tiff='./raster_cavm_v1_01d.tif', bbox_lb_ru=N
         newdata = xr.copy()
         newdata.values = area_km2
         xr = xarray.concat([xr, 
-                                newdata.reset_coords('band', drop=True).expand_dims(band=[2])
+                                newdata.assign_coords(band=[2])
                                 ], dim='band')
     
         newdata.values = pct_glacier*100.0
         xr = xarray.concat([xr, 
-                                newdata.reset_coords('band', drop=True).expand_dims(band=[3])
+                                newdata.assign_coords(band=[3])
                                 ], dim='band')
 
         newdata.values = pct_water*100.0
         xr = xarray.concat([xr, 
-                                newdata.reset_coords('band', drop=True).expand_dims(band=[4])
+                                newdata.assign_coords(band=[4])
                                 ], dim='band')
 
         newdata.values = pct_natveg*100.0
         xr = xarray.concat([xr, 
-                                newdata.reset_coords('band', drop=True).expand_dims(band=[5])
+                                newdata.assign_coords(band=[5])
                                 ], dim='band')
 
         newdata.values = pct_barren*100.0
         xr = xarray.concat([xr, 
-                                newdata.reset_coords('band', drop=True).expand_dims(band=[6])
+                                newdata.assign_coords(band=[6])
                                 ], dim='band')
         
 
@@ -520,6 +172,7 @@ def arctic_vegedonly_fromraster_jkumaretal(inputpath='./', \
                                                         "arctic_forb",
                                                         "arctic_graminoid"],
                                                 'pftnum': [1,2,5,8,11,12]},
+                                    rasterunit = 'PCT',
                                     wetness=None, pctvpft_normalized=False,
                                     bbox_lb_ru=None, bbox_crs="EPSG:4326", 
                                     outdata_tiff=''):
@@ -541,6 +194,11 @@ def arctic_vegedonly_fromraster_jkumaretal(inputpath='./', \
  
     # rasterfiles = ['1.tif', '2.tif']
     
+    # raster could in unit of Percentage, PCT, or Fraction of land coverage
+    # BUT, output must be in PCT.
+    UNIT2PCT=1.0        # by default raster in unit of percentage, otherwise in fraction
+    if rasterunit!='PCT': UNIT2PCT=100.0
+    
     # read tif data    
     alldata = {}
     for i in range(len(bandinfos['pftnum'])):
@@ -549,15 +207,24 @@ def arctic_vegedonly_fromraster_jkumaretal(inputpath='./', \
         ipft = bandinfos['pftnum'][i]
         with rioxarray.open_rasterio(ifile, mode='r') as f:
             #
-            if bbox_crs != f.rio.crs and not bbox_lb_ru is None:
-                bounds = transform_bounds(bbox_crs, f.rio.crs, *bbox_lb_ru)
+            if not bbox_lb_ru is None:
+                if bbox_crs != f.rio.crs:
+                    bounds = transform_bounds(bbox_crs, f.rio.crs, *bbox_lb_ru)
+                else:
+                    bounds = bbox_lb_ru
                 xr = f.rio.clip_box(bounds[0],bounds[1],bounds[2],bounds[3])
             else:
                 xr = f[0]
+            if 'int' in str(xr.dtype):
+                # image may be in integer, but not precise enough for calculations
+                xr = xr.astype('float32')
+                xr.data[np.where(xr.data==xr.rio.nodata)]=np.nan
+                xr.rio.write_nodata(np.nan, inplace=True)
             xr_nodata = xr.rio.nodata
-            xr_res = np.asarray(xr.rio.resolution()) 
+            xr_res = np.asarray(xr.rio.resolution())             
+
             #
-            mdata = np.ma.masked_values(xr.data, xr_nodata)
+            mdata = np.ma.masked_values(xr.data, xr_nodata)*UNIT2PCT
 
             # wet or dry graminoid, if given info
             if iband=='arctic_graminoid' and not wetness==None:
@@ -570,8 +237,10 @@ def arctic_vegedonly_fromraster_jkumaretal(inputpath='./', \
            
             if ipft in alldata.keys():
                 alldata[ipft] = alldata[ipft] + mdata # add or merge
-            elif ipft in arctic_pfts['pftnum']:
+            elif ipft in arctic_pfts['pftnum'] and ipft!=0:
                 alldata[ipft] = mdata # only 1 banded data
+            else:
+                alldata[iband] = mdata # iband should be a string or number not pftnum SO THAT not confused
                 
     #
     # user must know if fractions are normalized over whole land or vegetated area only
@@ -590,10 +259,10 @@ def arctic_vegedonly_fromraster_jkumaretal(inputpath='./', \
     if len(zerosum_indx[0]>0):
         # those probably is fraction of water bodies or other non-vegetated 
         # and can be assumed as non-vegetated
-        if '0' not in alldata.keys():
-            alldata[0] = 1.0 - sum_real_pft
+        if 'barren' not in alldata.keys():
+            alldata['barren'] = 100.0 - sum_real_pft
         else:
-            alldata[0][zerosum_indx] = 1.0
+            alldata['barren'][zerosum_indx] = 100.0
                
     # normalization here is only for so-called vegetated area, i.e., 
     #     excluding not_vegetated (i.e. bareground/barren et al).     
@@ -601,28 +270,43 @@ def arctic_vegedonly_fromraster_jkumaretal(inputpath='./', \
         for iv in alldata.keys():
             if iv not in arctic_pfts['pftnum'] or iv=='0': continue
             # normalized non-zero sum only needed
-            alldata[iv][nonzero_indx] = alldata[iv][nonzero_indx] \
-                                        /sum_real_pft[nonzero_indx]
+            alldata[iv][nonzero_indx] = 100.0*alldata[iv][nonzero_indx] \
+                                            /sum_real_pft[nonzero_indx]
     
     # save all data into rioxarray. NOTE: all real vegPFT are normalized over veged-only portion, 
     # but not-vegetated PCT are saved as it is, if raster data provided.
-    xr.rio.write_nodata(np.nan, inplace=True) # original 'nodata' is an unint, and 'xr' here is the last raster file read-in already
-    newdata = xr.copy()                       # make a copy of xr, to be a template for 'band' value updating and concat.
-    for i in range(len(arctic_pfts['pftnum'])):
+    newdata = xr.copy()
+    idx_data= np.where(newdata!=xr_nodata)                      
+    # make a copy of xr, to be a template for 'band' value updating and concat below
+    for i in range(1, len(arctic_pfts['pftnum'])): #excluding pft0
         ipft = arctic_pfts['pftnum'][i]
         if ipft in alldata.keys():
             newdata.values = alldata[ipft]
         else:
-            newdata.values[...] = xr_nodata
+            newdata.values[idx_data] = 0.0  #
         
-        if i==0:
+        if i==1:
             xr.values = newdata.values
+            xr_band = [arctic_pfts['pftname'][i]]
         else:
             xr = xarray.concat([xr, 
-                                newdata.reset_coords('band', drop=True).expand_dims(band=[i+1])
+                                newdata.assign_coords(band=[i])
                                 ], dim='band')
-    # better to know grid area in unit of km2
+            xr_band.append(arctic_pfts['pftname'][i])
+            
+    
+    # NON-vegetation data, including LU and PFT0 (barren)
+    for v in alldata.keys():
+        if not v in arctic_pfts['pftnum']:
+            newdata.values = alldata[v]
+            i=i+1   # continue from last PFT number
+            xr = xarray.concat([xr, 
+                                newdata.assign_coords(band=[i])
+                                ], dim='band')
+            xr_band.append(v)
+    
     '''
+    # better to know grid area in unit of km2
     area=np.ma.zeros_like(mdata)
     area[np.ma.where(mdata)]=np.abs(np.deg2rad(xr_res[0])*np.deg2rad(xr_res[1]))
     lat2d=np.transpose(np.tile(xr.y.data, (xr.x.size,1)))
@@ -630,12 +314,11 @@ def arctic_vegedonly_fromraster_jkumaretal(inputpath='./', \
     area_km2=elm_km2_from_arcradians2(area, latitude=lat2d)
     newdata.values = area_km2
     xr = xarray.concat([xr, 
-                        newdata.reset_coords('band', drop=True).expand_dims(band=[i+1])
+                        newdata.assign_coords(band=[i+1])
                         ], dim='band')
     '''
     # band index named
-    xr = xr.assign_coords(band=[s.strip() for s in arctic_pfts['pftname']])
-    xr = xr.transpose('band','y','x')
+    xr = xr.assign_coords(band=[str(s).strip() for s in xr_band])
     
     
     # write into provided tiff file.
@@ -657,9 +340,7 @@ def arctic_lupft_fromcavm_jkumaretal2(elm_domainnc='./domain.lnd.r0125_IcoswISC3
                                     outdata_tiff=''):
     '''
         There are TWO steps to generate ELM surfdata of LandUnit and PFTs for its naturally-vegetated landunit
-        LandUnits, other than naturally-vegetated, will be from CAVM categories: 
-           (1) PCT_LAKE    -    landcov_code 91 (open water, incl. some wide rivers)
-               PCT_GLACIER -    landcov_code 93  
+        LandUnits, other than naturally-vegetated, will be from CAVM categories, by providing 'lupft0' DataArray 
     '''
     
     
@@ -720,7 +401,9 @@ def arctic_lupft_fromcavm_jkumaretal2(elm_domainnc='./domain.lnd.r0125_IcoswISC3
             aggr_data = ib_data_df.groupby('gridID')[ib_data.name].mean().to_numpy()
             pct_water = aggr_data.reshape(xrio_elmdomain_mask.rio.shape)
             del ib, ib_data, ib_data_df, aggr_data
-            gc.collect() 
+            gc.collect()
+        else:
+            pct_water = np.zeros(xrio_elmdomain_mask.rio.shape, dtype=float)
         
         if 'barren' in veggedonlypft.band:
             ib = np.where(veggedonlypft.band=='barren')[0][0]
@@ -730,7 +413,14 @@ def arctic_lupft_fromcavm_jkumaretal2(elm_domainnc='./domain.lnd.r0125_IcoswISC3
             aggr_data = ib_data_df.groupby('gridID')[ib_data.name].mean().to_numpy()
             pct_barren = aggr_data.reshape(xrio_elmdomain_mask.rio.shape)
             del ib, ib_data, ib_data_df, aggr_data
-            gc.collect() 
+            gc.collect()
+        else:
+            pct_barren = np.zeros(xrio_elmdomain_mask.rio.shape, dtype=float)
+        
+        # the rests
+        pct_glacier = np.zeros(xrio_elmdomain_mask.rio.shape, dtype=float)
+        pct_natveg = 100.0 - pct_water - pct_glacier
+        
     
            
     # the following are, for data above (exactly matching up with), standared PFT names and order in 14 arcticpft physiology parameters
@@ -833,7 +523,7 @@ def arctic_lupft_fromcavm_jkumaretal2(elm_domainnc='./domain.lnd.r0125_IcoswISC3
                 ib_data_df = xarray.merge([ib_data, ib_gridID]).to_dataframe()
                 aggr_data = ib_data_df.groupby('gridID')[ib_data.name].mean().to_numpy()
                 pct_nat_pft[iv] = aggr_data.reshape(xrio_elmdomain_mask.rio.shape)
-                pct_nat_pft[iv] = pct_nat_pft[iv]*100.0  # fraction --> PCT
+                pct_nat_pft[iv] = pct_nat_pft[iv]
                 del ib, ib_data, ib_data_df, aggr_data
                 gc.collect() 
     
@@ -860,20 +550,20 @@ def arctic_lupft_fromcavm_jkumaretal2(elm_domainnc='./domain.lnd.r0125_IcoswISC3
     
     
     # only need trunked data
-    idx = np.where(xrio_elmdomain_mask.to_numpy()>0.0)
+    gidxy = np.where(xrio_elmdomain_mask.to_numpy()>0.0)
     ib = np.where(xrio_elmdomain.band=='xc')
-    xc = (xrio_elmdomain[ib][0].to_numpy())[idx]
+    xc = (xrio_elmdomain[ib][0].to_numpy())[gidxy]
     ib = np.where(xrio_elmdomain.band=='yc')
-    yc = (xrio_elmdomain[ib][0].to_numpy())[idx]
+    yc = (xrio_elmdomain[ib][0].to_numpy())[gidxy]
     #xv = xrio_elmdomain[idx]
     #yv = xrio_elmdomain[idx]
     ib = np.where(xrio_elmdomain.band=='area')
-    area = (xrio_elmdomain[ib][0].to_numpy())[idx]
+    area = (xrio_elmdomain[ib][0].to_numpy())[gidxy]
     area_km2 = elm_km2_from_arcradians2(area, latitude=yc) 
-    pct_water = pct_water[idx]
-    pct_natveg = pct_natveg[idx]
-    pct_glacier = pct_glacier[idx]
-    pct_nat_pft = [pct_nat_pft[iv,...][idx] for iv in arctic_pfts['pftnum']]
+    pct_water = pct_water[gidxy]
+    pct_natveg = pct_natveg[gidxy]
+    pct_glacier = pct_glacier[gidxy]
+    pct_nat_pft = [pct_nat_pft[iv,...][gidxy] for iv in arctic_pfts['pftnum']]
     
     #
     surfdata = {}
@@ -1026,6 +716,9 @@ def topounits_lupft_fromcavm_jkumaretal(topounit_args, user_domainnc_2d,
 
 
 def test_hires():
+    ## NOTE: tiff resolution is higher than 1km or so, like 0.0083deg, 
+    ## SO CAVM 1km data not good enough for anything finer than 1km res.
+    ## in this case, JK et al's landcov rasters include at least 2 additional datasets: barren, water. 
     
     import pytools.pan_arctic.mksrfdata_updatevals as srfupdate
     import pytools.pan_arctic.arctic_domain as elm_domain
@@ -1039,7 +732,9 @@ def test_hires():
     elm_domain.set_e3sm_input('/Users/f9y/project_e3sm/e3sm_inputdata')
     
     # read-in geotiff data from Zhang and Jitu etal
-    '''   
+    
+    '''
+    ## TFS regional, 10km radius around the Station. NO height categories
     inputpath='/Users/f9y/Desktop/NGEE-P4/Sites/ToolikFieldStation_TFS/toolik_clip_2024_11_14/'
     rasterfiles = ['lichen_toolik.tif', 
                     'bryophyte_toolik.tif', 
@@ -1060,6 +755,8 @@ def test_hires():
 
     '''
     # canopy height informed shrub PFTs
+    '''
+    ## TFS regional
     inputpath='/Users/f9y/Desktop/NGEE-P4/Sites/ToolikFieldStation_TFS/PFTs_top_height_category/'
     rasterfiles = ['bare_ground_top_20m.tif', 'water_top_20m.tif',
                     'lichen_top_20m.tif', 
@@ -1083,29 +780,85 @@ def test_hires():
                         "arctic_deciduous_tall_shrub",
                         "arctic_forb",
                         "arctic_graminoid"],
+                        'pftnum': [0,-1,1,2,5,5,6,7,8,9,11,12]}
+    '''
+    ## AK within CAVM extent
+    inputpath='/Users/f9y/Desktop/NGEE-P4/normalized_arcticpft_alaska/'
+    rasterfiles = ['normalized_bare_ground_alaska.tif', 'normalized_water_alaska.tif',
+                    'normalized_lichen_alaska.tif', 
+                    'normalized_bryophyte_alaska.tif', 
+                    'normalized_evergreen_shrub_dwarf_alaska.tif', 
+                    'normalized_evergreen_shrub_low_alaska.tif', 
+                    'normalized_evergreen_shrub_tall_alaska.tif', 
+                    'normalized_deciduous_shrub_dwarf_alaska.tif',
+                    'normalized_deciduous_shrub_low_alaska.tif',
+                    'normalized_deciduous_shrub_tall_alaska.tif',
+                    'normalized_forb_alaska.tif', 
+                    'normalized_graminoid_alaska.tif']
+    bandinfos={'bands':["barren","water",                # those two are separated from real vegs, later barren as PFT0 while water as PCT_LAKE
+                        "arctic_lichen",
+                        "arctic_bryophyte",
+                        "arctic_evergreen_dwarf_shrub",
+                        "arctic_evergreen_dwarf_shrub",  # current no evergreen_low_shrub PFT, so merge into 'dwarf'
+                        "arctic_evergreen_tall_shrub",
+                        "arctic_deciduous_dwarf_shrub",
+                        "arctic_deciduous_low_shrub",
+                        "arctic_deciduous_tall_shrub",
+                        "arctic_forb",
+                        "arctic_graminoid"],
                         'pftnum': [-2,-1,1,2,5,5,6,7,8,9,11,12]}
     
     
-    vegedonly_pftdata_toolik=arctic_veged_fromraster_jkumaretal(\
+    vegedonly_pftdata_hires=arctic_vegedonly_fromraster_jkumaretal(\
         inputpath=inputpath,
         rasterfiles=rasterfiles,
-        bandinfos=bandinfos)
+        bandinfos=bandinfos,
+        # raster unit: PCT (0-100.0) or FRACtion (0-1.0)
+        rasterunit = 'PCT',
+        bbox_lb_ru=tuple([-150.0, 68.0, -149.0, 69.0]),
+        )
 
-    surf_fromcavm_jk = arctic_lupft_fromcavm_jkumaretal( \
-        cavm_within_domainnc='./domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc', \
-        lu_vegonlypft=vegedonly_pftdata_toolik, \
-        outdata=True)
+    #surf_fromcavm_jk = arctic_lupft_fromcavm_jkumaretal2( \
+    #    elm_domainnc='./domain.lnd.0.0025deg.1D.c250624_TFSarcticpfts.nc', \
+    #    veggedonlypft=vegedonly_pftdata_hires, \
+    #    lupft0=None, \
+    #    outdata_tiff='')    
     
-    #srfupdate.updatevals('./surfdata_0.0025deg.1D_simyr1850_c240308_TOP_TFSarcticpfts-default.nc', \
-                        #user_srf_data=surf_fromcavm_jk, user_srf_vars='PCT_NAT_VEG', OriginalPFTclass=True)
-    srfupdate.updatevals('./surfdata_0.0025deg.1D_simyr1850_c240308_TOP_TFSarcticpfts-sub12+.nc', \
-                        user_srf_data=surf_fromcavm_jk, user_srf_vars='PCT_NAT_VEG', OriginalPFTclass=False)
+    #user_domainnc_2d='./domain.lnd.r0005_IcoswISC30E3r5.250918_upkup_watershed2d.nc'
+    user_domainnc_2d='./domain.lnd.r0005_IcoswISC30E3r5.250918_imn_watershed2d.nc'
+    #user_domainnc_1d='./domain.lnd.r0005_IcoswISC30E3r5.250918_upkup_watershed1d.nc'  # this NOT YET works
+    
+    srfdata_fromcavm_jk = arctic_lupft_fromcavm_jkumaretal2( \
+                                elm_domainnc=user_domainnc_2d, \
+                                veggedonlypft=vegedonly_pftdata_hires, \
+                                lupft0=None, \
+                                outdata_tiff='')
+        
+    #user_surfdata_ncf='./surfdata_0.005x0.005_simyr1850_c250910_TOP_upkup_watershed1d-newfrac.nc'
+    user_surfdata_ncf='./surfdata_0.005x0.005_simyr1850_c250910_TOP_imn_watershed1d-newfrac.nc'
+    srfupdate.updatevals(
+                        user_surfdata_ncf, \
+                        user_srf_data=srfdata_fromcavm_jk, \
+                        user_srf_vars='PCT_NATVEG, PCT_GLACIER, PCT_LAKE, PCT_WETLAND, PCT_CROP, PCT_URBAN, PCT_NAT_PFT', \
+                        OriginalPFTclass=True, user_pftname_num=arctic_pfts)
+
+    #user_surfdata_ncf='./surfdata_0.005x0.005_simyr1850_c250910_TOP_upkup_watershed1d-sub12+.nc'
+    user_surfdata_ncf='./surfdata_0.005x0.005_simyr1850_c250910_TOP_imn_watershed1d-sub12+.nc'
+    srfupdate.updatevals(
+                        user_surfdata_ncf, \
+                        user_srf_data=srfdata_fromcavm_jk, \
+                        user_srf_vars='PCT_NATVEG, PCT_GLACIER, PCT_LAKE, PCT_WETLAND, PCT_CROP, PCT_URBAN, PCT_NAT_PFT', \
+                        OriginalPFTclass=False, user_pftname_num=arctic_pfts)
+    
     
 #-----------------------------------------------------------------------------------------------------------------------
 
 #---
-def test():
-    
+def test_panarctic():
+    ## NOTE: tiff resolution is about 1km or so, like 0.00833deg, 
+    ## SO CAVM 1km res. data will provide 3 LUs and PFT0: GLACIER, LAKE (water), NATVEG (the rest), and non-vegetated (barren) 
+    ## in this case, JK et al's landcov rasters will exclude any NON-vegged ones.
+   
     import pytools.pan_arctic.mksrfdata_updatevals as srfupdate
     import pytools.pan_arctic.arctic_domain as elm_domain
 
@@ -1151,10 +904,13 @@ def test():
     
     # vegetated only PFTs from 0.00833 deg pan-Arctic raster data
     # note: data in rioxarray, bandded with Arctic PFT numbering order, but normalized over vegetated area ONLY.
-    #xrio_vegedonly_pftdata_cavm = arctic_vegedonly_fromraster_jkumaretal(\
-    #                            inputpath=inputpath,
-    #                            rasterfiles=rasterfiles,
-    #                            bandinfos=bandinfos)
+    xrio_vegedonly_pftdata = arctic_vegedonly_fromraster_jkumaretal(\
+                                inputpath=inputpath,
+                                bandinfos=bandinfos,
+                                # raster unit: PCT (0-100.0) or FRACtion (0-1.0)
+                                rasterunit = 'FRAC',
+                                bbox_lb_ru=tuple([-180.0, 45.0, 180.0, 89.0]),
+                                )
     
     # glacier, water (lake), PFT0 (not_vegetated) from CAVM dataset. 
     # note: didn't use what from PFT works, because it appears not fully finished (e.g. glacier not there)
@@ -1180,7 +936,7 @@ def test():
     
         srfdata_fromcavm_jk = arctic_lupft_fromcavm_jkumaretal2( \
                                 elm_domainnc=user_domainnc_2d, \
-                                #veggedonlypft=xrio_vegedonly_pftdata_cavm, \
+                                veggedonlypft=xrio_vegedonly_pftdata, \
                                 lupft0=xrio_lupft0, \
                                 outdata_tiff='')
         
@@ -1200,7 +956,7 @@ def test():
 
         args = SimpleNamespace( \
                                 dem = 'hyd_glo_dem_15s.tif',
-                                bbox = [-180.0, 50, 180, 85],
+                                bbox = [-180.0, 45, 180, 89],
                                 lonlat_res = [0.125, 0.125], 
                                 group_delta_elev=100.0,
                                 bbox_outfile=''
@@ -1209,14 +965,14 @@ def test():
         srfdata_fromcavm_jk2 = topounits_lupft_fromcavm_jkumaretal(
                         args, 
                         user_domainnc_2d=user_domainnc_2d, 
-                        #xrio_veggedonlypft=xrio_vegedonly_pftdata_cavm, 
+                        xrio_veggedonlypft=xrio_vegedonly_pftdata, 
                         xrio_lupft0=xrio_lupft0)
         #    
         srfupdate.updatevals(
                         user_surfdata_ncf, \
                         user_srf_data=srfdata_fromcavm_jk2, \
                         user_srf_vars='PCT_NATVEG, PCT_GLACIER, PCT_LAKE, PCT_WETLAND, PCT_CROP, PCT_URBAN, PCT_NAT_PFT', \
-                        OriginalPFTclass=True, user_pftname_num=arctic_pfts)
+                        OriginalPFTclass=False, user_pftname_num=arctic_pfts)
                         #OriginalPFTclass=False)
                             
       
