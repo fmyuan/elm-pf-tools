@@ -48,12 +48,16 @@ def read_dem_aoi_xrio(dem_file, bbox_lb_ru, bbox_crs="EPSG:4326", bbox_resxy=Non
         else:
             bounds = bbox_lb_ru
         elv_xr = src.rio.clip_box(bounds[0],bounds[1],bounds[2],bounds[3])
-        rio_nodata = src.rio.nodata
+        if src.rio.nodata is None:
+            rio_nodata = np.nan
+        else:
+            rio_nodata = src.rio.nodata
         rio_res = np.asarray(src.rio.resolution())
         if not bbox_resxy is None:
+            # reprojection to bounds and its resolution
             rio_res= np.asanyarray(bbox_resxy)
             elv_xr = elv_xr.rio.reproject(
-                elv_xr.rio.crs,
+                bbox_crs,
                 resolution=bbox_resxy,
                 resampling=Resampling.bilinear,
                 nodata=rio_nodata
@@ -64,12 +68,16 @@ def read_dem_aoi_xrio(dem_file, bbox_lb_ru, bbox_crs="EPSG:4326", bbox_resxy=Non
     if 'int' in str(elv_xr.dtype):
         # image may be in integer, but not good for topographic calculation below
         elv_xr = elv_xr.astype('float32')
-        elv_xr.data[np.where(elv_xr.data==rio_nodata)]=np.nan
+        if not np.isnan(rio_nodata):
+            elv_xr.data[np.where(elv_xr.data==rio_nodata)]=np.nan
         elv_xr.rio.write_nodata(np.nan, inplace=True)
         rio_nodata = elv_xr.rio.nodata
         
     elev = elv_xr[0].data
-    dem_mask = (elev==rio_nodata)
+    if not np.isnan(rio_nodata):
+        dem_mask = (elev==rio_nodata)
+    else:
+        dem_mask = np.isnan(elev)
     sa = rvtvis.slope_aspect(elev, output_units="degree", no_data=rio_nodata)
     slope = np.ma.array(sa['slope'], mask=dem_mask)
     aspect = np.ma.array(sa['aspect'], mask=dem_mask)
